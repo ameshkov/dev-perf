@@ -27,7 +27,7 @@ For usage as an end user, see the [README](./README.md) instead.
   LLM agent runs git commands through its `bash` tool.
 - **opencode** on `PATH` (only for LLM analysis) — the LLM layer starts
   an opencode server as a library per repository; without it, LLM runs
-  fail fast with a hint. `dev-perf --no-llm` never needs it.
+  fail fast with a hint. `dev-perf report --no-llm` never needs it.
 - A terminal running from the **repository root** for all commands below.
 
 ## Initial Setup
@@ -65,12 +65,12 @@ pnpm build
 
 ## Running the CLI
 
-The CLI surface is implemented: argument parsing, `--help`, `--version`,
-and validation errors all work, and the deterministic analysis path
-(milestone M2) runs end to end:
+The CLI surface is implemented: the `report` command with argument
+parsing, `--help`, `--version`, and validation errors all work, and the
+deterministic analysis path (milestone M2) runs end to end:
 
 ```bash
-node build/index.js --no-llm /path/to/some/git/repo
+node build/index.js report --no-llm /path/to/some/git/repo
 ```
 
 This clones the repository into the cache (`.dev-perf/cache` by
@@ -83,7 +83,7 @@ environment instead of flags (see below).
 Full LLM run:
 
 ```bash
-node build/index.js --since 2026-01-01 --until 2026-06-30 \
+node build/index.js report --since 2026-01-01 --until 2026-06-30 \
   --output report.json \
   --model gpt-4.1 \
   --provider-url https://api.openai.com/v1 \
@@ -113,8 +113,8 @@ DEV_PERF_NO_LLM=true
 DEV_PERF_OUTPUT=report.json
 ```
 
-`node build/index.js /path/to/repo` behaves exactly like `--no-llm
---output report.json /path/to/repo`. Boolean variables accept
+`node build/index.js report /path/to/repo` behaves exactly like
+`--no-llm --output report.json /path/to/repo`. Boolean variables accept
 `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`.
 
 ### Running from VS Code
@@ -122,8 +122,8 @@ DEV_PERF_OUTPUT=report.json
 The repository ships `.vscode/launch.json` with two launch
 configurations that load `.env` via `envFile`:
 
-- *dev-perf: run (deterministic)* — `--no-llm` against the repository
-  root, no provider configuration needed.
+- *dev-perf: run (deterministic)* — `report --no-llm` against the
+  repository root, no provider configuration needed.
 - *dev-perf: run (with LLM)* — full pipeline; set `DEV_PERF_MODEL`,
   `DEV_PERF_PROVIDER_URL`, and `DEV_PERF_API_KEY` in `.env` first.
 
@@ -142,18 +142,18 @@ node build/index.js --help
 node build/index.js --version
 
 # Deterministic analysis of a local repository (stdout)
-node build/index.js --no-llm /tmp/fixture
+node build/index.js report --no-llm /tmp/fixture
 
 # With an explicit author-date range and an output file
-node build/index.js --no-llm --since 2026-01-01 --until 2026-12-31 \
+node build/index.js report --no-llm --since 2026-01-01 --until 2026-12-31 \
   --output report.json /tmp/fixture
 
 # Argument validation (should fail with a clear error)
-node build/index.js
+node build/index.js report
 
 # Verbose run: progress (clone vs cache reuse, range, commit counts)
 # goes to stderr, the report JSON stays on stdout
-node build/index.js --no-llm --verbose /tmp/fixture
+node build/index.js report --no-llm --verbose /tmp/fixture
 ```
 
 Building a fixture repository:
@@ -164,7 +164,7 @@ git init -b main
 git config user.name "Jane Doe" && git config user.email "jane@example.com"
 printf 'console.log("hello");\n' > index.js
 git add index.js && git commit -m "Initial commit"
-cd - && node build/index.js --no-llm /tmp/fixture
+cd - && node build/index.js report --no-llm /tmp/fixture
 ```
 
 A second run with the same repository reuses the cached clone; pass
@@ -181,7 +181,7 @@ pipeline against a small public repository (keep the range narrow so
 the run is quick):
 
 ```bash
-node build/index.js \
+node build/index.js report \
   --since 2026-01-01 --until 2026-06-30 \
   --model gpt-4.1 \
   --provider-url https://api.openai.com/v1 \

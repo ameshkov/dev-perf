@@ -191,6 +191,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         'node',
         [
           BUILD_ENTRY,
+          'report',
           '--no-llm',
           '--since',
           '2026-01-01T00:00:00Z',
@@ -219,6 +220,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         'node',
         [
           BUILD_ENTRY,
+          'report',
           '--no-llm',
           '--verbose',
           '--since',
@@ -253,6 +255,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         'node',
         [
           BUILD_ENTRY,
+          'report',
           '--no-llm',
           '--since',
           '2026-01-01T00:00:00Z',
@@ -282,6 +285,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         'node',
         [
           BUILD_ENTRY,
+          'report',
           '--no-llm',
           '--since',
           '2026-01-01T00:00:00Z',
@@ -318,7 +322,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     try {
       await execa(
         'node',
-        [BUILD_ENTRY],
+        [BUILD_ENTRY, 'report'],
         // The isolated cwd (spawnOptions) keeps the developer's own
         // `.env` out: dotenv would otherwise inject extra DEV_PERF_*
         // variables that are not part of this test's env surface.
@@ -366,6 +370,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         'node',
         [
           BUILD_ENTRY,
+          'report',
           '--no-llm',
           '--unit',
           'month',

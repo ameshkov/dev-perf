@@ -394,7 +394,8 @@ dev-perf/
 ├── docs/design.md
 ├── .gitignore                          # .dev-perf/, node_modules/, dist/
 ├── src/
-│   ├── cli.ts                          # commander entry
+│   ├── cli.ts                          # commander entry, command registry
+│   ├── commands/report.ts              # the `report` command (options + action)
 │   ├── config.ts                       # zod schemas for args
 │   ├── repo/{clone,cache,git}.ts       # clone/cache management, execa wrappers
 │   ├── deterministic/

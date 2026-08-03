@@ -15,43 +15,71 @@ function createProgram(): Command {
   return program;
 }
 
+/**
+ * The `report` subcommand of a registered program; `undefined` when it
+ * is not registered (the option assertions then fail, surfacing a
+ * missing command registration).
+ */
+function reportCommand(program: Command): Command | undefined {
+  return program.commands.find((command) => command.name() === 'report');
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe('cli', () => {
-  it('documents the repository argument and all options in help', () => {
+  it('documents the report command in the top-level help', () => {
     const program = createProgram();
     const help = program.helpInformation();
 
-    expect(help).toContain('[repo...]');
-    expect(help).toContain('--since <date>');
-    expect(help).toContain('--until <date>');
-    expect(help).toContain('--unit <unit>');
-    expect(help).toContain('--output <file>');
-    expect(help).toContain('--cache-dir <dir>');
-    expect(help).toContain('--refresh');
-    expect(help).toContain('--no-llm');
-    expect(help).toContain('--model <model>');
-    expect(help).toContain('--provider-url <url>');
-    expect(help).toContain('--api-key <key>');
-    expect(help).toContain('--limit-context <n>');
-    expect(help).toContain('--limit-output <n>');
-    expect(help).toContain('--verbose');
-    expect(help).toContain('DEV_PERF_');
+    expect(help).toContain('Commands:');
+    expect(help).toContain('report [options] [repo...]');
+    // Commander wraps the description to fit the help column, so match
+    // across the wrap instead of the exact padded line.
+    expect(help).toMatch(/Build a JSON report of per-user contribution\s+metrics/);
+  });
+
+  it('documents the repository argument and all options in the report help', () => {
+    const program = createProgram();
+    const reportHelp = reportCommand(program)?.helpInformation() ?? '';
+
+    expect(reportHelp).toContain('[repo...]');
+    expect(reportHelp).toContain('--since <date>');
+    expect(reportHelp).toContain('--until <date>');
+    expect(reportHelp).toContain('--unit <unit>');
+    expect(reportHelp).toContain('--output <file>');
+    expect(reportHelp).toContain('--cache-dir <dir>');
+    expect(reportHelp).toContain('--refresh');
+    expect(reportHelp).toContain('--no-llm');
+    expect(reportHelp).toContain('--model <model>');
+    expect(reportHelp).toContain('--provider-url <url>');
+    expect(reportHelp).toContain('--api-key <key>');
+    expect(reportHelp).toContain('--limit-context <n>');
+    expect(reportHelp).toContain('--limit-output <n>');
+    expect(reportHelp).toContain('--verbose');
+    expect(reportHelp).toContain('DEV_PERF_');
+  });
+
+  it('rejects unknown commands', async () => {
+    const program = createProgram();
+    await expect(program.parseAsync(['node', 'dev-perf', 'compile'])).rejects.toThrow(
+      /unknown command/,
+    );
   });
 
   it('parses repositories and options, including the negated --no-llm flag', () => {
     const program = createProgram();
     let parsed: { repos: string[]; options: Record<string, unknown> } | undefined;
 
-    program.action((repos: string[], options: Record<string, unknown>) => {
+    reportCommand(program)?.action((repos: string[], options: Record<string, unknown>) => {
       parsed = { repos, options };
     });
 
     program.parse([
       'node',
       'dev-perf',
+      'report',
       '--since',
       '2026-01-01',
       '--no-llm',
@@ -74,11 +102,11 @@ describe('cli', () => {
     const program = createProgram();
     let parsed: { repos: string[]; options: Record<string, unknown> } | undefined;
 
-    program.action((repos: string[], options: Record<string, unknown>) => {
+    reportCommand(program)?.action((repos: string[], options: Record<string, unknown>) => {
       parsed = { repos, options };
     });
 
-    program.parse(['node', 'dev-perf', '--no-llm', '--unit', 'month', 'repo.git']);
+    program.parse(['node', 'dev-perf', 'report', '--no-llm', '--unit', 'month', 'repo.git']);
 
     expect(parsed?.options).toEqual(expect.objectContaining({ unit: 'month' }));
   });
@@ -86,13 +114,13 @@ describe('cli', () => {
   it('rejects --unit without --since', async () => {
     const program = createProgram();
     await expect(
-      program.parseAsync(['node', 'dev-perf', '--no-llm', '--unit', 'month', 'repo.git']),
+      program.parseAsync(['node', 'dev-perf', 'report', '--no-llm', '--unit', 'month', 'repo.git']),
     ).rejects.toThrow(/--since: required when --unit is set/);
   });
 
   it('rejects when neither positional arguments nor DEV_PERF_REPOS are given', async () => {
     const program = createProgram();
-    await expect(program.parseAsync(['node', 'dev-perf'])).rejects.toThrow(
+    await expect(program.parseAsync(['node', 'dev-perf', 'report'])).rejects.toThrow(
       'repos: at least one repository is required',
     );
   });
@@ -113,7 +141,7 @@ describe('cli', () => {
     vi.stubEnv('DEV_PERF_CACHE_DIR', cacheDir);
     try {
       const program = createProgram();
-      await program.parseAsync(['node', 'dev-perf', repo.url]);
+      await program.parseAsync(['node', 'dev-perf', 'report', repo.url]);
 
       const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
@@ -144,7 +172,7 @@ describe('cli', () => {
     vi.stubEnv('DEV_PERF_CACHE_DIR', cacheDir);
     try {
       const program = createProgram();
-      await program.parseAsync(['node', 'dev-perf']);
+      await program.parseAsync(['node', 'dev-perf', 'report']);
 
       const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
@@ -174,6 +202,7 @@ describe('cli', () => {
       await program.parseAsync([
         'node',
         'dev-perf',
+        'report',
         '--no-llm',
         '--limit-context',
         '65536',
@@ -210,6 +239,7 @@ describe('cli', () => {
       program.parseAsync([
         'node',
         'dev-perf',
+        'report',
         '--no-llm',
         '--limit-context',
         'nope',
@@ -221,7 +251,7 @@ describe('cli', () => {
   it('rejects LLM-enabled runs without provider configuration', async () => {
     const program = createProgram();
     await expect(
-      program.parseAsync(['node', 'dev-perf', 'https://github.com/org/repo.git']),
+      program.parseAsync(['node', 'dev-perf', 'report', 'https://github.com/org/repo.git']),
     ).rejects.toThrow(/required when LLM analysis is enabled/);
   });
 });

@@ -46,6 +46,14 @@ and this project adheres to
 
 ### Changed
 
+- The CLI is now command-based: the report run lives under the
+  `report` subcommand (`dev-perf report [options] [repo...]`), and a
+  bare `dev-perf` invocation prints the command list. **Breaking
+  change** for existing invocations — the report options, positional
+  repository arguments, and `DEV_PERF_*` environment variables are
+  unchanged, only the `report` command word is added. Future commands
+  (e.g. a `compile` that renders a JSON report into markdown with
+  charts) will be registered alongside `report`.
 - The report document is now schema v2: repository entries are always
   wrapped in a `periods` array (a single period covers the whole range
   without `--unit`). **Breaking change** for consumers of the previous

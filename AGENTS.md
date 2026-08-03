@@ -44,10 +44,10 @@ user**:
 
 The full design and implementation plan lives in
 [docs/design.md](./docs/design.md). Both layers are implemented: the
-deterministic analysis path (M2) — `dev-perf --no-llm <repo>` clones
-the repository and produces the JSON report — and the LLM agentic
-layer (M3, plan steps 7-9): the opencode server lifecycle and the
-`devperf_report` tool generation (step 7), the sessions, prompts,
+deterministic analysis path (M2) — `dev-perf report --no-llm <repo>`
+clones the repository and produces the JSON report — and the LLM
+agentic layer (M3, plan steps 7-9): the opencode server lifecycle and
+the `devperf_report` tool generation (step 7), the sessions, prompts,
 orchestration, and LLM result cache (step 8), and the pipeline wiring
 that runs the LLM phase between deterministic analysis and assembly
 (step 9).
@@ -72,8 +72,11 @@ that runs the LLM phase between deterministic analysis and assembly
 dev-perf/
 ├── src/                      # Application source code
 │   ├── index.ts              # CLI entry point: .env loading, version, error handling
-│   ├── cli.ts                # Commander program definition (arguments + options) + pipeline entry
+│   ├── cli.ts                # Command registry: registers every dev-perf command (report today)
 │   ├── cli.test.ts           # CLI surface tests
+│   ├── commands/             # One file per CLI command (the future `compile` command goes here)
+│   │   ├── report.ts         # `report` command: builds the JSON report (arguments, options, action)
+│   │   └── report.test.ts    # (covered by cli.test.ts — the command is exercised through the program)
 │   ├── pipeline.ts           # Orchestration: clone → deterministic analysis → LLM phase → assemble → write
 │   ├── pipeline.test.ts      # Pipeline integration tests against fixture repos
 │   ├── pipeline-llm.test.ts  # Pipeline LLM-phase tests (stubbed server, real session service)
@@ -257,8 +260,10 @@ This project's layers, from top to bottom:
 
 - **Entry point** (`src/index.ts`) — loads `.env`, wires the commander
   program, and handles fatal errors. No business logic.
-- **CLI** (`src/cli.ts`) — commander program definition: arguments,
-  options, and the action that drives the analysis pipeline.
+- **CLI** (`src/cli.ts`) — the command registry: every dev-perf command
+  (`report` today, e.g. a future `compile`) registers itself through
+  `registerCommands`; each command lives in `src/commands/<command>.ts`
+  with its arguments, options, and the action that drives the pipeline.
 - **Services** — own all business logic: clone/cache management,
   deterministic analysis, LLM orchestration, report assembly.
   Directories: `src/repo/` (implemented), `src/deterministic/`
@@ -449,12 +454,13 @@ Configuration and documentation MUST stay synchronized with code:
   Project Structure section in `AGENTS.md`.
 - **Environment variables**: A `.env` file in the current working
   directory is auto-loaded at startup (`dotenv`). Every command-line
-  option has a `DEV_PERF_*` environment variable equivalent (see
-  `.env.example` and the README); the flag wins when both are set.
-  `src/config.ts` resolves the environment (`resolveRawOptions`) before
-  validating the options. The user's global opencode configuration is
-  NEVER read — provider, model, and API key are always passed
-  explicitly via `--provider-url`/`DEV_PERF_PROVIDER_URL`,
+  option of the `report` command has a `DEV_PERF_*` environment
+  variable equivalent (see `.env.example` and the README); the flag
+  wins when both are set. `src/config.ts` resolves the environment
+  (`resolveRawOptions`) before validating the options. The user's
+  global opencode configuration is NEVER read — provider, model, and
+  API key are always passed explicitly via
+  `--provider-url`/`DEV_PERF_PROVIDER_URL`,
   `--model`/`DEV_PERF_MODEL`, and `--api-key`/`DEV_PERF_API_KEY`.
 
 **Rationale**: Stale documentation causes onboarding friction and

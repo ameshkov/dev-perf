@@ -7,7 +7,7 @@
       "request": "launch",
       "runtimeArgs": ["--import", "tsx"],
       "program": "${workspaceFolder}/src/index.ts",
-      "args": ["--no-llm"],
+      "args": ["report", "--no-llm"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
@@ -18,7 +18,7 @@
       "request": "launch",
       "runtimeArgs": ["--import", "tsx"],
       "program": "${workspaceFolder}/src/index.ts",
-      "args": [],
+      "args": ["report"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"

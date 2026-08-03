@@ -22,8 +22,15 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 
 ## Usage
 
+`dev-perf` is command-based: `report` builds the JSON report, and
+further commands (e.g. a `compile` that renders a report into a
+markdown document with charts) will be added alongside it. Running
+`dev-perf` without a command prints the command list.
+
 ```text
-dev-perf [options] [repo...]
+dev-perf report [options] [repo...]
+
+Build a JSON report of per-user contribution metrics.
 
 Arguments:
   repo                   Git repository URL or local path (repeatable;
@@ -85,7 +92,7 @@ range — the report is the same content, nested one level deeper under
 Example:
 
 ```console
-dev-perf --since 2026-01-01 --until 2026-06-30 \
+dev-perf report --since 2026-01-01 --until 2026-06-30 \
   --output report.json \
   --model gpt-4.1 \
   --provider-url https://api.openai.com/v1 \
@@ -99,7 +106,7 @@ Deterministic stats only (no LLM analysis — no provider configuration
 needed):
 
 ```console
-dev-perf --no-llm --since 2026-01-01 --until 2026-06-30 /path/to/repo
+dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 /path/to/repo
 ```
 
 Example output (abridged):
@@ -164,12 +171,12 @@ Example output (abridged):
 
 ## Configuration
 
-Every command-line option has a `DEV_PERF_*` environment variable
-equivalent; when both are given, the flag wins. A `.env` file in the
-current working directory is loaded automatically at startup — copy
-[`.env.example`](.env.example), fill in the values you need, and keep
-it out of version control (it is gitignored). Values already exported
-in the shell are never overridden by `.env`.
+Every `report` command-line option has a `DEV_PERF_*` environment
+variable equivalent; when both are given, the flag wins. A `.env` file
+in the current working directory is loaded automatically at startup —
+copy [`.env.example`](.env.example), fill in the values you need, and
+keep it out of version control (it is gitignored). Values already
+exported in the shell are never overridden by `.env`.
 
 | CLI option | Environment variable | Notes |
 | --- | --- | --- |
@@ -197,23 +204,23 @@ no positional arguments):
 ```console
 DEV_PERF_REPOS=https://github.com/org/repo.git \
 DEV_PERF_NO_LLM=true \
-dev-perf
+dev-perf report
 ```
 
 ## Status
 
 Both analysis layers are implemented: the deterministic path (milestone
-M2) and the LLM agentic layer (milestone M3). `dev-perf --no-llm <repo>`
-clones the repository (into the cache, reusing it on later runs) and
-produces the JSON report — commits, lines, files, active days, and
-per-language contributions, per user and per repository. A run without
-`--no-llm` additionally starts an opencode server per repository and
-produces per-user `llm` entries: `status: "completed"` with the
-assessed work types, complexity, areas, quality signals and risk flags,
-plus token usage and estimated cost. LLM failures (e.g. a provider
-rejecting the key, or a session that never calls the report tool) fail
-the run fast with a clear message and no report is written. See
-[docs/design.md](docs/design.md) for the full design and
+M2) and the LLM agentic layer (milestone M3). `dev-perf report --no-llm
+<repo>` clones the repository (into the cache, reusing it on later
+runs) and produces the JSON report — commits, lines, files, active
+days, and per-language contributions, per user and per repository. A
+run without `--no-llm` additionally starts an opencode server per
+repository and produces per-user `llm` entries: `status: "completed"`
+with the assessed work types, complexity, areas, quality signals and
+risk flags, plus token usage and estimated cost. LLM failures (e.g. a
+provider rejecting the key, or a session that never calls the report
+tool) fail the run fast with a clear message and no report is written.
+See [docs/design.md](docs/design.md) for the full design and
 implementation plan.
 
 ## Development
