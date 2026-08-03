@@ -6,9 +6,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Commit } from '../deterministic/commits.js';
 import { groupByAuthor } from '../deterministic/identity.js';
-import { assembleReport, assembleRepository } from './assemble.js';
+import { assembleReport, assembleRepository, assembleTrendReport } from './assemble.js';
 import type { AnalyzedRange } from './assemble.js';
-import { reportSchema } from './schema.js';
+import { reportSchema, trendReportSchema } from './schema.js';
 import type { LlmAnalysis } from './schema.js';
 
 /** A commit with defaults, for tests that override only what matters. */
@@ -199,6 +199,79 @@ describe('assembleReport', () => {
         llmEnabled: false,
         generatedAt: '2026-08-03T12:00:00.000Z',
         repositories: [],
+      }),
+    ).toThrow();
+  });
+});
+
+describe('assembleTrendReport', () => {
+  it('builds a validated trend report with one period per period input', () => {
+    const january = assembleRepository(repoInput());
+    const report = assembleTrendReport({
+      repos: ['https://github.com/org/repo.git'],
+      range: RANGE,
+      unit: 'month',
+      llmEnabled: false,
+      generatedAt: '2026-08-03T12:00:00.000Z',
+      periods: [
+        {
+          range: { since: '2026-01-01T00:00:00.000Z', until: '2026-01-31T23:59:59.999Z' },
+          repositories: [january],
+        },
+        {
+          range: { since: '2026-02-01T00:00:00.000Z', until: '2026-02-28T23:59:59.999Z' },
+          repositories: [],
+        },
+      ],
+    });
+
+    expect(report.schemaVersion).toBe(2);
+    expect(report.generatedAt).toBe('2026-08-03T12:00:00.000Z');
+    expect(report.parameters).toEqual({
+      repos: ['https://github.com/org/repo.git'],
+      since: '2026-01-01T00:00:00.000Z',
+      until: '2026-06-30T00:00:00.000Z',
+      unit: 'month',
+      llmEnabled: false,
+    });
+    expect(report.periods).toEqual([
+      {
+        since: '2026-01-01T00:00:00.000Z',
+        until: '2026-01-31T23:59:59.999Z',
+        repositories: [january],
+      },
+      {
+        since: '2026-02-01T00:00:00.000Z',
+        until: '2026-02-28T23:59:59.999Z',
+        repositories: [],
+      },
+    ]);
+    // The assembled document round-trips through the schema.
+    expect(trendReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it('omits the unit and model keys from parameters without --unit', () => {
+    const report = assembleTrendReport({
+      repos: ['https://github.com/org/repo.git'],
+      range: RANGE,
+      llmEnabled: false,
+      generatedAt: '2026-08-03T12:00:00.000Z',
+      periods: [{ range: RANGE, repositories: [] }],
+    });
+
+    expect('unit' in report.parameters).toBe(false);
+    expect('model' in report.parameters).toBe(false);
+    expect(report.periods).toEqual([{ since: RANGE.since, until: RANGE.until, repositories: [] }]);
+  });
+
+  it('rejects an assembled document without periods', () => {
+    expect(() =>
+      assembleTrendReport({
+        repos: ['https://github.com/org/repo.git'],
+        range: RANGE,
+        llmEnabled: false,
+        generatedAt: '2026-08-03T12:00:00.000Z',
+        periods: [],
       }),
     ).toThrow();
   });

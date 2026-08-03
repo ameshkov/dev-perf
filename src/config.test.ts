@@ -162,6 +162,47 @@ describe('cliOptionsSchema', () => {
       expect(paths).toContain('limitOutput');
     }
   });
+
+  it('accepts every period unit and rejects unknown units', () => {
+    for (const unit of ['day', 'week', 'month', 'quarter', 'year']) {
+      const result = cliOptionsSchema.safeParse({ ...validOptions(), unit });
+
+      expect(result.success, `expected unit ${unit} to be accepted`).toBe(true);
+      if (result.success) {
+        expect(result.data.unit).toBe(unit);
+      }
+    }
+
+    const invalid = cliOptionsSchema.safeParse({ ...validOptions(), unit: 'fortnight' });
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) {
+      const paths = invalid.error.issues.map((issue) => issue.path.join('.'));
+      expect(paths).toContain('unit');
+    }
+  });
+
+  it('requires since when unit is set', () => {
+    const options = validOptions();
+    options.unit = 'month';
+    delete options.since;
+
+    const result = cliOptionsSchema.safeParse(options);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((issue) => issue.path.join('.'));
+      expect(paths).toContain('since');
+    }
+  });
+
+  it('accepts a unit with since present', () => {
+    const options = validOptions();
+    options.unit = 'week';
+
+    const result = cliOptionsSchema.safeParse(options);
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('resolveRawOptions', () => {
@@ -183,6 +224,7 @@ describe('resolveRawOptions', () => {
       {
         DEV_PERF_SINCE: '2026-01-01',
         DEV_PERF_UNTIL: '2026-06-30',
+        DEV_PERF_UNIT: 'month',
         DEV_PERF_OUTPUT: 'report.json',
         DEV_PERF_CACHE_DIR: '/tmp/cache',
         DEV_PERF_MODEL: 'gpt-4.1',
@@ -196,6 +238,7 @@ describe('resolveRawOptions', () => {
     expect(merged).toMatchObject({
       since: '2026-01-01',
       until: '2026-06-30',
+      unit: 'month',
       output: 'report.json',
       cacheDir: '/tmp/cache',
       model: 'gpt-4.1',
@@ -204,6 +247,16 @@ describe('resolveRawOptions', () => {
       limitContext: '128',
       limitOutput: '64',
     });
+  });
+
+  it('lets the flag win over DEV_PERF_UNIT', () => {
+    const merged = resolveRawOptions(
+      [],
+      { unit: 'week' },
+      { DEV_PERF_UNIT: 'month', DEV_PERF_SINCE: '2026-01-01' },
+    );
+
+    expect(merged.unit).toBe('week');
   });
 
   it('parses boolean environment variables, inverting DEV_PERF_NO_LLM', () => {

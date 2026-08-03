@@ -3,11 +3,14 @@
  * fills options that were not passed as flags from their `DEV_PERF_*`
  * environment variables (the flag always wins), and `parseCliOptions`
  * validates the merged options against `cliOptionsSchema`. The
- * cross-field rule: when LLM analysis is enabled, `model`,
- * `providerUrl` and `apiKey` are required. `limitContext` /
- * `limitOutput` are positive integers with the defaults 262144 / 65536.
+ * cross-field rules: when LLM analysis is enabled, `model`,
+ * `providerUrl` and `apiKey` are required; `--since` is required when
+ * `--unit` is set (an unbounded range cannot be split into periods).
+ * `limitContext` / `limitOutput` are positive integers with the
+ * defaults 262144 / 65536.
  */
 import { z } from 'zod';
+import { periodUnitSchema } from './report/index.js';
 
 /**
  * Raw options as parsed by commander before validation: limit options
@@ -19,6 +22,8 @@ export interface RawCliOptions {
   since?: string;
   /** End date (author date, UTC; any git date format; default: today). */
   until?: string;
+  /** Split the range into periods of this unit (day/week/month/quarter/year). */
+  unit?: string;
   /** Write the JSON report to this file instead of stdout. */
   output?: string;
   /** Cache directory for cloned repos and LLM results (default: .dev-perf/cache). */
@@ -49,6 +54,7 @@ export interface RawCliOptions {
 const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
   since: 'DEV_PERF_SINCE',
   until: 'DEV_PERF_UNTIL',
+  unit: 'DEV_PERF_UNIT',
   output: 'DEV_PERF_OUTPUT',
   cacheDir: 'DEV_PERF_CACHE_DIR',
   refresh: 'DEV_PERF_REFRESH',
@@ -93,6 +99,8 @@ export const cliOptionsSchema = z
     since: z.string().optional(),
     /** End date (author date, UTC; any git date format; default: today). */
     until: z.string().optional(),
+    /** Split the range into periods of this unit (day/week/month/quarter/year). */
+    unit: periodUnitSchema.optional(),
     /** Write the JSON report to this file instead of stdout. */
     output: z.string().optional(),
     /** Cache directory for cloned repos and LLM results (default: .dev-perf/cache). */
@@ -115,6 +123,15 @@ export const cliOptionsSchema = z
     verbose: z.boolean().optional(),
   })
   .superRefine((options, ctx) => {
+    // An unbounded range cannot be split into periods: --since must be
+    // given whenever --unit is set.
+    if (options.unit !== undefined && options.since === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['since'],
+        message: 'required when --unit is set (an unbounded range cannot be split)',
+      });
+    }
     if (!options.llm) {
       return;
     }
@@ -143,7 +160,7 @@ export const cliOptionsSchema = z
 
 /**
  * Parsed and validated CLI options: defaults applied, limits coerced
- * to numbers, LLM requirements enforced.
+ * to numbers, LLM and period-split requirements enforced.
  */
 export type CliOptions = z.infer<typeof cliOptionsSchema>;
 

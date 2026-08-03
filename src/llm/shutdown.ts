@@ -5,9 +5,10 @@
  * escalate. A server that does not exit on SIGTERM (e.g. one stuck
  * bundling a tool in esbuild) keeps dev-perf's event loop alive
  * forever through its stdio pipes, hanging the CLI after the report
- * was written. This module waits for the server's port to stop
- * accepting (bounded), then force-kills the listening process, so a
- * stuck server can neither hang the CLI nor leak a process.
+ * was written. This module waits (bounded) for the server's port to
+ * stop accepting, then force-kills the listening process and its
+ * whole process tree, so a stuck server can neither hang the CLI nor
+ * leak a process.
  */
 import { connect } from 'node:net';
 import { execa } from 'execa';
@@ -31,12 +32,15 @@ interface WaitForServerExitOptions {
 }
 
 /**
- * Waits for the opencode server at `url` to exit: the server's port
- * is probed until it stops accepting or `timeoutMs` elapses, then the
+ * Waits for the opencode server at `url` to exit: the server's port is
+ * probed until it stops accepting or `timeoutMs` elapses, then the
  * listening process is force-killed via `kill` (defaults to
- * `killPortListener`). A server that exits on its own makes this
- * resolve after the first dead probe; the force-kill path logs what
- * happened. Never throws — shutdown is best effort.
+ * `killPortListener`). The escalation is unconditional — the probe is
+ * only the grace period for the SDK's SIGTERM to complete, and the
+ * kill is a no-op when the server already exited. A server that exits
+ * on its own makes this resolve after the first dead probe with
+ * nothing to kill; the force-kill path logs what happened. Never
+ * throws — shutdown is best effort.
  *
  * @param url - The server base URL, e.g. `http://127.0.0.1:4096`.
  * @param options - Timeout and kill-function overrides (tests).
@@ -49,17 +53,22 @@ export async function waitForServerExit(
 ): Promise<void> {
   const { timeoutMs = SERVER_STOP_TIMEOUT_MS, kill = killPortListener } = options;
   const deadline = Date.now() + timeoutMs;
+  let alive = true;
   while (Date.now() < deadline) {
     if (!(await serverAlive(url))) {
-      return;
+      alive = false;
+      break;
     }
     await sleep(POLL_INTERVAL_MS);
   }
+  // Escalate unconditionally: a server that exited gracefully leaves
+  // nothing listening, so the kill is a no-op; a server that is gone
+  // but leaked a child holding the port is still cleaned up.
   const pid = await kill(url);
-  if (pid === undefined) {
+  if (pid !== undefined) {
+    logWarn(`LLM server did not exit on SIGTERM; force-killed PID ${pid} (process tree)`);
+  } else if (alive) {
     logWarn(`LLM server did not exit on SIGTERM and could not be force-killed: ${url}`);
-  } else {
-    logWarn(`LLM server did not exit on SIGTERM; force-killed PID ${pid}`);
   }
 }
 
@@ -99,13 +108,18 @@ export async function serverAlive(url: string): Promise<boolean> {
 }
 
 /**
- * Force-kills the process listening on the URL's port (POSIX only)
- * and returns its PID. On Windows this is a no-op — the SDK's own
- * shutdown already kills the whole process tree with `taskkill /T`.
+ * Force-kills every process listening on the URL's port together with
+ * its whole process tree (POSIX only): first the process group when
+ * the listener leads one (the SDK spawns `opencode serve` without
+ * `detached`, so normally it shares dev-perf's group and this is a
+ * no-op), then every descendant process — e.g. the esbuild child a
+ * stuck server is waiting on — and finally the listener itself. On
+ * Windows this is a no-op — the SDK's own shutdown already kills the
+ * whole process tree with `taskkill /T`.
  *
  * @param url - The server base URL.
  * @returns The killed PID, or `undefined` when nothing could be killed
- * (lsof unavailable, no listener, or the process is already gone).
+ * (lsof unavailable, no listener, or every process is already gone).
  *
  * @internal Exported for tests only (`shutdown.test.ts`); also used as
  * the default kill function of `waitForServerExit` within the module.
@@ -119,23 +133,96 @@ export async function killPortListener(url: string): Promise<number | undefined>
   if (port === '') {
     return undefined;
   }
-  let pid: number | undefined;
+  let pids: number[] = [];
   try {
     // `lsof -t` prints PIDs only; exit code 1 (no match) rejects.
     const { stdout } = await execa('lsof', ['-nP', '-t', '-sTCP:LISTEN', `-iTCP:${port}`]);
-    pid = Number(stdout.trim().split('\n')[0]);
+    pids = parsePidList(stdout);
   } catch {
     return undefined; // lsof unavailable or nothing listening.
   }
-  if (!Number.isInteger(pid) || (pid ?? 0) <= 0) {
-    return undefined;
+  let killed: number | undefined;
+  for (const pid of pids) {
+    if ((await killProcessTree(pid)) && killed === undefined) {
+      killed = pid;
+    }
   }
+  return killed;
+}
+
+/**
+ * Force-kills one process and everything it spawned: the process group
+ * when the pid leads one (a harmless no-op otherwise), then every
+ * descendant, then the pid itself.
+ *
+ * @param pid - The process to kill with its tree.
+ * @returns True when at least one kill signal was delivered.
+ */
+async function killProcessTree(pid: number): Promise<boolean> {
+  let signaled = false;
+  const signal = (target: number) => {
+    try {
+      process.kill(target, 'SIGKILL');
+      signaled = true;
+    } catch {
+      // Already gone (ESRCH) or not ours.
+    }
+  };
   try {
-    process.kill(pid, 'SIGKILL');
-    return pid;
+    process.kill(-pid, 'SIGKILL'); // The whole group, when it leads one.
+    signaled = true;
   } catch {
-    return undefined; // Already gone (ESRCH) or not ours.
+    // Not a group leader — kill its descendants individually instead.
   }
+  for (const descendant of await descendantPids(pid)) {
+    signal(descendant);
+  }
+  signal(pid);
+  return signaled;
+}
+
+/**
+ * Collects the PIDs of every descendant of `pid` (children,
+ * grandchildren, …) via `pgrep -P`. Returns an empty list when pgrep
+ * is unavailable or the process has no children.
+ *
+ * @param pid - The parent PID.
+ * @returns The descendant PIDs.
+ */
+async function descendantPids(pid: number): Promise<number[]> {
+  const descendants: number[] = [];
+  const queue = [pid];
+  while (queue.length > 0) {
+    const current = queue.shift() ?? 0;
+    let children: number[] = [];
+    try {
+      // `pgrep -P` prints direct children only; exit code 1 rejects.
+      const { stdout } = await execa('pgrep', ['-P', String(current)]);
+      children = parsePidList(stdout);
+    } catch {
+      children = [];
+    }
+    for (const child of children) {
+      descendants.push(child);
+      queue.push(child);
+    }
+  }
+  return descendants;
+}
+
+/**
+ * Parses a whitespace-separated list of PIDs (the output format of
+ * `lsof -t` and `pgrep -P`) into a list of positive integers.
+ *
+ * @param text - The command output.
+ * @returns The parsed PIDs.
+ */
+function parsePidList(text: string): number[] {
+  return text
+    .trim()
+    .split(/\s+/)
+    .map((entry) => Number(entry))
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 
 /**

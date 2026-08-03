@@ -537,9 +537,10 @@ export const parametersSchema = z.object({
 export type Parameters = z.infer<typeof parametersSchema>;
 
 /**
- * The full dev-perf report document: parameters,
- * repository entries, and per-user analysis. Exported through the
- * module barrel as the report module's public API.
+ * The v1 dev-perf report document: parameters, repository entries, and
+ * per-user analysis. Superseded by `trendReportSchema` (v2) in the
+ * production pipeline; kept so the v1 shape stays covered by the
+ * schema tests and the v1 assembler (`src/report/assemble.ts`).
  */
 export const reportSchema = z.object({
   /** Schema version; 1 for the v1 report shape. */
@@ -553,6 +554,59 @@ export const reportSchema = z.object({
 });
 
 /**
- * The full dev-perf report document.
+ * The v1 dev-perf report document; kept for the v1 assembler
+ * (`src/report/assemble.ts`) and the schema tests.
  */
 export type Report = z.infer<typeof reportSchema>;
+
+/**
+ * Period unit of a trend report: splits the analyzed range into
+ * UTC-aligned periods of this size (day/week/month/quarter/year).
+ */
+export const periodUnitSchema = z.enum(['day', 'week', 'month', 'quarter', 'year']);
+
+/**
+ * Period unit of a trend report.
+ */
+export type PeriodUnit = z.infer<typeof periodUnitSchema>;
+
+/**
+ * One time-based period of a trend report: the period bounds and one
+ * repository entry per analyzed repository, each restricted to the
+ * period.
+ *
+ * @internal Exported for tests only; referenced by `trendReportSchema`
+ * within the module. Not part of the public module API.
+ */
+export const periodReportSchema = z.object({
+  /** Period start (UTC instant, inclusive; trimmed to the analyzed range). */
+  since: z.string(),
+  /** Period end (UTC instant, inclusive; trimmed to the analyzed range). */
+  until: z.string(),
+  /** One entry per analyzed repository, for this period only. */
+  repositories: z.array(repositorySchema),
+});
+
+/**
+ * The full trend report document (schema v2): parameters plus one
+ * full per-repository report per time-based period. Without `--unit`,
+ * a single period covers the whole analyzed range.
+ */
+export const trendReportSchema = z.object({
+  /** Schema version; 2 for the v2 trend report shape. */
+  schemaVersion: z.literal(2),
+  /** When the report was generated (ISO 8601, UTC). */
+  generatedAt: z.string(),
+  /** Parameters of the analysis run. */
+  parameters: parametersSchema.extend({
+    /** Period unit the range was split into; absent without `--unit`. */
+    unit: periodUnitSchema.optional(),
+  }),
+  /** One per-period report per period, oldest first. */
+  periods: z.array(periodReportSchema).min(1),
+});
+
+/**
+ * The full trend report document (schema v2).
+ */
+export type TrendReport = z.infer<typeof trendReportSchema>;

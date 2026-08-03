@@ -2,13 +2,17 @@ import { Command } from 'commander';
 import { parseCliOptions, resolveRawOptions } from './config.js';
 import type { RawCliOptions } from './config.js';
 import { runPipeline } from './pipeline.js';
-import type { Report } from './report/index.js';
+import type { TrendReport } from './report/index.js';
 
 export function registerCommands(program: Command): void {
   program
     .argument('[repo...]', 'Git repository URL or local path (repeatable; default: DEV_PERF_REPOS)')
     .option('--since <date>', 'Start date, e.g. 2026-01-01 (any git date format)')
     .option('--until <date>', 'End date (default: today)')
+    .option(
+      '--unit <unit>',
+      'Split the range into periods: day, week, month, quarter, year (requires --since)',
+    )
     .option('--output <file>', 'Write the JSON report to a file (default: stdout)')
     .option(
       '--cache-dir <dir>',
@@ -41,7 +45,7 @@ export function registerCommands(program: Command): void {
  * clone → deterministic analysis → LLM phase (when enabled) → report
  * assembly, producing the report document. A run without `--no-llm`
  * requires `--model`, `--provider-url` and `--api-key` (or their
- * environment variables).
+ * environment variables); `--unit` requires `--since`.
  *
  * @param repos - Repositories from the command line (may be empty;
  * `DEV_PERF_REPOS` is the fallback).
@@ -50,7 +54,7 @@ export function registerCommands(program: Command): void {
  * @throws {Error} When the options fail validation; `GitError` when a
  * clone or git log fails; `Error` when the LLM phase fails.
  */
-async function runAnalysis(repos: string[], options: RawCliOptions): Promise<Report> {
+async function runAnalysis(repos: string[], options: RawCliOptions): Promise<TrendReport> {
   const parsed = parseCliOptions(resolveRawOptions(repos, options));
   return runPipeline(parsed);
 }

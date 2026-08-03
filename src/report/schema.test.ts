@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reportSchema } from './schema.js';
+import { reportSchema, trendReportSchema } from './schema.js';
 
 /**
  * Builds a full, valid sample report exercising every
@@ -273,6 +273,120 @@ describe('reportSchema', () => {
       const report = validReport();
       mutate(report);
       const result = reportSchema.safeParse(report);
+
+      expect(result.success, `expected mutation at ${path} to be rejected`).toBe(false);
+      if (result.success) {
+        continue;
+      }
+      const paths = result.error.issues.map((issue) => issue.path.join('.'));
+      expect(paths).toContain(path);
+    }
+  });
+});
+
+describe('trendReportSchema', () => {
+  /**
+   * A full, valid v2 trend report: the v1 sample's repository entry
+   * nested into one period, plus an empty second period.
+   */
+  function validTrendReport(): unknown {
+    const report = validReport() as { repositories: unknown[] };
+    return {
+      schemaVersion: 2,
+      generatedAt: '2026-08-03T12:00:00.000Z',
+      parameters: {
+        repos: ['https://github.com/org/repo.git'],
+        since: '2026-01-01',
+        until: '2026-06-30',
+        unit: 'month',
+        llmEnabled: true,
+      },
+      periods: [
+        {
+          since: '2026-01-01T00:00:00.000Z',
+          until: '2026-01-31T23:59:59.999Z',
+          repositories: [report.repositories[0]],
+        },
+        {
+          since: '2026-02-01T00:00:00.000Z',
+          until: '2026-02-28T23:59:59.999Z',
+          repositories: [],
+        },
+      ],
+    };
+  }
+
+  it('validates a full sample trend report with periods', () => {
+    const result = trendReportSchema.safeParse(validTrendReport());
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parameters.unit).toBe('month');
+      expect(result.data.periods).toHaveLength(2);
+      expect(result.data.periods[0].repositories[0].users).toHaveLength(1);
+    }
+  });
+
+  it('accepts a trend report without a unit (single whole-range period)', () => {
+    const report = validTrendReport() as {
+      parameters: { unit?: unknown };
+      periods: Array<{ since: string; until: string; repositories: unknown[] }>;
+    };
+    delete report.parameters.unit;
+    report.periods = [report.periods[0]];
+
+    const result = trendReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parameters.unit).toBeUndefined();
+    }
+  });
+
+  it('rejects each invalid trend report field with the failing path', () => {
+    const mutations: Array<{ path: string; mutate: (report: any) => void }> = [
+      {
+        path: 'schemaVersion',
+        mutate: (report) => {
+          report.schemaVersion = 1;
+        },
+      },
+      {
+        path: 'periods',
+        mutate: (report) => {
+          report.periods = [];
+        },
+      },
+      {
+        path: 'periods.0.since',
+        mutate: (report) => {
+          delete report.periods[0].since;
+        },
+      },
+      {
+        path: 'periods.0.until',
+        mutate: (report) => {
+          report.periods[0].until = 42;
+        },
+      },
+      {
+        path: 'periods.0.repositories',
+        mutate: (report) => {
+          report.periods[0].repositories = 'none';
+        },
+      },
+      {
+        path: 'parameters.unit',
+        mutate: (report) => {
+          report.parameters.unit = 'fortnight';
+        },
+      },
+    ];
+
+    for (const { path, mutate } of mutations) {
+      const report = validTrendReport();
+      mutate(report);
+      const result = trendReportSchema.safeParse(report);
 
       expect(result.success, `expected mutation at ${path} to be rejected`).toBe(false);
       if (result.success) {

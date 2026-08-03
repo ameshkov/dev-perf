@@ -9,7 +9,7 @@
  * `DEV_PERF_SMOKE` test — and the stub client stands in for the
  * generated `devperf_report` tool by writing the session's report file.
  */
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Event, OpencodeClient } from '@opencode-ai/sdk';
@@ -19,6 +19,7 @@ import type { CliOptions } from './config.js';
 import { startServer } from './llm/server.js';
 import type { LlmServerConfig } from './llm/server.js';
 import { runPipeline } from './pipeline.js';
+import { entryHash } from './repo/cache.js';
 import type { LlmToolPayload } from './report/index.js';
 import { writeJsonFile } from './util/json.js';
 
@@ -202,7 +203,7 @@ describe('runPipeline with LLM analysis', () => {
       expect(close).toHaveBeenCalledTimes(1);
 
       expect(report.parameters).toMatchObject({ llmEnabled: true, model: 'gpt-4.1' });
-      const users = report.repositories[0].users;
+      const users = report.periods[0].repositories[0].users;
       // First-encounter order of the newest-first commit list: Bob, Alice.
       expect(users.map((user) => user.name)).toEqual(['Bob', 'Alice']);
       for (const user of users) {
@@ -311,7 +312,7 @@ describe('runPipeline with LLM analysis', () => {
 
       expect(startServer).not.toHaveBeenCalled();
       expect(report.parameters.llmEnabled).toBe(false);
-      expect(report.repositories[0].users[0].llm.status).toBe('skipped');
+      expect(report.periods[0].repositories[0].users[0].llm.status).toBe('skipped');
     } finally {
       await removeFixtureRepo(repo);
     }
@@ -332,7 +333,76 @@ describe('runPipeline with LLM analysis', () => {
       );
 
       expect(startServer).not.toHaveBeenCalled();
-      expect(report.repositories[0].users).toEqual([]);
+      expect(report.periods[0].repositories[0].users).toEqual([]);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('with --unit month runs LLM per active period with period-scoped cache keys', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-15T10:00:00Z',
+        message: 'feat: january',
+        files: [{ path: 'src/a.ts', content: 'a\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-03-10T11:00:00Z',
+        message: 'feat: march',
+        files: [{ path: 'src/b.ts', content: 'b\n' }],
+      },
+    ]);
+    const { close } = stubServer({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
+    try {
+      const report = await runPipeline(
+        options({
+          repos: [repo.url],
+          cacheDir,
+          unit: 'month',
+          since: '2026-01-01T00:00:00Z',
+          until: '2026-03-31T23:59:59Z',
+        }),
+      );
+
+      // One server for the repo, shared by all of its periods.
+      expect(startServer).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+
+      const periods = report.periods;
+      expect(periods).toHaveLength(3);
+      // January and March: the active user's analysis completed.
+      for (const index of [0, 2]) {
+        expect(periods[index].repositories[0].users[0].llm.status).toBe('completed');
+        expect(periods[index].repositories[0].users[0].llm.contributions).toEqual(
+          PAYLOAD.contributions,
+        );
+      }
+      // February: no commits, so no LLM session and a skipped analysis.
+      expect(periods[1].repositories[0].users[0].llm.status).toBe('skipped');
+
+      // The LLM result cache is keyed per period: one cache file per
+      // active period, holding that period's bounds (session report
+      // files start with `ses_` and are not cache entries).
+      const llmDir = path.join(cacheDir, entryHash(repo.url), 'llm');
+      const cacheFiles = (await readdir(llmDir)).filter((file) => !file.startsWith('ses_'));
+      expect(cacheFiles).toHaveLength(2);
+      const bounds = await Promise.all(
+        cacheFiles.map(async (file) => {
+          const cached = JSON.parse(await readFile(path.join(llmDir, file), 'utf8')) as {
+            since: string;
+            until: string;
+          };
+          return { since: cached.since, until: cached.until };
+        }),
+      );
+      expect(bounds).toEqual(
+        expect.arrayContaining([
+          { since: '2026-01-01T00:00:00.000Z', until: '2026-01-31T23:59:59.999Z' },
+          { since: '2026-03-01T00:00:00.000Z', until: '2026-03-31T23:59:59.000Z' },
+        ]),
+      );
     } finally {
       await removeFixtureRepo(repo);
     }

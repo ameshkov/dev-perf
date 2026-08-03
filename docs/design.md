@@ -65,6 +65,8 @@ Arguments:
 Options:
   --since <date>         Start date (author-date, UTC). Any git date format.
   --until <date>         End date (default: today)
+  --unit <unit>          Split the range into periods: day, week, month,
+                         quarter, year (requires --since)
   --output <file>        Write JSON report to file (default: stdout; pretty-printed)
   --cache-dir <dir>      Cache directory (default: .dev-perf/cache) — cloned repos
                          and LLM analysis results (§4, §6.6)
@@ -84,6 +86,17 @@ explicitly — dev-perf never falls back to the user's global opencode configura
 (see §6.2). `--limit-context` and `--limit-output` are optional caps for the model
 window (defaults: 256k context / 64k output tokens), passed through as opencode's
 `limit` config (§6.2).
+
+With `--unit`, the analyzed range is split into UTC-aligned periods and the report
+carries one full per-repository report per period (`src/trend/periods.ts`):
+period bounds are instants (day = midnight, week = Monday, month = 1st,
+quarter = Jan/Apr/Jul/Oct, year = Jan 1), first/last periods are trimmed to the
+range, `until` is inclusive (next start − 1 ms), and empty periods are included
+with zeroed metrics. The user list is resolved once over the whole range and
+shown in every period; the LLM phase runs per period for the users active in it
+(one opencode server per repo, shared across its periods; the LLM result cache
+keys by period bounds). `--since` is required with `--unit` — an unbounded range
+cannot be split.
 
 Implementation: `commander` for arg parsing, `zod` for validation of args and all
 data schemas. The report schema (zod) is shared between the CLI, the deterministic
@@ -321,38 +334,56 @@ rather than averaged into one description.
 
 ## 7. Report format
 
-Single JSON document (schema defined in `src/report/schema.ts` with zod):
+Single JSON document (schema defined in `src/report/schema.ts` with zod),
+schema v2: repository entries are always wrapped in a `periods` array. Without
+`--unit` there is exactly one period covering the whole range — the v1 report
+content, nested one level deeper. With `--unit`, each period is a full
+per-repository report over its bounds (UTC instants, `until` inclusive).
 
 ```
 {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: ISO,
-  parameters: { repos: [...], since, until, model?, llmEnabled },
-  repositories: [
+  parameters: { repos: [...], since, until, unit?, model?, llmEnabled },
+  periods: [
     {
-      repo, clonePath, branch, head,
-      range: { since, until },
-      stats: { totalCommits, totalUsers, topLanguages: [...] },
-      users: [
+      since: ISO (UTC instant, inclusive),
+      until: ISO (UTC instant, inclusive),
+      repositories: [
         {
-          name, emails: [...], isBot,
-          deterministic: { commits, nonMergeCommits, mergeCommits, linesAdded,
-            linesRemoved, netLines, filesTouched, uniqueFilesTouched, activeDays,
-            firstCommitAt, lastCommitAt, avgCommitSize, languages, churn? },
-          llm: {
-            status: "completed" | "skipped" | "failed",
-            overview?,
-            contributions: [ { title, summary, types, complexity,
-              complexityReasoning, size, sizeReasoning, areas, commits,
-              qualitySignals, riskFlags } ],
-            tokenUsage?, estimatedCostUsd?, error?
-          }
+          repo, clonePath, branch, head,
+          range: { since, until },
+          stats: { totalCommits, totalUsers, topLanguages: [...] },
+          users: [
+            {
+              name, emails: [...], isBot,
+              deterministic: { commits, nonMergeCommits, mergeCommits, linesAdded,
+                linesRemoved, netLines, filesTouched, uniqueFilesTouched, activeDays,
+                firstCommitAt, lastCommitAt, avgCommitSize, languages, churn? },
+              llm: {
+                status: "completed" | "skipped" | "failed",
+                overview?,
+                contributions: [ { title, summary, types, complexity,
+                  complexityReasoning, size, sizeReasoning, areas, commits,
+                  qualitySignals, riskFlags } ],
+                tokenUsage?, estimatedCostUsd?, error?
+              }
+            }
+          ]
         }
       ]
     }
   ]
 }
 ```
+
+Period splitting (`src/trend/periods.ts`): bounds are UTC instants (day =
+midnight, week = Monday, month = 1st, quarter = Jan/Apr/Jul/Oct, year = Jan 1);
+the first and last periods are trimmed to the analyzed range; `until` is
+inclusive (the next period start minus 1 ms); periods with no commits are
+included. The user list is resolved once over the whole range and shown in
+every period with zeroed metrics for inactive users; the LLM phase runs per
+period for active users only (cache keyed by period bounds, §6.6).
 
 ## 8. Project layout
 
@@ -379,6 +410,7 @@ dev-perf/
 │   │   ├── prompts/                    # LLM prompt templates (*.md)
 │   │   ├── agents/                     # the devperf-analyst agent definition (*.md)
 │   │   └── analyze.ts                  # orientation + per-user orchestration
+│   ├── trend/periods.ts                # --unit period splitting + per-period commit filtering
 │   ├── report/{schema,assemble}.ts
 │   └── util/                           # logging, json
 └── tests/

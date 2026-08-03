@@ -12,7 +12,7 @@ import type { CliOptions } from './config.js';
 import { runPipeline } from './pipeline.js';
 import { entryHash } from './repo/cache.js';
 import { gitRevParse } from './repo/git.js';
-import { reportSchema } from './report/schema.js';
+import { trendReportSchema } from './report/schema.js';
 import { prettyJson } from './util/json.js';
 
 /** Defaults for a deterministic-only pipeline run. */
@@ -64,7 +64,7 @@ describe('runPipeline', () => {
 
       const head = await gitRevParse(repo.dir, ['HEAD']);
       expect(report).toStrictEqual({
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt: expect.any(String),
         parameters: {
           repos: [repo.url],
@@ -72,73 +72,79 @@ describe('runPipeline', () => {
           until: '2026-01-31T23:59:59.000Z',
           llmEnabled: false,
         },
-        repositories: [
+        periods: [
           {
-            repo: repo.url,
-            clonePath: path.join(cacheDir, entryHash(repo.url), 'repo'),
-            branch: 'main',
-            head,
-            range: {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.000Z',
-            },
-            stats: {
-              totalCommits: 3,
-              totalUsers: 2,
-              topLanguages: [
-                { language: 'Markdown', linesAdded: 2 },
-                { language: 'TypeScript', linesAdded: 2 },
-                { language: 'Unknown', linesAdded: 0 },
-              ],
-            },
-            users: [
+            since: '2026-01-01T00:00:00.000Z',
+            until: '2026-01-31T23:59:59.000Z',
+            repositories: [
               {
-                name: 'Alice',
-                emails: ['alice@example.com'],
-                isBot: false,
-                deterministic: {
-                  commits: 2,
-                  nonMergeCommits: 2,
-                  mergeCommits: 0,
-                  linesAdded: 3,
-                  linesRemoved: 0,
-                  netLines: 3,
-                  filesTouched: 3,
-                  uniqueFilesTouched: 3,
-                  activeDays: 2,
-                  firstCommitAt: '2026-01-01T10:00:00.000Z',
-                  lastCommitAt: '2026-01-03T09:00:00.000Z',
-                  avgCommitSize: 1.5,
-                  languages: {
-                    TypeScript: { linesAdded: 2, linesRemoved: 0, filesTouched: 1 },
-                    Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
-                    Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
-                  },
+                repo: repo.url,
+                clonePath: path.join(cacheDir, entryHash(repo.url), 'repo'),
+                branch: 'main',
+                head,
+                range: {
+                  since: '2026-01-01T00:00:00.000Z',
+                  until: '2026-01-31T23:59:59.000Z',
                 },
-                llm: { status: 'skipped', contributions: [] },
-              },
-              {
-                name: 'Bob',
-                emails: ['bob@example.com'],
-                isBot: false,
-                deterministic: {
-                  commits: 1,
-                  nonMergeCommits: 1,
-                  mergeCommits: 0,
-                  linesAdded: 1,
-                  linesRemoved: 0,
-                  netLines: 1,
-                  filesTouched: 1,
-                  uniqueFilesTouched: 1,
-                  activeDays: 1,
-                  firstCommitAt: '2026-01-02T11:00:00.000Z',
-                  lastCommitAt: '2026-01-02T11:00:00.000Z',
-                  avgCommitSize: 1,
-                  languages: {
-                    Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
-                  },
+                stats: {
+                  totalCommits: 3,
+                  totalUsers: 2,
+                  topLanguages: [
+                    { language: 'Markdown', linesAdded: 2 },
+                    { language: 'TypeScript', linesAdded: 2 },
+                    { language: 'Unknown', linesAdded: 0 },
+                  ],
                 },
-                llm: { status: 'skipped', contributions: [] },
+                users: [
+                  {
+                    name: 'Alice',
+                    emails: ['alice@example.com'],
+                    isBot: false,
+                    deterministic: {
+                      commits: 2,
+                      nonMergeCommits: 2,
+                      mergeCommits: 0,
+                      linesAdded: 3,
+                      linesRemoved: 0,
+                      netLines: 3,
+                      filesTouched: 3,
+                      uniqueFilesTouched: 3,
+                      activeDays: 2,
+                      firstCommitAt: '2026-01-01T10:00:00.000Z',
+                      lastCommitAt: '2026-01-03T09:00:00.000Z',
+                      avgCommitSize: 1.5,
+                      languages: {
+                        TypeScript: { linesAdded: 2, linesRemoved: 0, filesTouched: 1 },
+                        Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
+                        Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
+                      },
+                    },
+                    llm: { status: 'skipped', contributions: [] },
+                  },
+                  {
+                    name: 'Bob',
+                    emails: ['bob@example.com'],
+                    isBot: false,
+                    deterministic: {
+                      commits: 1,
+                      nonMergeCommits: 1,
+                      mergeCommits: 0,
+                      linesAdded: 1,
+                      linesRemoved: 0,
+                      netLines: 1,
+                      filesTouched: 1,
+                      uniqueFilesTouched: 1,
+                      activeDays: 1,
+                      firstCommitAt: '2026-01-02T11:00:00.000Z',
+                      lastCommitAt: '2026-01-02T11:00:00.000Z',
+                      avgCommitSize: 1,
+                      languages: {
+                        Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
+                      },
+                    },
+                    llm: { status: 'skipped', contributions: [] },
+                  },
+                ],
               },
             ],
           },
@@ -164,7 +170,7 @@ describe('runPipeline', () => {
     try {
       const report = await runPipeline(options({ repos: [repo.url], cacheDir, output: outFile }));
       const written = JSON.parse(await readFile(outFile, 'utf8')) as unknown;
-      expect(reportSchema.safeParse(written).success).toBe(true);
+      expect(trendReportSchema.safeParse(written).success).toBe(true);
       expect(written).toStrictEqual(report);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -191,7 +197,7 @@ describe('runPipeline', () => {
       // The default `--until` bound resolves to "today": roughly now.
       expect(Date.parse(report.parameters.until)).toBeGreaterThan(Date.now() - 60_000);
       expect(Date.parse(report.parameters.until)).toBeLessThan(Date.now() + 60_000);
-      expect(report.repositories[0].range).toEqual({
+      expect(report.periods[0].repositories[0].range).toEqual({
         since: report.parameters.since,
         until: report.parameters.until,
       });
@@ -208,9 +214,9 @@ describe('runPipeline', () => {
       const report = await runPipeline(
         options({ repos: [repo.url], cacheDir, since: '2026-01-01T00:00:00Z' }),
       );
-      expect(report.repositories[0].users).toEqual([]);
-      expect(report.repositories[0].head).toBe('');
-      expect(report.repositories[0].stats).toEqual({
+      expect(report.periods[0].repositories[0].users).toEqual([]);
+      expect(report.periods[0].repositories[0].head).toBe('');
+      expect(report.periods[0].repositories[0].stats).toEqual({
         totalCommits: 0,
         totalUsers: 0,
         topLanguages: [],
@@ -269,6 +275,101 @@ describe('runPipeline', () => {
       expect(stderrWrite).not.toHaveBeenCalled();
     } finally {
       vi.restoreAllMocks();
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('with --unit month reports one period per month, zeroing inactive users', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-15T10:00:00Z',
+        message: 'feat: january',
+        files: [{ path: 'src/a.ts', content: 'a\n' }],
+      },
+      {
+        author: { name: 'Bob', email: 'bob@example.com' },
+        date: '2026-03-10T11:00:00Z',
+        message: 'docs: march',
+        files: [{ path: 'README.md', content: 'hi\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    try {
+      const report = await runPipeline(
+        options({
+          repos: [repo.url],
+          cacheDir,
+          unit: 'month',
+          since: '2026-01-01T00:00:00Z',
+          until: '2026-03-31T23:59:59Z',
+        }),
+      );
+
+      // The run parameters record the unit; the repository entries are
+      // nested one level deeper, per period.
+      expect(report.parameters.unit).toBe('month');
+      expect(report.parameters.since).toBe('2026-01-01T00:00:00.000Z');
+      expect(report.periods).toHaveLength(3);
+
+      // January and March carry their commits; February is empty but
+      // still reported, with both users zeroed. Group order follows
+      // the newest-first commit list: Bob (Mar) before Alice (Jan).
+      expect(report.periods[0]).toMatchObject({
+        since: '2026-01-01T00:00:00.000Z',
+        until: '2026-01-31T23:59:59.999Z',
+      });
+      expect(report.periods[0].repositories[0].stats.totalCommits).toBe(1);
+      expect(report.periods[0].repositories[0].users.map((user) => user.name)).toEqual([
+        'Bob',
+        'Alice',
+      ]);
+      expect(report.periods[0].repositories[0].users[0].deterministic.commits).toBe(0);
+      expect(report.periods[0].repositories[0].users[1].deterministic.commits).toBe(1);
+
+      expect(report.periods[1]).toMatchObject({
+        since: '2026-02-01T00:00:00.000Z',
+        until: '2026-02-28T23:59:59.999Z',
+      });
+      expect(report.periods[1].repositories[0].stats).toEqual({
+        totalCommits: 0,
+        totalUsers: 2,
+        topLanguages: [],
+      });
+      // The same user list as every other period, with zeroed metrics.
+      expect(report.periods[1].repositories[0].users.map((user) => user.name)).toEqual([
+        'Bob',
+        'Alice',
+      ]);
+      for (const user of report.periods[1].repositories[0].users) {
+        expect(user.deterministic).toMatchObject({
+          commits: 0,
+          nonMergeCommits: 0,
+          linesAdded: 0,
+          linesRemoved: 0,
+          filesTouched: 0,
+          uniqueFilesTouched: 0,
+          activeDays: 0,
+          firstCommitAt: '',
+          lastCommitAt: '',
+          avgCommitSize: 0,
+          languages: {},
+        });
+      }
+
+      expect(report.periods[2]).toMatchObject({
+        since: '2026-03-01T00:00:00.000Z',
+        until: '2026-03-31T23:59:59.000Z',
+      });
+      expect(report.periods[2].repositories[0].stats.totalCommits).toBe(1);
+      expect(report.periods[2].repositories[0].users.map((user) => user.name)).toEqual([
+        'Bob',
+        'Alice',
+      ]);
+      expect(report.periods[2].repositories[0].users[0].deterministic.commits).toBe(1);
+      expect(report.periods[2].repositories[0].users[1].deterministic.commits).toBe(0);
+    } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }

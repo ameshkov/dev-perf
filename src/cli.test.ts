@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import { registerCommands } from './cli.js';
-import { reportSchema } from './report/schema.js';
+import { trendReportSchema } from './report/schema.js';
 
 function createProgram(): Command {
   const program = new Command();
@@ -27,6 +27,7 @@ describe('cli', () => {
     expect(help).toContain('[repo...]');
     expect(help).toContain('--since <date>');
     expect(help).toContain('--until <date>');
+    expect(help).toContain('--unit <unit>');
     expect(help).toContain('--output <file>');
     expect(help).toContain('--cache-dir <dir>');
     expect(help).toContain('--refresh');
@@ -69,6 +70,26 @@ describe('cli', () => {
     );
   });
 
+  it('parses the --unit option', () => {
+    const program = createProgram();
+    let parsed: { repos: string[]; options: Record<string, unknown> } | undefined;
+
+    program.action((repos: string[], options: Record<string, unknown>) => {
+      parsed = { repos, options };
+    });
+
+    program.parse(['node', 'dev-perf', '--no-llm', '--unit', 'month', 'repo.git']);
+
+    expect(parsed?.options).toEqual(expect.objectContaining({ unit: 'month' }));
+  });
+
+  it('rejects --unit without --since', async () => {
+    const program = createProgram();
+    await expect(
+      program.parseAsync(['node', 'dev-perf', '--no-llm', '--unit', 'month', 'repo.git']),
+    ).rejects.toThrow(/--since: required when --unit is set/);
+  });
+
   it('rejects when neither positional arguments nor DEV_PERF_REPOS are given', async () => {
     const program = createProgram();
     await expect(program.parseAsync(['node', 'dev-perf'])).rejects.toThrow(
@@ -94,11 +115,11 @@ describe('cli', () => {
       const program = createProgram();
       await program.parseAsync(['node', 'dev-perf', repo.url]);
 
-      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.parameters.llmEnabled).toBe(false);
-        expect(result.data.repositories).toHaveLength(1);
+        expect(result.data.periods[0].repositories).toHaveLength(1);
       }
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -125,11 +146,11 @@ describe('cli', () => {
       const program = createProgram();
       await program.parseAsync(['node', 'dev-perf']);
 
-      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.parameters.repos).toEqual([repo.url]);
-        expect(result.data.repositories).toHaveLength(1);
+        expect(result.data.periods[0].repositories).toHaveLength(1);
       }
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -165,14 +186,14 @@ describe('cli', () => {
         repo.url,
       ]);
 
-      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.parameters.repos).toEqual([repo.url]);
         expect(result.data.parameters.llmEnabled).toBe(false);
-        expect(result.data.repositories).toHaveLength(1);
-        expect(result.data.repositories[0].users).toHaveLength(1);
-        expect(result.data.repositories[0].users[0]).toMatchObject({
+        expect(result.data.periods[0].repositories).toHaveLength(1);
+        expect(result.data.periods[0].repositories[0].users).toHaveLength(1);
+        expect(result.data.periods[0].repositories[0].users[0]).toMatchObject({
           name: 'Alice',
           llm: { status: 'skipped' },
         });

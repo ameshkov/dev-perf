@@ -98,6 +98,8 @@ dev-perf/
 │   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration, pipeline wiring)
 │   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json (provider, permissions), devperf-analyst agent file, env isolation, auth.set
 │   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
+│   │   ├── shutdown.ts       # Server teardown: waits (bounded) for `opencode serve` to exit after SIGTERM, then force-kills the listener and its process tree
+│   │   ├── shutdown.test.ts  # Port liveness probe + process-tree kill escalation tests (real TCP listeners, mocked lsof/pgrep)
 │   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
 │   │   ├── tools.test.ts     # Generated tool content + execution tests
 │   │   ├── prompts.ts        # Prompt rendering: loads the markdown templates from prompts/ and substitutes values (§6.3, §6.5)
@@ -108,10 +110,15 @@ dev-perf/
 │   │   ├── session.test.ts   # Session wrapper, report-file, and usage-collector tests with a stubbed client
 │   │   ├── analyze.ts        # Orchestration: orientation, per-user sessions, enforcement loop, LLM result cache (§6.6)
 │   │   └── analyze.test.ts   # Enforcement, cache idempotency/refresh, and session scoping with stub sessions
+│   ├── trend/                 # Time-based period splitting (`--unit`): UTC-aligned periods + per-period commit filtering
+│   │   ├── periods.ts         # splitPeriods (day/week/month/quarter/year boundaries, trimming, inclusive until) + filterGroupsForPeriod
+│   │   └── periods.test.ts    # Boundary anchoring, trimming, empty-period inclusion, and filtering tests
 │   ├── util/                 # Shared helpers, no business logic
 │   │   ├── error.ts          # Error detail rendering: cause-chain aware (fetch failures surface their real reason)
+│   │   ├── exit.ts           # Flush-aware forced process exit (the CLI must not hang on lingering child processes)
+│   │   ├── exit.test.ts      # Exit-helper tests (immediate, drain, and safety-timeout paths)
 │   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
-│   │   └── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
+│   │   ├── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
 │   └── report/               # Report schema, the single source of truth (design §7)
 │       ├── index.ts          # Barrel: public API of the report module
 │       ├── schema.ts         # zod schemas + inferred types for the whole report
@@ -225,6 +232,15 @@ Universal design principles this codebase follows:
   Progress and errors go to stderr through the level-based logger
   (`src/util/log.ts`): `error`/`warn` messages always, `info`/`debug`
   messages only when `--verbose` is set.
+- **Guaranteed CLI exit** — the CLI must terminate once the report is
+  written: the entry point forces a clean exit (waiting for stdout to
+  flush first) instead of relying on the event loop draining, because
+  the opencode server's child process and its stdio pipes can outlive
+  the pipeline. Server teardown additionally waits (bounded) for the
+  process to exit and then force-kills the listener with its whole
+  process tree when it ignores SIGTERM (escalation is unconditional —
+  a no-op when the server already exited), so a stuck server can
+  neither hang the CLI nor leak a process.
 - **Keep It Boring** — prefer well-understood patterns over clever or
   novel solutions.
 - **Prompts as template files** — LLM prompt text lives in dedicated

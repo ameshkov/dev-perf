@@ -37,9 +37,30 @@ and this project adheres to
   analysis prompt) and long-running operations log a periodic "still
   waiting" line with elapsed time, so a slow or stuck model call is
   visible instead of an endless silent wait.
+- Time-based period reports with `--unit day|week|month|quarter|year`:
+  the analyzed range is split into UTC-aligned periods and the report
+  carries one full per-repository report per period, including empty
+  periods with zeroed metrics; the user list is the same in every
+  period, and the LLM analysis runs per period for the users active in
+  it. `--since` is required when `--unit` is set.
+
+### Changed
+
+- The report document is now schema v2: repository entries are always
+  wrapped in a `periods` array (a single period covers the whole range
+  without `--unit`). **Breaking change** for consumers of the previous
+  flat `repositories` shape — the repository entries move one level
+  deeper under `periods[0]`, and the `parameters` may carry a `unit`.
 
 ### Fixed
 
+- The CLI now exits after writing the report even when the opencode
+  server does not shut down: the entry point forces a clean exit once
+  stdout has flushed, and a server that ignores SIGTERM is force-killed
+  after a short grace period (previously the process hung forever with
+  the server's pipes keeping it alive). The force-kill also cleans up
+  the server's whole process tree — including child processes a stuck
+  server is waiting on — so a hung server leaks nothing either.
 - Date-only `--since`/`--until` values (e.g. `2026-01-01`) are now
   resolved to midnight / end of day (UTC) instead of the run's time of
   day, so the analyzed range — and the LLM result cache keyed on it —

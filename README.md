@@ -32,6 +32,8 @@ Arguments:
 Options:
   --since <date>         Start date, e.g. 2026-01-01 (any git date format)
   --until <date>         End date (default: today)
+  --unit <unit>          Split the range into periods: day, week, month,
+                         quarter, year (requires --since)
   --output <file>        Write the JSON report to a file (default: stdout)
   --cache-dir <dir>      Cache directory for cloned repos and LLM results
                          (default: .dev-perf/cache)
@@ -69,6 +71,17 @@ carries nothing but the report JSON, and a default run is silent apart from
 errors and warnings (e.g. when a host rejects partial clones and the full-clone
 fallback kicks in).
 
+Time-based period reports: with `--unit day|week|month|quarter|year`, the
+`--since`/`--until` range is split into consecutive UTC-aligned periods (days
+at midnight, weeks at Monday, months at the 1st, quarters at Jan/Apr/Jul/Oct,
+years at Jan 1) and the report carries one full per-repository report per
+period. Periods with no commits are included with zeroed metrics, the user
+list is the same in every period, and the LLM analysis runs per period for
+the users active in it. `--since` is required with `--unit` (an unbounded
+range cannot be split). Without `--unit`, a single period covers the whole
+range — the report is the same content, nested one level deeper under
+`periods`.
+
 Example:
 
 ```console
@@ -93,42 +106,55 @@ Example output (abridged):
 
 ```json
 {
-  "repositories": [
+  "schemaVersion": 2,
+  "parameters": {
+    "repos": ["https://github.com/org/repo.git"],
+    "since": "2026-01-01T00:00:00.000Z",
+    "until": "2026-06-30T23:59:59.000Z",
+    "llmEnabled": true
+  },
+  "periods": [
     {
-      "repo": "https://github.com/org/repo.git",
-      "users": [
+      "since": "2026-01-01T00:00:00.000Z",
+      "until": "2026-01-31T23:59:59.999Z",
+      "repositories": [
         {
-          "name": "Jane Doe",
-          "deterministic": {
-            "commits": 42,
-            "linesAdded": 1234,
-            "linesRemoved": 567,
-            "filesTouched": 89,
-            "activeDays": 15,
-            "languages": {
-              "TypeScript": { "linesAdded": 900, "linesRemoved": 400 }
-            }
-          },
-          "llm": {
-            "status": "completed",
-            "overview": "Jane shipped the reporting module and cleaned up the CLI…",
-            "contributions": [
-              {
-                "title": "Reporting module",
-                "types": ["feature"],
-                "complexity": "high",
-                "areas": ["src/reporting"]
+          "repo": "https://github.com/org/repo.git",
+          "users": [
+            {
+              "name": "Jane Doe",
+              "deterministic": {
+                "commits": 42,
+                "linesAdded": 1234,
+                "linesRemoved": 567,
+                "filesTouched": 89,
+                "activeDays": 15,
+                "languages": {
+                  "TypeScript": { "linesAdded": 900, "linesRemoved": 400 }
+                }
               },
-              {
-                "title": "CLI cleanup",
-                "types": ["refactor"],
-                "complexity": "medium",
-                "areas": ["src/cli"]
+              "llm": {
+                "status": "completed",
+                "overview": "Jane shipped the reporting module and cleaned up the CLI…",
+                "contributions": [
+                  {
+                    "title": "Reporting module",
+                    "types": ["feature"],
+                    "complexity": "high",
+                    "areas": ["src/reporting"]
+                  },
+                  {
+                    "title": "CLI cleanup",
+                    "types": ["refactor"],
+                    "complexity": "medium",
+                    "areas": ["src/cli"]
+                  }
+                ],
+                "tokenUsage": { "input": 102400, "output": 5120 },
+                "estimatedCostUsd": 0.0031
               }
-            ],
-            "tokenUsage": { "input": 102400, "output": 5120 },
-            "estimatedCostUsd": 0.0031
-          }
+            }
+          ]
         }
       ]
     }
@@ -150,6 +176,7 @@ in the shell are never overridden by `.env`.
 | `<repo...>` | `DEV_PERF_REPOS` | Comma-separated list |
 | `--since <date>` | `DEV_PERF_SINCE` | Any git date format |
 | `--until <date>` | `DEV_PERF_UNTIL` | Default: today |
+| `--unit <unit>` | `DEV_PERF_UNIT` | day/week/month/quarter/year; requires `--since` |
 | `--output <file>` | `DEV_PERF_OUTPUT` | Default: stdout |
 | `--cache-dir <dir>` | `DEV_PERF_CACHE_DIR` | Default: .dev-perf/cache |
 | `--refresh` | `DEV_PERF_REFRESH` | Boolean |

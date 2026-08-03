@@ -3,17 +3,17 @@
  * probed against a real local TCP server (so the connect semantics are
  * exercised for real), `waitForServerExit` runs against a real server
  * with an injected kill function (the force-kill is never actually
- * executed against the test runner), and `killPortListener`'s lsof
- * parsing and kill are covered with a mocked `execa` — the real
- * command would resolve to the test process's own PID and SIGKILL the
- * runner, so mocking is required there.
+ * executed against the test runner), and `killPortListener`'s lsof and
+ * pgrep parsing and tree kill are covered with a mocked `execa` — the
+ * real command would resolve to the test process's own PID and SIGKILL
+ * the runner, so mocking is required there.
  */
 import { createServer, type Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as log from '../util/log.js';
 import { killPortListener, serverAlive, waitForServerExit } from './shutdown.js';
 
-/** The execa mock: `killPortListener` resolves lsof output through it. */
+/** The execa mock: `killPortListener` resolves lsof/pgrep output through it. */
 const execaMock = vi.hoisted(() => ({ execa: vi.fn() }));
 
 vi.mock('execa', () => ({ execa: execaMock.execa }));
@@ -80,15 +80,20 @@ describe('waitForServerExit', () => {
     execaMock.execa.mockReset();
   });
 
-  it('resolves without killing when the server exits promptly', async () => {
+  it('runs the force-kill after a prompt exit but kills and logs nothing', async () => {
     const server = await startListener();
     const kill = vi.fn(async () => undefined);
+    const warn = vi.spyOn(log, 'logWarn').mockImplementation(() => {});
     try {
       const url = serverUrl(server);
       const waiting = waitForServerExit(url, { timeoutMs: 2_000, kill });
       await stopListener(server);
       await waiting;
-      expect(kill).not.toHaveBeenCalled();
+      // Escalation is unconditional: the kill runs even after a prompt
+      // exit, but finds nothing to kill and logs no warning.
+      expect(kill).toHaveBeenCalledTimes(1);
+      expect(kill).toHaveBeenCalledWith(url);
+      expect(warn).not.toHaveBeenCalled();
     } finally {
       await stopListener(server).catch(() => {});
     }
@@ -130,17 +135,47 @@ describe('killPortListener', () => {
   });
 
   it('force-kills the PID lsof reports for the port', async () => {
-    execaMock.execa.mockResolvedValue({ stdout: '12345\n' });
+    execaMock.execa
+      .mockResolvedValueOnce({ stdout: '12345\n' }) // lsof
+      .mockResolvedValueOnce({ stdout: '' }); // pgrep -P 12345 (no children)
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
 
     await expect(killPortListener('http://127.0.0.1:4096')).resolves.toBe(12345);
-    expect(execaMock.execa).toHaveBeenCalledWith('lsof', [
+    expect(execaMock.execa).toHaveBeenNthCalledWith(1, 'lsof', [
       '-nP',
       '-t',
       '-sTCP:LISTEN',
       '-iTCP:4096',
     ]);
+    expect(execaMock.execa).toHaveBeenNthCalledWith(2, 'pgrep', ['-P', '12345']);
+    expect(kill).toHaveBeenCalledWith(-12345, 'SIGKILL');
     expect(kill).toHaveBeenCalledWith(12345, 'SIGKILL');
+  });
+
+  it('force-kills the listener and its whole process tree', async () => {
+    execaMock.execa
+      .mockResolvedValueOnce({ stdout: '12345\n' }) // lsof
+      .mockResolvedValueOnce({ stdout: '111\n222\n' }) // pgrep -P 12345
+      .mockResolvedValueOnce({ stdout: '' }) // pgrep -P 111 (no children)
+      .mockResolvedValueOnce({ stdout: '' }); // pgrep -P 222 (no children)
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    await expect(killPortListener('http://127.0.0.1:4096')).resolves.toBe(12345);
+    expect(kill).toHaveBeenCalledWith(111, 'SIGKILL');
+    expect(kill).toHaveBeenCalledWith(222, 'SIGKILL');
+    expect(kill).toHaveBeenCalledWith(12345, 'SIGKILL');
+  });
+
+  it('kills every listener the port reports', async () => {
+    execaMock.execa
+      .mockResolvedValueOnce({ stdout: '100\n200\n' }) // lsof
+      .mockResolvedValueOnce({ stdout: '' }) // pgrep -P 100
+      .mockResolvedValueOnce({ stdout: '' }); // pgrep -P 200
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    await expect(killPortListener('http://127.0.0.1:4096')).resolves.toBe(100);
+    expect(kill).toHaveBeenCalledWith(100, 'SIGKILL');
+    expect(kill).toHaveBeenCalledWith(200, 'SIGKILL');
   });
 
   it('returns undefined when lsof fails or finds nothing', async () => {
@@ -157,10 +192,13 @@ describe('killPortListener', () => {
   it('returns undefined when lsof output has no PID', async () => {
     execaMock.execa.mockResolvedValue({ stdout: '' });
     await expect(killPortListener('http://127.0.0.1:4096')).resolves.toBeUndefined();
+    expect(execaMock.execa).toHaveBeenCalledTimes(1);
   });
 
   it('returns undefined when the process is already gone', async () => {
-    execaMock.execa.mockResolvedValue({ stdout: '777\n' });
+    execaMock.execa
+      .mockResolvedValueOnce({ stdout: '777\n' }) // lsof
+      .mockResolvedValueOnce({ stdout: '' }); // pgrep -P 777 (no children)
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw new Error('ESRCH: no such process');
     });
