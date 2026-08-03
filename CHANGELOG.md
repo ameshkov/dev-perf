@@ -10,6 +10,28 @@ and this project adheres to
 
 ### Added
 
+- Deterministic metrics (`src/deterministic/metrics.ts`, design §5.2):
+  per-user aggregation over parsed commits — commits, non-merge and
+  merge counts, lines added/removed, net lines, files touched
+  (commit-file pairs) and unique files, active days (distinct UTC
+  author dates), first/last author dates (UTC), average non-merge
+  commit size, and per-language contributions — plus repo-level
+  statistics (total commits, total users, top languages by lines
+  added).
+- Language identification (`src/deterministic/languages.ts`, design
+  §5.2): a built-in extension→language map (with well-known
+  extensionless filenames like `Dockerfile` / `Makefile` and an
+  `Unknown` fallback), and per-language `linesAdded`, `linesRemoved`,
+  and `filesTouched` counted from numstat paths cloc-style — applied
+  to contributions, not the whole tree; binary files count as touched
+  with zero lines.
+- `src/report/index.ts` now exports the deterministic metrics,
+  language-contribution, and repository-stats types through the
+  barrel, and `src/deterministic/metrics.ts` / `languages.ts` import
+  them from there. The types stay tagged as internal JSDoc until the
+  pipeline (plan step 5) wires the layer and the `knip.config.ts`
+  `ignoreFiles` entries are removed; `Commit` and `AuthorGroup`
+  gained production importers.
 - Commit extraction (`src/deterministic/commits.ts`, design §5.1): a
   single-pass `git log --numstat --no-renames` with the `%x1f`/`%x1e`
   record format. Each commit's sha, parents, author name/email, ISO

@@ -1,0 +1,148 @@
+/**
+ * Language identification (docs/design.md §5.2): a built-in
+ * extension→language map, so per-language contribution counts can be
+ * computed cloc-style from numstat paths — applied to contributions,
+ * not the whole tree.
+ */
+import type { LanguageContribution } from '../report/index.js';
+import type { Commit } from './commits.js';
+
+/** Fallback language for file paths no mapping recognizes. */
+const UNKNOWN_LANGUAGE = 'Unknown';
+
+/**
+ * Extension→language map for well-known extensions (lowercased keys
+ * without the leading dot).
+ */
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  ts: 'TypeScript',
+  tsx: 'TypeScript',
+  js: 'JavaScript',
+  jsx: 'JavaScript',
+  mjs: 'JavaScript',
+  cjs: 'JavaScript',
+  py: 'Python',
+  go: 'Go',
+  rs: 'Rust',
+  java: 'Java',
+  c: 'C',
+  h: 'C/C++ Header',
+  cpp: 'C++',
+  cc: 'C++',
+  cxx: 'C++',
+  hpp: 'C++',
+  hh: 'C++',
+  hxx: 'C++',
+  cs: 'C#',
+  rb: 'Ruby',
+  php: 'PHP',
+  swift: 'Swift',
+  kt: 'Kotlin',
+  kts: 'Kotlin',
+  scala: 'Scala',
+  sh: 'Shell',
+  bash: 'Shell',
+  zsh: 'Shell',
+  fish: 'Shell',
+  ps1: 'PowerShell',
+  sql: 'SQL',
+  html: 'HTML',
+  htm: 'HTML',
+  css: 'CSS',
+  scss: 'SCSS',
+  less: 'Less',
+  md: 'Markdown',
+  markdown: 'Markdown',
+  rst: 'reStructuredText',
+  json: 'JSON',
+  jsonc: 'JSON',
+  yaml: 'YAML',
+  yml: 'YAML',
+  toml: 'TOML',
+  xml: 'XML',
+  txt: 'Text',
+  vue: 'Vue',
+  svelte: 'Svelte',
+  astro: 'Astro',
+  dart: 'Dart',
+  lua: 'Lua',
+  r: 'R',
+  pl: 'Perl',
+  ex: 'Elixir',
+  exs: 'Elixir',
+  erl: 'Erlang',
+  hs: 'Haskell',
+  clj: 'Clojure',
+  cljs: 'ClojureScript',
+  groovy: 'Groovy',
+  gradle: 'Groovy',
+  proto: 'Protocol Buffers',
+  graphql: 'GraphQL',
+  gql: 'GraphQL',
+};
+
+/**
+ * Whole-filename→language map (lowercased keys) for files whose name
+ * carries no useful extension.
+ */
+const FILENAME_LANGUAGES: Record<string, string> = {
+  dockerfile: 'Dockerfile',
+  makefile: 'Makefile',
+  'cmakelists.txt': 'CMake',
+};
+
+/**
+ * Maps a file path to a language name via the built-in map
+ * (design §5.2): the basename is matched against the filename map
+ * first, then the extension after its last dot. Matching is
+ * case-insensitive; paths nothing matches fall back to `Unknown`.
+ *
+ * @param filePath - Path as reported by git numstat.
+ * @returns The language name.
+ *
+ * @internal Exported for tests only (`languages.test.ts` asserts the
+ * mapping); used by `countLanguageContributions` within the module.
+ * Not part of the public module API.
+ */
+export function languageForPath(filePath: string): string {
+  const baseName = filePath.slice(filePath.lastIndexOf('/') + 1).toLowerCase();
+  const byName = FILENAME_LANGUAGES[baseName];
+  if (byName !== undefined) {
+    return byName;
+  }
+  const dot = baseName.lastIndexOf('.');
+  if (dot === -1) {
+    return UNKNOWN_LANGUAGE;
+  }
+  return EXTENSION_LANGUAGES[baseName.slice(dot + 1)] ?? UNKNOWN_LANGUAGE;
+}
+
+/**
+ * Counts per-language contributions over commits (design §5.2):
+ * `linesAdded`, `linesRemoved`, and `filesTouched` (commit-file pairs)
+ * are summed per language mapped from each numstat path. Binary files
+ * (no line counts) contribute zero lines but still count as touched;
+ * unmapped paths land under `Unknown`.
+ *
+ * @param commits - Commits to count over, typically one author's.
+ * @returns Per-language contribution counts, keyed by language name.
+ */
+export function countLanguageContributions(
+  commits: Commit[],
+): Record<string, LanguageContribution> {
+  const byLanguage = new Map<string, LanguageContribution>();
+  for (const commit of commits) {
+    for (const file of commit.files) {
+      const language = languageForPath(file.path);
+      let contribution = byLanguage.get(language);
+      if (contribution === undefined) {
+        contribution = { linesAdded: 0, linesRemoved: 0, filesTouched: 0 };
+        byLanguage.set(language, contribution);
+      }
+      contribution.linesAdded += file.added ?? 0;
+      contribution.linesRemoved += file.deleted ?? 0;
+      contribution.filesTouched += 1;
+    }
+  }
+  return Object.fromEntries(byLanguage);
+}

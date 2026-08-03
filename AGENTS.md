@@ -83,7 +83,11 @@ dev-perf/
 │   │   ├── commits.ts        # Single-pass git log --numstat parsing + author-date filtering (§5.1, §5.4)
 │   │   ├── commits.test.ts   # Parsing golden tests against fixture repos
 │   │   ├── identity.ts       # Email grouping, display name, bot flag (§5.3)
-│   │   └── identity.test.ts  # Identity grouping tests
+│   │   ├── identity.test.ts  # Identity grouping tests
+│   │   ├── metrics.ts        # Per-user and repo-level metrics aggregation (§5.2)
+│   │   ├── metrics.test.ts   # Exact-value metrics tests against fixture repos
+│   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
+│   │   └── languages.test.ts # Language mapping and counting tests
 │   ├── util/                 # Shared helpers, no business logic
 │   │   └── json.ts           # Pretty-print, read/write, safe JSON parse
 │   └── report/               # Report schema, the single source of truth (design §7)
