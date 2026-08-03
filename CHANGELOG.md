@@ -10,6 +10,24 @@ and this project adheres to
 
 ### Added
 
+- Repo management (`src/repo/`, design §4): an `execa`-based git
+  wrapper (`git.ts`) with typed `GitError` and helpers for clone, log,
+  show, shortlog, and rev-parse; the cache layout (`cache.ts`) with the
+  default `.dev-perf/cache` root, the `sha256(url).slice(0, 16)` entry
+  hash, `repo/`/`clone.json`/`llm/`/`opencode/` path builders, and
+  zod-validated `clone.json` read/write; and `ensureClone`
+  (`clone.ts`) that reuses the cached clone when `repo/` exists and
+  `clone.json` matches, re-clones on `--refresh` (removing the old
+  `repo/`), clones with `--filter=blob:none` (partial clone, `file://`
+  form for local paths), and falls back to a full clone when the
+  hosting rejects partial clones.
+- JSON helpers (`src/util/json.ts`) — pretty-print, safe parse, and
+  read/write of JSON files, used by the cache now and the pipeline
+  output later.
+- Test fixture helper (`test/fixtures/repo-builder.ts`, design §9) that
+  builds temporary git repos with known files, authors, and exact
+  author dates, so metrics can be asserted exactly.
+- `execa` dependency (10.0.1, pinned exactly).
 - Report schema (`src/report/schema.ts`) — the single source of truth
   for the report shape (design §7): parameters, repository and user
   entries, deterministic metrics, per-language contributions, and the
@@ -33,3 +51,10 @@ and this project adheres to
   `DEV_PERF_API_KEY`.
 - `docs/plan.md` with the step-by-step implementation plan for the
   analysis pipeline described in `docs/design.md`.
+
+### Changed
+
+- `knip.config.ts`: `ignoreFiles` for `src/repo/**` and `src/util/**`
+  (modules with no production importer until the pipeline lands in plan
+  step 5) and `ignoreDependencies` for `execa`; both stay active until
+  the pipeline wires the modules.

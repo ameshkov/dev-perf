@@ -72,10 +72,22 @@ dev-perf/
 │   ├── cli.test.ts           # CLI surface tests
 │   ├── config.ts             # zod validation of parsed CLI options (cross-field rules)
 │   ├── config.test.ts        # CLI options validation tests
+│   ├── repo/                 # Clone/cache management (design §4)
+│   │   ├── git.ts            # execa-based git wrapper + helpers (clone, log, show, shortlog, rev-parse)
+│   │   ├── git.test.ts       # Wrapper integration tests against fixture repos
+│   │   ├── cache.ts          # Cache root, entry hash, layout paths, clone.json (zod)
+│   │   ├── cache.test.ts     # Cache layout and clone.json tests
+│   │   ├── clone.ts          # ensureClone: cache reuse, --refresh, partial-clone fallback
+│   │   └── clone.test.ts     # Clone/cache reuse integration tests
+│   ├── util/                 # Shared helpers, no business logic
+│   │   └── json.ts           # Pretty-print, read/write, safe JSON parse
 │   └── report/               # Report schema, the single source of truth (design §7)
 │       ├── index.ts          # Barrel: public API of the report module
 │       ├── schema.ts         # zod schemas + inferred types for the whole report
 │       └── schema.test.ts    # Report schema validation tests
+├── test/
+│   └── fixtures/
+│       └── repo-builder.ts   # Builds temp git repos with known files, authors, commits
 ├── docs/
 │   ├── design.md             # Full design document
 │   └── plan.md               # Step-by-step implementation plan
@@ -178,9 +190,9 @@ This project's layers, from top to bottom:
 - **CLI** (`src/cli.ts`) — commander program definition: arguments,
   options, and the action that drives the analysis pipeline.
 - **Services** — own all business logic: clone/cache management,
-  deterministic analysis, LLM orchestration, report assembly. Planned
-  directories: `src/repo/`, `src/deterministic/`, `src/llm/`,
-  `src/report/`.
+  deterministic analysis, LLM orchestration, report assembly.
+  Directories: `src/repo/` (implemented), `src/deterministic/`,
+  `src/llm/` (planned), `src/report/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 
