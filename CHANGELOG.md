@@ -123,6 +123,18 @@ and this project adheres to
 
 ### Changed
 
+- `--verbose` is now wired through the pipeline (plan step 6): progress
+  messages — cache reuse vs a fresh clone (with duration), the
+  resolved author-date range, and per-repo commit counts — go to
+  stderr, while stdout stays reserved for the report JSON. A default
+  run is silent apart from errors and warnings.
+- `src/util/log.ts` (new): a dependency-free, level-based stderr
+  logger — quiet by default (`error` and `warn` always printed;
+  `--verbose` enables `info` and `debug`). The top-level fatal error
+  handler in `src/index.ts` routes through `logError` instead of a
+  bare `console.error`, and `ensureClone` warns on stderr when a host
+  rejects the partial-clone filter and the full-clone fallback kicks
+  in.
 - The CLI action runs the pipeline (see Added), so invoking an
   analysis no longer fails with the not-implemented error.
 - `knip.config.ts`: removed the `ignoreFiles` entries for `src/repo/**`,

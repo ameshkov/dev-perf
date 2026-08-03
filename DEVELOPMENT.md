@@ -72,7 +72,7 @@ node build/index.js --no-llm /path/to/some/git/repo
 
 This clones the repository into the cache (`.dev-perf/cache` by
 default), analyzes git history, and prints the JSON report to stdout.
-LLM analysis (plan steps 6-8) is not implemented yet: running without
+LLM analysis (plan steps 7-9) is not implemented yet: running without
 `--no-llm` fails validation because `--model`, `--provider-url`, and
 `--api-key` are required for it. A `.env` file in the current working
 directory is auto-loaded (`DEV_PERF_API_KEY` is the only documented
@@ -108,6 +108,10 @@ node build/index.js --no-llm --since 2026-01-01 --until 2026-12-31 \
 
 # Argument validation (should fail with a clear error)
 node build/index.js
+
+# Verbose run: progress (clone vs cache reuse, range, commit counts)
+# goes to stderr, the report JSON stays on stdout
+node build/index.js --no-llm --verbose /tmp/fixture
 ```
 
 Building a fixture repository:
@@ -123,6 +127,10 @@ cd - && node build/index.js --no-llm /tmp/fixture
 
 A second run with the same repository reuses the cached clone; pass
 `--refresh` to force a re-clone.
+
+`--verbose` shows what the pipeline is doing on stderr — clone vs cache
+reuse (with duration), the resolved author-date range, and per-repo
+commit counts — while stdout stays reserved for the report JSON.
 
 ## Code Quality Gates
 

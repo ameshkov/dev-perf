@@ -53,7 +53,7 @@ export function registerCommands(program: Command): void {
  * Runs the analysis pipeline: validate the parsed options (design §3),
  * then clone → deterministic analysis → report assembly, producing the
  * report document (docs/design.md §2, §7). The LLM phase (plan steps
- * 6-8) is not wired in yet; until then, `--no-llm` is the only path
+ * 7-9) is not wired in yet; until then, `--no-llm` is the only path
  * that reaches the pipeline.
  *
  * @param repos - Repositories to analyze, as given on the command line.

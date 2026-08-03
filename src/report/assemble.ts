@@ -76,7 +76,7 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
 /**
  * Builds the user entry for one author group (design §7): display
  * name, the grouped email, bot flag, deterministic metrics, and a
- * skipped LLM analysis — the LLM phase (plan steps 6-8) replaces it
+ * skipped LLM analysis — the LLM phase (plan steps 7-9) replaces it
  * once it runs.
  *
  * @param group - The author group.

@@ -2,7 +2,7 @@
 
 This is the step-by-step implementation plan for the analysis pipeline
 described in [docs/design.md](./design.md). The work is split into
-**8 steps**, each a self-contained, PR-sized chunk that leaves the
+**9 steps**, each a self-contained, PR-sized chunk that leaves the
 repository green (`pnpm check` passes). The steps are sequential —
 each one builds on the outputs of the previous ones.
 
@@ -12,7 +12,7 @@ Three milestones mark user-visible progress:
 | --- | --- | --- |
 | M1 — Foundation | 1-2 | Report schema, CLI validation, clone/cache management |
 | M2 — Deterministic report | 3-5 | First usable release: `--no-llm` produces the JSON report |
-| M3 — LLM agentic layer | 6-8 | Full pipeline with opencode-based analysis |
+| M3 — LLM agentic layer | 7-9 | Full pipeline with opencode-based analysis |
 
 ## Conventions (apply to every step)
 
@@ -209,7 +209,51 @@ repo.
 **Done when**: `node build/index.js --no-llm <fixture>` prints a valid
 report; the e2e snapshot test passes; release candidate v0.2.0.
 
-## Step 6 — LLM layer: SDK, server lifecycle, generated config
+## Step 6 — Logging and verbose output
+
+**Goal**: a minimal stderr logger (`src/util/log.ts`, the `util/`
+module design §8 reserves for logging) and a working `--verbose`
+flag, so progress is visible on demand while stdout stays reserved
+for the JSON report (design §2). Today `--verbose` is parsed and
+validated but consumed by nothing; this step wires it through the
+whole pipeline.
+
+**Files**
+
+- `src/util/log.ts` (new) — a level-based logger with no
+  dependencies: quiet by default (warnings and errors only),
+  verbose on `--verbose` (progress and debug). Every message goes
+  to stderr — stdout carries nothing but the report JSON.
+- `src/index.ts` (edit) — route the top-level fatal error handler
+  through the logger instead of a bare `console.error`.
+- `src/pipeline.ts` (edit) — consume `options.verbose` (already
+  parsed and validated by `cli.ts` / `config.ts`, which need no
+  surface changes): log cache reuse vs fresh clone (with duration),
+  the resolved author-date range, and per-repo commit counts.
+- Later LLM steps reuse the logger: server URL and model (Step 7),
+  session progress and token usage (Step 8).
+
+**Tests**
+
+- `src/util/log.test.ts` — level gating (quiet vs verbose) and
+  stderr targeting (stdout untouched).
+- `src/pipeline.test.ts` (update) — a verbose run logs progress to
+  stderr while the JSON report goes to stdout only.
+- `test/e2e/deterministic.test.ts` (update) — run the compiled CLI
+  with `--verbose --no-llm` against a fixture repo: stdout parses as
+  the exact JSON snapshot, stderr carries progress lines.
+
+**Docs**: README.md (`--verbose` behavior), DEVELOPMENT.md (manual
+verbose run), CHANGELOG.md (Changed), AGENTS.md (Project Structure —
+`src/util/log.ts`).
+
+**Verification**: `pnpm check`.
+
+**Done when**: `--verbose` reports clone/reuse, range, and commit
+counts on stderr; a default run is silent apart from errors; the e2e
+test asserts stdout purity.
+
+## Step 7 — LLM layer: SDK, server lifecycle, generated config
 
 **Goal**: opencode-as-a-library server lifecycle and the
 report-capture tool per design §6.1-6.2 and §6.5.
@@ -230,8 +274,8 @@ rather than from dev-perf's own node_modules).
   clone; inject the API key programmatically via
   `client.auth.set()`; guarantee that no user config is merged (verify
   the `OPENCODE_CONFIG` mechanism, fall back to an empty inline
-  config — §10); shut the server down in `finally`; `--verbose` prints
-  the server URL and model.
+   config — §10); shut the server down in `finally`; the Step 6
+   logger prints the server URL and model when `--verbose` is set.
 - `src/llm/tools.ts` (new) — generate `.opencode/tools/
   devperf_report.ts` plugin source: `tool()` from `@opencode-ai/plugin`
   with a JSON-schema argument derived from `schema.ts` (all field
@@ -255,7 +299,7 @@ rather than from dev-perf's own node_modules).
 and stops against a fixture clone; the API key is injected
 programmatically, never stored in a file.
 
-## Step 7 — LLM layer: prompts, sessions, orchestration, cache
+## Step 8 — LLM layer: prompts, sessions, orchestration, cache
 
 **Goal**: sessions and orchestration per design §6.3-6.6.
 
@@ -277,8 +321,9 @@ programmatically, never stored in a file.
   follow-up prompts if the tool was not called, then exit with a
   non-zero status naming the user and session (§6.5); LLM result cache
   keyed by (repo, user, since, until, model, context/output limits),
-  invalidated by `--refresh` (§6.6); tokenUsage and estimatedCostUsd
-  accumulated for the report (§6.6).
+   invalidated by `--refresh` (§6.6); tokenUsage and estimatedCostUsd
+   accumulated for the report (§6.6); session progress and token
+   usage are logged through the Step 6 logger when verbose.
 
 **Tests**
 
@@ -295,7 +340,7 @@ programmatically, never stored in a file.
 **Done when**: enforcement and caching are proven with stubs; a
 manual run with a real provider produces a validated, cached payload.
 
-## Step 8 — Full pipeline integration and release polish (M3)
+## Step 9 — Full pipeline integration and release polish (M3)
 
 **Goal**: wire the LLM layer into the pipeline and ship the full
 report (design §7).
@@ -326,11 +371,11 @@ unchanged; release candidate v0.3.0.
 
 | Risk | Where | Mitigation |
 | --- | --- | --- |
-| SDK API stability | Step 6 | Pin the exact version; the server module is the only SDK touchpoint |
-| Provider auth failure | Step 8 | Fail fast with a clear message when the first prompt fails |
-| Global config isolation | Step 6 | Verify the `OPENCODE_CONFIG` mechanism; fall back to an empty inline config |
-| Server startup cost | Step 6 | Verify startup time; keep the `createOpencodeClient` escape hatch |
-| Session/directory scoping | Step 7 | Sessions scoped to the server cwd; explicit directory option if available |
+| SDK API stability | Step 7 | Pin the exact version; the server module is the only SDK touchpoint |
+| Provider auth failure | Step 9 | Fail fast with a clear message when the first prompt fails |
+| Global config isolation | Step 7 | Verify the `OPENCODE_CONFIG` mechanism; fall back to an empty inline config |
+| Server startup cost | Step 7 | Verify startup time; keep the `createOpencodeClient` escape hatch |
+| Session/directory scoping | Step 8 | Sessions scoped to the server cwd; explicit directory option if available |
 | Large repos | Steps 3-4 | Partial clones; per-commit diffs fetched lazily |
 | Identity / date semantics | Steps 3-4 | Email grouping and UTC author dates are the v1 contract; documented |
 

@@ -98,7 +98,7 @@ export type DeterministicMetrics = z.infer<typeof deterministicMetricsSchema>;
  * Kind of change a contribution represents (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export const contributionTypeSchema = z.enum([
@@ -116,7 +116,7 @@ export const contributionTypeSchema = z.enum([
  * Kind of change a contribution represents (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export type ContributionType = z.infer<typeof contributionTypeSchema>;
@@ -125,7 +125,7 @@ export type ContributionType = z.infer<typeof contributionTypeSchema>;
  * Complexity level of a contribution (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export const complexitySchema = z.enum(['low', 'medium', 'high']);
@@ -134,7 +134,7 @@ export const complexitySchema = z.enum(['low', 'medium', 'high']);
  * Complexity level of a contribution (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export type Complexity = z.infer<typeof complexitySchema>;
@@ -144,7 +144,7 @@ export type Complexity = z.infer<typeof complexitySchema>;
  * (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export const contributionSchema = z.object({
@@ -173,7 +173,7 @@ export const contributionSchema = z.object({
  * (design §6.5).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 6) once it exists. Remove the tag when a production importer
+ * (step 7) once it exists. Remove the tag when a production importer
  * exists.
  */
 export type Contribution = z.infer<typeof contributionSchema>;
@@ -182,7 +182,7 @@ export type Contribution = z.infer<typeof contributionSchema>;
  * Status of the LLM analysis for a user (design §7).
  *
  * @internal Exported for tests only; consumed by the LLM layer
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export const llmStatusSchema = z.enum(['completed', 'skipped', 'failed']);
@@ -191,7 +191,7 @@ export const llmStatusSchema = z.enum(['completed', 'skipped', 'failed']);
  * Status of the LLM analysis for a user (design §7).
  *
  * @internal Exported for tests only; consumed by the LLM layer
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export type LlmStatus = z.infer<typeof llmStatusSchema>;
@@ -200,7 +200,7 @@ export type LlmStatus = z.infer<typeof llmStatusSchema>;
  * Token usage of an LLM analysis (design §6.6).
  *
  * @internal Exported for tests only; consumed by the LLM layer
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export const tokenUsageSchema = z.object({
@@ -214,7 +214,7 @@ export const tokenUsageSchema = z.object({
  * Token usage of an LLM analysis (design §6.6).
  *
  * @internal Exported for tests only; consumed by the LLM layer
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
@@ -225,7 +225,7 @@ export type TokenUsage = z.infer<typeof tokenUsageSchema>;
  * LLM section.
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export const llmAnalysisSchema = z.object({
@@ -247,7 +247,7 @@ export const llmAnalysisSchema = z.object({
  * LLM-based analysis for one user (design §6.5, §7).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * (steps 6-8) once it exists. Remove the tag when a production
+ * (steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export type LlmAnalysis = z.infer<typeof llmAnalysisSchema>;

@@ -2,7 +2,7 @@
  * Analysis pipeline orchestration (docs/design.md §2, §7): for each
  * repository — clone/cache (design §4), deterministic analysis (§5),
  * report assembly — then write the report to stdout or the `--output`
- * file. The LLM phase (plan steps 6-8) plugs in between deterministic
+ * file. The LLM phase (plan steps 7-9) plugs in between deterministic
  * analysis and assembly.
  */
 import type { CliOptions } from './config.js';
@@ -12,6 +12,7 @@ import { assembleReport, assembleRepository } from './report/index.js';
 import type { AnalyzedRange, Report, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import { prettyJson, writeJsonFile } from './util/json.js';
+import { logInfo, setVerbose } from './util/log.js';
 
 /** Date string git resolves for the default `--until` bound (§3). */
 const DEFAULT_UNTIL = 'today';
@@ -21,7 +22,9 @@ const DEFAULT_UNTIL = 'today';
  * reuses the cached clone for each repository, resolves the analyzed
  * author-date range, extracts commits and groups them by author,
  * assembles the report, and writes it as pretty JSON to stdout or the
- * `--output` file.
+ * `--output` file. With `options.verbose`, progress (clone/reuse with
+ * duration, the resolved range, per-repo commit counts) is logged to
+ * stderr; stdout stays reserved for the report JSON (design §2).
  *
  * @param options - Validated CLI options (see `parseCliOptions`).
  * @returns The assembled report document.
@@ -29,6 +32,7 @@ const DEFAULT_UNTIL = 'today';
  * date cannot be parsed.
  */
 export async function runPipeline(options: CliOptions): Promise<Report> {
+  setVerbose(options.verbose === true);
   const repositories: Repository[] = [];
   let range: AnalyzedRange | undefined;
   for (const repo of options.repos) {
@@ -62,17 +66,49 @@ export async function runPipeline(options: CliOptions): Promise<Report> {
  * @returns The assembled repository entry.
  */
 async function analyzeRepository(repo: string, options: CliOptions): Promise<Repository> {
+  const startedAt = Date.now();
   const clone = await ensureClone(repo, { cacheDir: options.cacheDir, refresh: options.refresh });
+  logInfo(
+    `${clone.reused ? 'reused cached clone' : 'cloned'} ${repo} in ${Date.now() - startedAt} ms`,
+  );
   const range = await resolveRange(clone.repoDir, options.since, options.until);
+  logInfo(`range: ${rangeBound(range.since)} to ${rangeBound(range.until)}`);
   const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
+  const groups = groupByAuthor(commits);
+  logInfo(
+    `${repo}: ${pluralize(commits.length, 'commit')} from ${pluralize(Object.keys(groups).length, 'author')}`,
+  );
   return assembleRepository({
     repo,
     clonePath: clone.repoDir,
     branch: clone.branch,
     head: clone.head,
     range,
-    groups: groupByAuthor(commits),
+    groups,
   });
+}
+
+/**
+ * Formats one side of the analyzed range for progress logging: an
+ * empty string means that side is unbounded.
+ *
+ * @param bound - The resolved UTC instant, or `''` when unbounded.
+ * @returns A human-readable label.
+ */
+function rangeBound(bound: string): string {
+  return bound === '' ? 'unbounded' : bound;
+}
+
+/**
+ * Renders a count with its unit, pluralizing the unit unless the count
+ * is exactly one.
+ *
+ * @param count - The number.
+ * @param unit - The unit in singular form, e.g. `'commit'`.
+ * @returns `"1 commit"` or `"3 commits"` etc.
+ */
+function pluralize(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
 }
 
 /**

@@ -6,13 +6,14 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import type { CliOptions } from './config.js';
 import { runPipeline } from './pipeline.js';
 import { entryHash } from './repo/cache.js';
 import { gitRevParse } from './repo/git.js';
 import { reportSchema } from './report/schema.js';
+import { prettyJson } from './util/json.js';
 
 /** Defaults for a deterministic-only pipeline run. */
 function options(overrides: Partial<CliOptions> = {}): CliOptions {
@@ -215,6 +216,59 @@ describe('runPipeline', () => {
         topLanguages: [],
       });
     } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('with --verbose logs progress to stderr while stdout carries only the report', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const report = await runPipeline(
+        options({ repos: [repo.url], cacheDir, verbose: true, since: '2026-01-01T00:00:00Z' }),
+      );
+
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).toMatch(/cloned .* in \d+ ms/);
+      expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to');
+      expect(stderr).toContain('1 commit from 1 author');
+
+      const stdout = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stdout).toBe(prettyJson(report));
+    } finally {
+      vi.restoreAllMocks();
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('a default run is silent on stderr', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runPipeline(options({ repos: [repo.url], cacheDir }));
+
+      expect(stderrWrite).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }

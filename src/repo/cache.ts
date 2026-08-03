@@ -94,7 +94,7 @@ export function cloneJsonPath(entryDir: string): string {
  * @returns The llm directory path.
  *
  * @internal Exported for tests only; consumed by the LLM layer (plan
- * steps 6-8) once it exists. Remove the tag when a production
+ * steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export function llmDir(entryDir: string): string {
@@ -109,7 +109,7 @@ export function llmDir(entryDir: string): string {
  * @returns The opencode directory path.
  *
  * @internal Exported for tests only; consumed by the LLM layer (plan
- * steps 6-8) once it exists. Remove the tag when a production
+ * steps 7-9) once it exists. Remove the tag when a production
  * importer exists.
  */
 export function opencodeDir(entryDir: string): string {

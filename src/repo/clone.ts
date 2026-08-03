@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { cacheEntryDir, readCloneInfo, repoDir, resolveCacheDir, writeCloneInfo } from './cache.js';
 import { GitError, gitClone, runGit } from './git.js';
 import type { RunGitOptions } from './git.js';
+import { logWarn } from '../util/log.js';
 
 /** Matches URLs with a scheme, e.g. `https://`, `ssh://`, `file://`. */
 const SCHEME_URL_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
@@ -132,6 +133,7 @@ export async function ensureClone(
     await gitClone(entryDir, ['--filter=blob:none', target, 'repo'], gitOptions);
   } catch (error) {
     if (error instanceof GitError && isPartialCloneFailure(error)) {
+      logWarn(`partial clone failed (${error.message}); falling back to a full clone`);
       await gitClone(entryDir, [target, 'repo'], gitOptions);
     } else {
       throw error;

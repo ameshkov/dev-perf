@@ -46,7 +46,7 @@ The full design and implementation plan lives in
 [docs/design.md](./docs/design.md). The deterministic analysis path
 (M2) is implemented: `dev-perf --no-llm <repo>` clones the repository
 and produces the JSON report. The LLM-based analysis layer (plan steps
-6-8) is not implemented yet.
+7-9) is not implemented yet.
 
 ## Technical Context
 
@@ -91,7 +91,8 @@ dev-perf/
 │   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
 │   │   └── languages.test.ts # Language mapping and counting tests
 │   ├── util/                 # Shared helpers, no business logic
-│   │   └── json.ts           # Pretty-print, read/write, safe JSON parse
+│   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
+│   │   └── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
 │   └── report/               # Report schema, the single source of truth (design §7)
 │       ├── index.ts          # Barrel: public API of the report module
 │       ├── schema.ts         # zod schemas + inferred types for the whole report
@@ -194,6 +195,10 @@ Universal design principles this codebase follows:
   and interact through narrow interfaces.
 - **Make Invalid States Impossible** — use TypeScript strict mode and
   validation (zod) to prevent illegal combinations at compile time.
+- **Stdout Purity** — stdout carries nothing but the report JSON.
+  Progress and errors go to stderr through the level-based logger
+  (`src/util/log.ts`): `error`/`warn` messages always, `info`/`debug`
+  messages only when `--verbose` is set.
 - **Keep It Boring** — prefer well-understood patterns over clever or
   novel solutions.
 

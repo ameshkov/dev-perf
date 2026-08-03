@@ -49,6 +49,12 @@ Options:
 API key are always specified explicitly. `--limit-context` and `--limit-output`
 optionally cap the model window (defaults: 256k context / 64k output tokens).
 
+`--verbose` prints progress to stderr — cache reuse vs a fresh clone (with
+duration), the resolved author-date range, and per-repo commit counts. stdout
+carries nothing but the report JSON, and a default run is silent apart from
+errors and warnings (e.g. when a host rejects partial clones and the full-clone
+fallback kicks in).
+
 Example:
 
 ```console
@@ -120,7 +126,7 @@ The deterministic analysis path (milestone M2) is implemented:
 reusing it on later runs) and produces the JSON report — commits,
 lines, files, active days, and per-language contributions, per user
 and per repository. The LLM-based agentic layer (design §6, plan steps
-6-8) is not implemented yet, so runs without `--no-llm` fail
+7-9) is not implemented yet, so runs without `--no-llm` fail
 validation until then. See [docs/design.md](docs/design.md) for the
 full design and implementation plan.
 
