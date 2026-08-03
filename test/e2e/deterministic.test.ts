@@ -37,6 +37,22 @@ function cleanEnv(): NodeJS.ProcessEnv {
 }
 
 /**
+ * The directory the child CLI runs in: the test's own temp cache dir,
+ * which never contains a `.env` — the CLI auto-loads `.env` from its
+ * working directory via dotenv, so running from the repo root would
+ * re-inject the developer's `DEV_PERF_*` variables (e.g.
+ * `DEV_PERF_OUTPUT`) that `cleanEnv` already strips from the
+ * inherited environment. Every argument passed to the child is an
+ * absolute path, so the changed cwd cannot affect anything else.
+ *
+ * @param cacheDir - The temp cache directory of the current test.
+ * @returns The spawn options for the child CLI.
+ */
+function spawnOptions(cacheDir: string): { env: NodeJS.ProcessEnv; cwd: string } {
+  return { env: cleanEnv(), cwd: cacheDir };
+}
+
+/**
  * Builds the fixture repo both e2e cases analyze: two authors, a
  * TypeScript file, a Markdown file, and a binary asset, all inside an
  * explicit author-date range so the report is stable.
@@ -178,7 +194,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
           cacheDir,
           repo.url,
         ],
-        { env: cleanEnv() },
+        { ...spawnOptions(cacheDir) },
       );
 
       expect(reportSchema.safeParse(JSON.parse(stdout)).success).toBe(true);
@@ -207,7 +223,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
           cacheDir,
           repo.url,
         ],
-        { env: cleanEnv() },
+        { ...spawnOptions(cacheDir) },
       );
 
       // stdout parses as the exact same report as a quiet run.
@@ -240,7 +256,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
           cacheDir,
           repo.url,
         ],
-        { env: cleanEnv() },
+        { ...spawnOptions(cacheDir) },
       );
 
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
@@ -271,7 +287,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
           outFile,
           repo.url,
         ],
-        { env: cleanEnv() },
+        { ...spawnOptions(cacheDir) },
       );
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as {
@@ -294,17 +310,25 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
     try {
-      await execa('node', [BUILD_ENTRY], {
-        env: {
-          ...cleanEnv(),
-          DEV_PERF_REPOS: repo.url,
-          DEV_PERF_NO_LLM: 'true',
-          DEV_PERF_SINCE: '2026-01-01T00:00:00Z',
-          DEV_PERF_UNTIL: '2026-01-31T23:59:59Z',
-          DEV_PERF_CACHE_DIR: cacheDir,
-          DEV_PERF_OUTPUT: outFile,
+      await execa(
+        'node',
+        [BUILD_ENTRY],
+        // The isolated cwd (spawnOptions) keeps the developer's own
+        // `.env` out: dotenv would otherwise inject extra DEV_PERF_*
+        // variables that are not part of this test's env surface.
+        {
+          ...spawnOptions(cacheDir),
+          env: {
+            ...cleanEnv(),
+            DEV_PERF_REPOS: repo.url,
+            DEV_PERF_NO_LLM: 'true',
+            DEV_PERF_SINCE: '2026-01-01T00:00:00Z',
+            DEV_PERF_UNTIL: '2026-01-31T23:59:59Z',
+            DEV_PERF_CACHE_DIR: cacheDir,
+            DEV_PERF_OUTPUT: outFile,
+          },
         },
-      });
+      );
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as unknown;
       expect(reportSchema.safeParse(written).success).toBe(true);

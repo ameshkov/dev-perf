@@ -1,27 +1,29 @@
 /**
- * LLM prompts: the orientation prompt that produces the repository context (tech stack,
- * main modules, conventions), the per-user prompt with identity, date
- * range, repo context, and the user's commit list (sha, date, subject,
- * numstat totals, files), and the tool-call reminder used by the
- * enforcement loop. Both analysis prompts end with the instruction to
- * call `devperf_report` with the final analysis before finishing — no
- * other output format is accepted. The orientation context is injected
- * into user sessions with `noReply: true`.
+ * LLM prompt rendering: the prompt text itself lives in markdown
+ * template files under `src/llm/prompts/` (`orientation.md` — the
+ * orientation session that produces the repository context; `user.md`
+ * — the per-user analysis prompt with identity, date range, repo
+ * context, and the user's commit list; `reminder.md` — the tool-call
+ * reminder used by the enforcement loop). The analysis agent's system
+ * prompt is part of its opencode agent definition
+ * (`src/llm/agents/devperf-analyst.md`) and is copied into the
+ * clone's `.opencode/agents/` by the server layer, not rendered here.
+ * This module loads the templates (relative to the module file, so
+ * the same paths work from `src/` and `build/`), caches them, and
+ * substitutes the `{{placeholder}}` values; it renders no prompt
+ * prose itself.
  */
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Commit, CommitFile } from '../deterministic/commits.js';
 import type { AnalyzedRange } from '../report/index.js';
 
-/**
- * The closing instruction shared by the orientation and per-user
- * prompts: the analysis is only accepted through the
- * `devperf_report` tool.
- */
-const TOOL_CALL_INSTRUCTION =
-  'When the analysis is complete, call the devperf_report tool with the final ' +
-  'analysis before finishing the session; no other output format is accepted.';
-
 /** How many file paths a commit line lists before they are truncated. */
 const MAX_FILES_PER_COMMIT = 20;
+
+/** Loaded templates, cached after the first read. */
+const templateCache = new Map<string, Promise<string>>();
 
 /** Everything the per-user analysis prompt needs. */
 export interface UserPromptInput {
@@ -50,23 +52,8 @@ export interface UserPromptInput {
  * line.
  * @returns The orientation prompt text.
  */
-export function buildOrientationPrompt(repo: string): string {
-  return (
-    [
-      `You are analyzing the git repository at ${repo} for dev-perf, a ` +
-        'developer-contribution analyzer. This orientation session establishes the ' +
-        'repository context that later sessions use to analyze individual contributors.',
-      'Explore the repository with the read tools (read, grep, glob, ls) and read-only ' +
-        'git commands (git log, git show, git status) as needed. Produce a compact ' +
-        'repository context covering:\n' +
-        '- Tech stack: languages, frameworks, and key dependencies (README, manifests, config files).\n' +
-        '- Main modules or directories and what each does.\n' +
-        '- Conventions: code style, testing, commit message style.',
-      'Keep the context under 150 words. Reply with ONLY the repository context as ' +
-        'your final text.',
-      TOOL_CALL_INSTRUCTION,
-    ].join('\n\n') + '\n'
-  );
+export async function buildOrientationPrompt(repo: string): Promise<string> {
+  return renderTemplate(await loadTemplate('orientation'), { repo });
 }
 
 /**
@@ -82,30 +69,20 @@ export function buildOrientationPrompt(repo: string): string {
  * @param input - Identity, range, repo context, and commits.
  * @returns The per-user prompt text.
  */
-export function buildUserPrompt(input: UserPromptInput): string {
+export async function buildUserPrompt(input: UserPromptInput): Promise<string> {
   const since = input.range.since === '' ? 'the beginning' : input.range.since;
   const until = input.range.until === '' ? 'now' : input.range.until;
   const lines = input.commits.map((commit) => `- ${commitLine(commit)}`).join('\n');
-  return (
-    [
-      `You are analyzing the git contributions of ${input.name} (${input.email}) in the ` +
-        `repository at ${input.repo} for dev-perf, a developer-contribution analyzer. The ` +
-        `analysis covers commits whose author date lies in the range ${since} to ${until} (UTC).`,
-      `## Repository context\n${input.repoContext}`,
-      `## Commits by ${input.name} in the analyzed range (${input.commits.length})\n` +
-        'Newest first; each line lists the abbreviated sha, author date, subject, total ' +
-        'added/removed lines, and the files changed (merge commits have no file list).\n\n' +
-        lines,
-      'Inspect the commits with the read tools and read-only git commands (git show, git ' +
-        'log, git diff, git blame) as needed, and assess what cannot be counted from git ' +
-        'history alone: work types, complexity, impacted areas, and observable quality ' +
-        'signals or risk flags.',
-      'Split the work into distinct contributions (one feature, one bug fix, one ' +
-        'refactor, and so on); changes of different complexity are separate contributions ' +
-        'rather than averaged into one.',
-      TOOL_CALL_INSTRUCTION,
-    ].join('\n\n') + '\n'
-  );
+  return renderTemplate(await loadTemplate('user'), {
+    repo: input.repo,
+    name: input.name,
+    email: input.email,
+    since,
+    until,
+    repoContext: input.repoContext,
+    count: String(input.commits.length),
+    commits: lines,
+  });
 }
 
 /**
@@ -114,12 +91,43 @@ export function buildUserPrompt(input: UserPromptInput): string {
  *
  * @returns The reminder prompt text.
  */
-export function buildToolCallReminder(): string {
-  return (
-    'The session finished without the devperf_report tool being called. Call ' +
-    'devperf_report with the final analysis before finishing the session; no other ' +
-    'output format is accepted.\n'
-  );
+export async function buildToolCallReminder(): Promise<string> {
+  return loadTemplate('reminder');
+}
+
+/**
+ * Loads one prompt template from `src/llm/prompts/`, caching it after
+ * the first read. The file is resolved relative to this module so the
+ * same path works from the source tree (tests, `tsx`) and the
+ * compiled `build/` output (the build copies the templates next to
+ * the compiled module).
+ *
+ * @param name - Template file name without the `.md` extension.
+ * @returns The template text.
+ * @throws {Error} When the template file cannot be read.
+ */
+function loadTemplate(name: string): Promise<string> {
+  let template = templateCache.get(name);
+  if (template === undefined) {
+    const file = path.join(fileURLToPath(new URL('./prompts', import.meta.url)), `${name}.md`);
+    template = readFile(file, 'utf8');
+    templateCache.set(name, template);
+  }
+  return template;
+}
+
+/**
+ * Substitutes the `{{placeholder}}` occurrences in a template with
+ * the given values; placeholders without a value are left as-is.
+ * Values are never re-scanned, so rendered text cannot trigger
+ * further substitutions.
+ *
+ * @param template - The template text.
+ * @param values - Placeholder name to value map.
+ * @returns The rendered prompt text.
+ */
+function renderTemplate(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
 }
 
 /**

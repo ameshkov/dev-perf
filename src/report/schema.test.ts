@@ -64,9 +64,11 @@ function validReport(): unknown {
                   types: ['feature', 'tooling'],
                   complexity: 'low',
                   complexityReasoning: 'Small, self-contained option additions.',
+                  size: 's',
+                  sizeReasoning: 'Two option fields plus validation.',
                   areas: ['src'],
                   commits: ['0123456789abcdef0123456789abcdef01234567'],
-                  qualitySignals: ['tests added'],
+                  qualitySignals: ['tests-added', 'docs-updated'],
                   riskFlags: [],
                 },
               ],
@@ -234,6 +236,26 @@ describe('reportSchema', () => {
         path: 'repositories.0.users.0.llm.contributions.0.complexity',
         mutate: (report) => {
           report.repositories[0].users[0].llm.contributions[0].complexity = 'extreme';
+        },
+      },
+      {
+        path: 'repositories.0.users.0.llm.contributions.0.size',
+        mutate: (report) => {
+          report.repositories[0].users[0].llm.contributions[0].size = 'xxl';
+        },
+      },
+      {
+        path: 'repositories.0.users.0.llm.contributions.0.qualitySignals.0',
+        mutate: (report) => {
+          report.repositories[0].users[0].llm.contributions[0].qualitySignals = ['tests added'];
+        },
+      },
+      {
+        path: 'repositories.0.users.0.llm.contributions.0.riskFlags.0',
+        mutate: (report) => {
+          report.repositories[0].users[0].llm.contributions[0].riskFlags = [
+            'not reviewed by a human',
+          ];
         },
       },
       {

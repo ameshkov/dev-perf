@@ -23,6 +23,7 @@ import type { LlmToolPayload } from './report/index.js';
 import { writeJsonFile } from './util/json.js';
 
 vi.mock('./llm/server.js', () => ({
+  ANALYST_AGENT_ID: 'devperf-analyst',
   startServer: vi.fn(),
 }));
 
@@ -34,6 +35,8 @@ interface StubState {
   payload: LlmToolPayload;
   /** Assistant text returned for every prompt. */
   replyText: string;
+  /** When set, the user's analysis prompt rejects with this error. */
+  promptError?: Error;
 }
 
 /** The payload the stub reports through `devperf_report`. */
@@ -46,9 +49,11 @@ const PAYLOAD: LlmToolPayload = {
       types: ['feature'],
       complexity: 'medium',
       complexityReasoning: 'Several modules touched.',
+      size: 'l',
+      sizeReasoning: 'Spans the whole pipeline.',
       areas: ['src'],
       commits: ['abc1234d'],
-      qualitySignals: ['tests added'],
+      qualitySignals: ['tests-added'],
       riskFlags: [],
     },
   ],
@@ -85,8 +90,20 @@ function stubClient(state: StubState): OpencodeClient {
         async (args: {
           path: { id: string };
           query: { directory: string };
-          body: { noReply?: boolean };
+          body: {
+            noReply?: boolean;
+            parts?: Array<{ type: string; text: string }>;
+          };
         }) => {
+          // Reject only on the user's analysis prompt (it is the only
+          // one that carries the user's email); orientation and the
+          // noReply context injection keep working.
+          const analysisPrompt = args.body.parts?.some((part) =>
+            part.text.includes('alice@example.com'),
+          );
+          if (state.promptError !== undefined && analysisPrompt === true) {
+            throw state.promptError;
+          }
           if (args.body.noReply !== true && state.callTool) {
             const llmDir = path.join(path.dirname(args.query.directory), 'llm');
             await writeJsonFile(path.join(llmDir, `${args.path.id}.json`), state.payload);
@@ -217,6 +234,40 @@ describe('runPipeline with LLM analysis', () => {
     try {
       await expect(runPipeline(options({ repos: [repo.url], cacheDir }))).rejects.toThrow(
         /LLM analysis failed for .*: LLM analysis for Alice did not call devperf_report/,
+      );
+
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      stdout.mockRestore();
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('fails fast naming the user and the underlying cause when a prompt fetch fails', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    // Node's fetch rejects with TypeError('fetch failed'); the real
+    // reason lives in the AggregateError cause (undici's shape).
+    const promptError = new TypeError('fetch failed', {
+      cause: new AggregateError([new TypeError('connect ECONNREFUSED 127.0.0.1:50664')]),
+    });
+    const { close } = stubServer({
+      callTool: true,
+      payload: PAYLOAD,
+      replyText: 'ok',
+      promptError,
+    });
+    try {
+      await expect(runPipeline(options({ repos: [repo.url], cacheDir }))).rejects.toThrow(
+        /LLM analysis failed for .*: analysis of Alice <alice@example.com> \(session ses_\d+\) failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:50664/,
       );
 
       expect(close).toHaveBeenCalledTimes(1);

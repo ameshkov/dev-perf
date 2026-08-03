@@ -3,8 +3,11 @@
  * produces the repo context,
  * which is injected into every user session with `noReply: true`;
  * per-user sessions run sequentially and their `devperf_report` output
- * is enforced (up to 3 follow-up reminders, then a non-zero exit
- * naming the user and session). Results are cached in the cache
+ * is enforced (each prompt resolves as soon as the tool output exists —
+ * the running session is aborted at that point, so the analysis never
+ * waits for an agent that keeps working after reporting — otherwise up
+ * to 3 follow-up reminders, then a non-zero exit naming the user and
+ * session). Results are cached in the cache
  * entry's `llm/` directory keyed by (repo, user, since, until, model,
  * context/output limits) and reused on reruns unless `--refresh`
  * invalidates the cache; per-session token usage and cost come
@@ -18,10 +21,11 @@ import type { AuthorGroup } from '../deterministic/identity.js';
 import { llmDir } from '../repo/cache.js';
 import type { AnalyzedRange, LlmAnalysis, LlmToolPayload } from '../report/index.js';
 import { llmToolPayloadSchema, tokenUsageSchema } from '../report/index.js';
+import { errorDetail } from '../util/error.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 import { logDebug, logInfo, logWarn } from '../util/log.js';
 import { buildOrientationPrompt, buildToolCallReminder, buildUserPrompt } from './prompts.js';
-import { readSessionReport, sessionReportPath } from './session.js';
+import { sessionReportPath } from './session.js';
 import type { SessionHandle, SessionService, SessionUsage, UsageCollector } from './session.js';
 import type { LlmServerConfig } from './server.js';
 
@@ -40,7 +44,10 @@ const ZERO_USAGE: SessionUsage = { tokenUsage: { input: 0, output: 0 }, estimate
 /**
  * The persisted LLM result for one user: the
  * `devperf_report` payload plus the usage that produced it, so cache
- * hits reproduce the full report entry without new calls.
+ * hits reproduce the full report entry without new calls. The
+ * cache-key components (`llmCacheKeyParts`) are persisted alongside
+ * the payload so the file is self-describing; the filename hash
+ * encodes the same components.
  */
 const cachedResultSchema = z.object({
   /** The validated analysis payload. */
@@ -49,6 +56,20 @@ const cachedResultSchema = z.object({
   tokenUsage: tokenUsageSchema,
   /** Estimated cost of the producing session in USD. */
   estimatedCostUsd: z.number().nonnegative(),
+  /** Repository URL or local path the analysis ran on. */
+  repo: z.string(),
+  /** Lowercased author email the analysis belongs to. */
+  email: z.string(),
+  /** Analyzed author-date range start (ISO 8601, UTC; `''` unbounded). */
+  since: z.string(),
+  /** Analyzed author-date range end (ISO 8601, UTC; `''` unbounded). */
+  until: z.string(),
+  /** Model used for the analysis. */
+  model: z.string(),
+  /** Context limit in tokens used for the analysis. */
+  limitContext: z.number().int().nonnegative(),
+  /** Output limit in tokens used for the analysis. */
+  limitOutput: z.number().int().nonnegative(),
 });
 
 /** Type of a cached LLM result. */
@@ -152,7 +173,10 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   try {
     const session = await input.service.createSession(input.cloneDir, ORIENTATION_TITLE);
     logInfo(`LLM: orientation session ${session.id} for ${input.repo}`);
-    const context = await input.service.promptSession(session, buildOrientationPrompt(input.repo));
+    const context = await input.service.promptSession(
+      session,
+      await buildOrientationPrompt(input.repo),
+    );
     await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
     logDebug(`LLM: repo context: ${context}`);
     return { context, collector };
@@ -167,14 +191,18 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
  * repo context is injected with `noReply: true`, the analysis prompt
  * follows, and the `devperf_report` output is enforced. The validated
  * payload plus its usage is cached, and the completed entry is
- * returned.
+ * returned. Failures are rethrown with the user and session named —
+ * `errorDetail` keeps the underlying cause chain (e.g. the
+ * `connect ECONNREFUSED` behind a bare `fetch failed`), so the
+ * top-level handler can report exactly what went wrong.
  *
  * @param input - Repo-level analysis input.
  * @param group - The user's author group.
  * @param orientation - Repo context and usage collector.
  * @returns The completed analysis for the user.
  * @throws {Error} When the tool was not called after the enforcement
- * loop; the message names the user and session.
+ * loop, or any prompt of the user's session fails; the message names
+ * the user and session.
  */
 async function analyzeUser(
   input: AnalyzeRepoInput,
@@ -183,43 +211,51 @@ async function analyzeUser(
 ): Promise<UserLlmResult> {
   const session = await input.service.createSession(input.cloneDir, `dev-perf: ${group.name}`);
   logInfo(`LLM: analyzing ${group.name} <${group.email}> (session ${session.id})`);
-  await input.service.promptSession(session, orientation.context, { noReply: true });
-  await input.service.promptSession(
-    session,
-    buildUserPrompt({
+  try {
+    await input.service.promptSession(session, orientation.context, { noReply: true });
+    const analysisPrompt = await buildUserPrompt({
       repo: input.repo,
       name: group.name,
       email: group.email,
       range: input.range,
       repoContext: orientation.context,
       commits: group.commits,
-    }),
-  );
-  const payload = await enforceReport(input, group, session);
-  const usage = orientation.collector.get(session.id) ?? ZERO_USAGE;
-  logInfo(
-    `LLM: ${group.name}: ${usage.tokenUsage.input} in / ${usage.tokenUsage.output} out tokens, $${usage.estimatedCostUsd.toFixed(4)}`,
-  );
-  const result: CachedResult = {
-    payload,
-    tokenUsage: usage.tokenUsage,
-    estimatedCostUsd: usage.estimatedCostUsd,
-  };
-  await writeJsonFile(cachedResultPath(input, group), result);
-  return { email: group.email, llm: completedLlm(result) };
+    });
+    const payload = await enforceReport(input, group, session, analysisPrompt);
+    const usage = orientation.collector.get(session.id) ?? ZERO_USAGE;
+    logInfo(
+      `LLM: ${group.name}: ${usage.tokenUsage.input} in / ${usage.tokenUsage.output} out tokens, $${usage.estimatedCostUsd.toFixed(4)}`,
+    );
+    const result: CachedResult = {
+      payload,
+      tokenUsage: usage.tokenUsage,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      ...llmCacheKeyParts(input, group.email),
+    };
+    await writeJsonFile(cachedResultPath(input, group), result);
+    return { email: group.email, llm: completedLlm(result) };
+  } catch (error) {
+    throw new Error(
+      `analysis of ${group.name} <${group.email}> (session ${session.id}) failed: ${errorDetail(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
- * The enforcement loop: after the analysis prompt, the
- * session's report file is checked; when the tool was not called, a
- * reminder is sent — up to `MAX_REMINDERS` times. If the tool is still
- * not called, an error naming the user and session is thrown, which
- * the top-level error handler turns into a non-zero exit without
- * writing the report.
+ * The enforcement loop: the analysis prompt (and each follow-up
+ * reminder) resolves as soon as the session's report file exists — the
+ * running session is aborted at that point — or when the turn ends
+ * without calling the tool. When the tool was not called, a reminder
+ * is sent — up to `MAX_REMINDERS` times. If the tool is still not
+ * called, an error naming the user and session is thrown, which the
+ * top-level error handler turns into a non-zero exit without writing
+ * the report.
  *
  * @param input - Repo-level analysis input.
  * @param group - The user's author group (for the error message).
  * @param session - The user's session.
+ * @param analysisPrompt - The rendered per-user analysis prompt.
  * @returns The validated analysis payload.
  * @throws {Error} When the tool was never called.
  */
@@ -227,17 +263,22 @@ async function enforceReport(
   input: AnalyzeRepoInput,
   group: AuthorGroup,
   session: SessionHandle,
+  analysisPrompt: string,
 ): Promise<LlmToolPayload> {
+  const reminder = await buildToolCallReminder();
   for (let attempt = 0; attempt <= MAX_REMINDERS; attempt++) {
-    const payload = await readSessionReport(llmDir(input.entryDir), session.id);
+    if (attempt > 0) {
+      logWarn(
+        `LLM: ${group.name}: devperf_report not called, reminding (${attempt}/${MAX_REMINDERS})`,
+      );
+    }
+    const payload = await input.service.promptSessionUntilReport(
+      session,
+      attempt === 0 ? analysisPrompt : reminder,
+      llmDir(input.entryDir),
+    );
     if (payload !== undefined) {
       return payload;
-    }
-    if (attempt < MAX_REMINDERS) {
-      logWarn(
-        `LLM: ${group.name}: devperf_report not called, reminding (${attempt + 1}/${MAX_REMINDERS})`,
-      );
-      await input.service.promptSession(session, buildToolCallReminder());
     }
   }
   throw new Error(
@@ -284,28 +325,43 @@ function cachedResultPath(input: AnalyzeRepoInput, group: AuthorGroup): string {
 }
 
 /**
+ * The cache-key components of one user's LLM result — the exact
+ * parameters that change the analysis: repo, user email, resolved
+ * since/until, model, and context/output limits. They are hashed
+ * into the cache filename (`llmCacheKey`) and persisted in the cache
+ * file itself, so the two can never drift.
+ *
+ * @param input - Repo-level analysis input.
+ * @param email - The user's lowercased author email.
+ * @returns The key components, keyed for the cache file and ordered
+ * for the hash.
+ */
+function llmCacheKeyParts(input: AnalyzeRepoInput, email: string) {
+  return {
+    repo: input.repo,
+    email,
+    since: input.range.since,
+    until: input.range.until,
+    model: input.config.model,
+    limitContext: input.config.limitContext,
+    limitOutput: input.config.limitOutput,
+  };
+}
+
+/**
  * The deterministic cache key of one user's LLM result: SHA-256 of
- * (repo, user email, resolved since/until, model, context/output
- * limits) — the exact parameters that change the analysis.
+ * the cache-key components (`llmCacheKeyParts`), the exact
+ * parameters that change the analysis.
  *
  * @param input - Repo-level analysis input.
  * @param email - The user's lowercased author email.
  * @returns The 16-character hex key.
  */
 function llmCacheKey(input: AnalyzeRepoInput, email: string): string {
-  const hash = createHash('sha256');
-  hash.update(
-    [
-      input.repo,
-      email,
-      input.range.since,
-      input.range.until,
-      input.config.model,
-      input.config.limitContext,
-      input.config.limitOutput,
-    ].join('\x00'),
-  );
-  return hash.digest('hex').slice(0, CACHE_KEY_LENGTH);
+  return createHash('sha256')
+    .update(Object.values(llmCacheKeyParts(input, email)).join('\x00'))
+    .digest('hex')
+    .slice(0, CACHE_KEY_LENGTH);
 }
 
 /**

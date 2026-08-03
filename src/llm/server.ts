@@ -1,10 +1,14 @@
 /**
  * opencode-as-a-library server lifecycle: `startServer` prepares the
  * generated `opencode.json`
- * and the `devperf_report` tool inside the analyzed clone, launches an
+ * (provider, model, and read-only permissions) and the
+ * `devperf_report` tool inside the analyzed clone, writes the
+ * `devperf-analyst` agent definition (an opencode markdown agent file
+ * with frontmatter — description, mode, permissions — and the prompt
+ * as its body) into the clone's `.opencode/agents/`, launches an
  * opencode server scoped to that clone with `createOpencode()`, and
- * injects the provider API key programmatically via `client.auth.set()`
- * — the key is never written to a file.
+ * injects the provider API key programmatically via
+ * `client.auth.set()` — the key is never written to a file.
  *
  * Isolation (verified against opencode 1.18.x): the SDK spawns
  * `opencode serve` inheriting this process's environment, and opencode
@@ -19,7 +23,7 @@
  * directory is fixed at spawn time) are restored immediately after the
  * server is up.
  */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createOpencode } from '@opencode-ai/sdk';
@@ -27,10 +31,24 @@ import type { Config as OpencodeConfig } from '@opencode-ai/sdk';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { llmDir, opencodeDir } from '../repo/cache.js';
 import { buildReportToolSource } from './tools.js';
+import { errorDetail } from '../util/error.js';
 import { logInfo } from '../util/log.js';
 
 /** Provider id under which the `--provider-url`/`--model` pair is registered. */
 const PROVIDER_ID = 'devperf';
+
+/**
+ * The read-only agent every analysis session runs with. The agent is
+ * defined by the opencode markdown agent file
+ * `src/llm/agents/devperf-analyst.md` (its file name is the agent
+ * name), which `writeServerFiles` copies into the clone's
+ * `.opencode/agents/` directory, where the opencode server discovers
+ * it. Sessions select the agent by this id on every prompt.
+ */
+export const ANALYST_AGENT_ID = 'devperf-analyst';
+
+/** The agent definition source, resolved relative to this module. */
+const ANALYST_AGENT_FILE = new URL('./agents/devperf-analyst.md', import.meta.url);
 
 /** npm package opencode uses for OpenAI-compatible providers. */
 const PROVIDER_NPM = '@ai-sdk/openai-compatible';
@@ -50,19 +68,6 @@ const BLOCKED_ENV_VARS = [
   'OPENCODE_SERVER_PASSWORD',
   'OPENCODE_SERVER_TOKEN',
 ];
-
-/**
- * Read-only analysis rules injected into the server's `build` agent
- * prompt: the agent inspects history with read tools and
- * read-only git commands and never modifies anything.
- */
-const ANALYSIS_RULES =
-  'You are analyzing git history for dev-perf, a developer-contribution analyzer. ' +
-  'The analysis is read-only: never create, modify, or delete files, and never stage, ' +
-  'commit, or push changes. Inspect commits and diffs with the read tools (read, grep, ' +
-  'glob, ls) and read-only git commands through bash (git show, git log, git diff, git ' +
-  'blame, git status). When the analysis is complete, call the devperf_report tool with ' +
-  'the final analysis before finishing.';
 
 /**
  * Everything the LLM server needs to run one analysis, derived from
@@ -98,8 +103,11 @@ export interface LlmServerHandle {
  * Builds the isolated opencode config: the provider with
  * the given base URL, the model with the `limit` block from
  * `--limit-context`/`--limit-output`, read-only permissions that deny
- * the write tools, the analysis rules, and an `enabled_providers`
- * pin so no other provider can leak in through config merging.
+ * the write tools, and an `enabled_providers` pin so no other
+ * provider can leak in through config merging. The
+ * `devperf-analyst` agent is not declared here — it is defined by the
+ * markdown agent file `writeServerFiles` places in the clone's
+ * `.opencode/agents/` (opencode's project-agent spec).
  *
  * @param config - LLM server configuration.
  * @returns The opencode config document.
@@ -130,8 +138,6 @@ export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig 
       webfetch: 'deny',
       external_directory: 'deny',
     },
-    tools: { write: false, edit: false, patch: false },
-    agent: { build: { prompt: ANALYSIS_RULES } },
   };
 }
 
@@ -140,27 +146,37 @@ export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig 
  * `opencode.json` and the `devperf_report` tool source land in the
  * cache entry's `opencode/` directory (the layout's generated-files
  * home) and are copied into the clone, where the server discovers
- * them — the project `opencode.json` and `.opencode/tools/`. A repo's
- * own `opencode.json` is overwritten; the clone is a disposable cache
- * artifact and the file is regenerated on every server start.
+ * them — the project `opencode.json` and `.opencode/tools/`. The
+ * `devperf-analyst` agent definition (an opencode markdown agent file
+ * from `src/llm/agents/`) is written to the clone's
+ * `.opencode/agents/` and mirrored in the cache entry. A repo's own
+ * `opencode.json` is overwritten; the clone is a disposable cache
+ * artifact and the files are regenerated on every server start.
  *
  * @param cloneDir - The clone's working tree (`<cache>/<hash>/repo`).
- * @param config - LLM server configuration.
+ * @param generated - The generated opencode config document.
  *
  * @internal Exported for tests only (`server.test.ts` layout checks);
  * also called by `startServer` within the module. Not part of the
  * public module API.
  */
-export async function writeServerFiles(cloneDir: string, config: LlmServerConfig): Promise<void> {
+export async function writeServerFiles(cloneDir: string, generated: OpencodeConfig): Promise<void> {
   const entryDir = path.dirname(cloneDir);
   const generatedDir = opencodeDir(entryDir);
-  const configText = `${JSON.stringify(generateOpencodeConfig(config), null, 2)}\n`;
+  const configText = `${JSON.stringify(generated, null, 2)}\n`;
   const toolSource = buildReportToolSource(llmDir(entryDir));
+  const agentSource = await readFile(ANALYST_AGENT_FILE, 'utf8');
 
   await writeText(generatedDir, 'opencode.json', configText);
   await writeText(path.join(generatedDir, 'tools'), 'devperf_report.ts', toolSource);
+  await writeText(path.join(generatedDir, 'agents'), `${ANALYST_AGENT_ID}.md`, agentSource);
   await writeText(cloneDir, 'opencode.json', configText);
   await writeText(path.join(cloneDir, '.opencode', 'tools'), 'devperf_report.ts', toolSource);
+  await writeText(
+    path.join(cloneDir, '.opencode', 'agents'),
+    `${ANALYST_AGENT_ID}.md`,
+    agentSource,
+  );
 }
 
 /**
@@ -181,7 +197,8 @@ export async function startServer(
   cloneDir: string,
   config: LlmServerConfig,
 ): Promise<LlmServerHandle> {
-  await writeServerFiles(cloneDir, config);
+  const generated = generateOpencodeConfig(config);
+  await writeServerFiles(cloneDir, generated);
   const tempHome = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-opencode-'));
   const restoreEnvironment = isolateEnvironment(tempHome);
   const cwd = process.cwd();
@@ -196,7 +213,7 @@ export async function startServer(
       hostname: '127.0.0.1',
       port: 0,
       timeout: SERVER_START_TIMEOUT_MS,
-      config: generateOpencodeConfig(config),
+      config: generated,
     });
     started = true;
     await client.auth.set({
@@ -213,7 +230,7 @@ export async function startServer(
       },
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorDetail(error);
     throw new Error(
       `Failed to start the opencode server for ${cloneDir}: ${detail}. ` +
         'Is the opencode CLI installed and on PATH?',

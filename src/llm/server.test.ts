@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
 import { llmDir, opencodeDir } from '../repo/cache.js';
 import { buildReportToolSource } from './tools.js';
-import { generateOpencodeConfig, startServer, writeServerFiles } from './server.js';
+import {
+  ANALYST_AGENT_ID,
+  generateOpencodeConfig,
+  startServer,
+  writeServerFiles,
+} from './server.js';
 import type { LlmServerConfig } from './server.js';
 
 const CONFIG: LlmServerConfig = {
@@ -57,7 +62,7 @@ describe('generateOpencodeConfig', () => {
     });
   });
 
-  it('denies the write tools and keeps the analysis read-only', () => {
+  it('keeps the global read-only permission as defense in depth', () => {
     const config = generateOpencodeConfig(CONFIG);
     expect(config.permission).toEqual({
       edit: 'deny',
@@ -65,16 +70,11 @@ describe('generateOpencodeConfig', () => {
       webfetch: 'deny',
       external_directory: 'deny',
     });
-    expect(config.tools).toEqual({ write: false, edit: false, patch: false });
   });
 
-  it('embeds the read-only analysis rules in the build agent prompt', () => {
+  it('does not declare the agent in the config (it lives in .opencode/agents)', () => {
     const config = generateOpencodeConfig(CONFIG);
-    const prompt = config.agent?.build?.prompt ?? '';
-    expect(prompt).toContain('read-only');
-    expect(prompt).toContain('never create, modify, or delete files');
-    expect(prompt).toContain('git show, git log, git diff, git blame, git status');
-    expect(prompt).toContain('devperf_report');
+    expect(config.agent).toBeUndefined();
   });
 });
 
@@ -83,11 +83,16 @@ describe('writeServerFiles', () => {
     const cloneDir = path.join(tmpRoot, 'entry', 'repo');
     await mkdir(cloneDir, { recursive: true });
 
-    await writeServerFiles(cloneDir, CONFIG);
+    const generated = generateOpencodeConfig(CONFIG);
+    await writeServerFiles(cloneDir, generated);
 
     const entryDir = path.dirname(cloneDir);
-    const expectedConfig = `${JSON.stringify(generateOpencodeConfig(CONFIG), null, 2)}\n`;
+    const expectedConfig = `${JSON.stringify(generated, null, 2)}\n`;
     const expectedTool = buildReportToolSource(llmDir(entryDir));
+    const expectedAgent = await readFile(
+      new URL('./agents/devperf-analyst.md', import.meta.url),
+      'utf8',
+    );
 
     // Cache entry layout: opencode/ holds the generated files.
     const cacheConfig = await readFile(path.join(opencodeDir(entryDir), 'opencode.json'), 'utf8');
@@ -95,8 +100,13 @@ describe('writeServerFiles', () => {
       path.join(opencodeDir(entryDir), 'tools', 'devperf_report.ts'),
       'utf8',
     );
+    const cacheAgent = await readFile(
+      path.join(opencodeDir(entryDir), 'agents', `${ANALYST_AGENT_ID}.md`),
+      'utf8',
+    );
     expect(cacheConfig).toBe(expectedConfig);
     expect(cacheTool).toBe(expectedTool);
+    expect(cacheAgent).toBe(expectedAgent);
 
     // The clone gets copies the server discovers at startup.
     const cloneConfig = await readFile(path.join(cloneDir, 'opencode.json'), 'utf8');
@@ -104,8 +114,47 @@ describe('writeServerFiles', () => {
       path.join(cloneDir, '.opencode', 'tools', 'devperf_report.ts'),
       'utf8',
     );
+    const cloneAgent = await readFile(
+      path.join(cloneDir, '.opencode', 'agents', `${ANALYST_AGENT_ID}.md`),
+      'utf8',
+    );
     expect(cloneConfig).toBe(cacheConfig);
     expect(cloneTool).toBe(cacheTool);
+    expect(cloneAgent).toBe(cacheAgent);
+  });
+
+  it('writes the agent definition following the opencode agent-file spec', async () => {
+    const cloneDir = path.join(tmpRoot, 'entry', 'repo');
+    await mkdir(cloneDir, { recursive: true });
+
+    await writeServerFiles(cloneDir, generateOpencodeConfig(CONFIG));
+
+    const agentFile = await readFile(
+      path.join(cloneDir, '.opencode', 'agents', `${ANALYST_AGENT_ID}.md`),
+      'utf8',
+    );
+    // The file name is the agent name; frontmatter carries description,
+    // mode, and the permission surface; the body is the prompt.
+    expect(agentFile.startsWith('---\n')).toBe(true);
+    expect(agentFile).toContain('description: Read-only dev-perf contributor analysis agent');
+    expect(agentFile).toContain('mode: primary');
+    // Permissions are deny-all with a short allow-list: the wildcard deny
+    // comes first (opencode matches rules last-wins), then the read tools,
+    // bash restricted to read-only git commands, and devperf_report.
+    expect(agentFile).toContain('"*": deny');
+    expect(agentFile).toContain('read: allow');
+    expect(agentFile).toContain('glob: allow');
+    expect(agentFile).toContain('grep: allow');
+    expect(agentFile).toContain('list: allow');
+    expect(agentFile).toContain('"git show *": allow');
+    expect(agentFile).toContain('"git log *": allow');
+    expect(agentFile).toContain('"git diff *": allow');
+    expect(agentFile).toContain('"git blame *": allow');
+    expect(agentFile).toContain('"git status *": allow');
+    expect(agentFile).toContain('devperf_report: allow');
+    expect(agentFile).toContain('read-only');
+    expect(agentFile).toContain('never create, modify, or delete');
+    expect(agentFile).toContain('git show, git log, git diff, git blame');
   });
 });
 
@@ -132,6 +181,23 @@ describe.skipIf(process.env.DEV_PERF_SMOKE !== '1')('startServer (manual smoke t
         const effective = await handle.client.config.get({ query: { directory: repo.dir } });
         expect(effective.data?.model).toBe('devperf/gpt-4.1');
         expect(Object.keys(effective.data?.provider ?? {})).toEqual(['devperf']);
+        // The devperf-analyst agent is defined by the markdown agent file
+        // in the clone's .opencode/agents/; a noReply prompt naming it
+        // proves the server loaded it.
+        const created = await handle.client.session.create({
+          query: { directory: repo.dir },
+          body: { title: 'smoke' },
+        });
+        const prompted = await handle.client.session.prompt({
+          path: { id: created.data?.id ?? '' },
+          query: { directory: repo.dir },
+          body: {
+            agent: ANALYST_AGENT_ID,
+            noReply: true,
+            parts: [{ type: 'text', text: 'orientation context' }],
+          },
+        });
+        expect(prompted.error).toBeUndefined();
       } finally {
         await handle.close();
       }

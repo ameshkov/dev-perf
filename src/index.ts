@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import dotenv from 'dotenv';
 import { Command } from 'commander';
 import { registerCommands } from './cli.js';
+import { errorDetail } from './util/error.js';
 import { logError } from './util/log.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as {
@@ -31,8 +32,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  const message = err instanceof Error ? err.message : String(err);
-  logError(`dev-perf: ${message}`);
+  // errorDetail walks the cause chain, so network failures like
+  // `TypeError: fetch failed` surface their real reason (e.g.
+  // `connect ECONNREFUSED 127.0.0.1:50664`) instead of the bare text.
+  logError(`dev-perf: ${errorDetail(err)}`);
   process.exitCode = 1;
   process.exit(1);
 });

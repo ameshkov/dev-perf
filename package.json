@@ -25,7 +25,7 @@
     "url": "https://github.com/ameshkov/dev-perf/issues"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.app.json && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "build": "tsc -p tsconfig.app.json && node scripts/copy-assets.mjs && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",

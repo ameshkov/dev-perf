@@ -96,17 +96,20 @@ dev-perf/
 │   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
 │   │   └── languages.test.ts # Language mapping and counting tests
 │   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration, pipeline wiring)
-│   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json, env isolation, auth.set
+│   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json (provider, permissions), devperf-analyst agent file, env isolation, auth.set
 │   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
 │   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
 │   │   ├── tools.test.ts     # Generated tool content + execution tests
-│   │   ├── prompts.ts        # Orientation + per-user prompts, tool-call instruction, reminder (§6.3, §6.5)
+│   │   ├── prompts.ts        # Prompt rendering: loads the markdown templates from prompts/ and substitutes values (§6.3, §6.5)
 │   │   ├── prompts.test.ts   # Prompt content and tool-call instruction tests
-│   │   ├── session.ts        # SessionService: create/prompt (noReply), abort-on-error, report detection, usage stream
+│   │   ├── prompts/          # LLM prompt templates as markdown files (orientation, user, reminder)
+│   │   ├── agents/           # The devperf-analyst opencode agent definition (markdown + YAML frontmatter)
+│   │   ├── session.ts        # SessionService: create/prompt (noReply, devperf-analyst agent), abort-on-error, report detection, usage stream
 │   │   ├── session.test.ts   # Session wrapper, report-file, and usage-collector tests with a stubbed client
 │   │   ├── analyze.ts        # Orchestration: orientation, per-user sessions, enforcement loop, LLM result cache (§6.6)
 │   │   └── analyze.test.ts   # Enforcement, cache idempotency/refresh, and session scoping with stub sessions
 │   ├── util/                 # Shared helpers, no business logic
+│   │   ├── error.ts          # Error detail rendering: cause-chain aware (fetch failures surface their real reason)
 │   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
 │   │   └── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
 │   └── report/               # Report schema, the single source of truth (design §7)
@@ -120,6 +123,8 @@ dev-perf/
 │   │   └── repo-builder.ts   # Builds temp git repos with known files, authors, commits
 │   └── e2e/
 │       └── deterministic.test.ts  # --no-llm run against a fixture repo (compiled CLI, JSON snapshot)
+├── scripts/
+│   └── copy-assets.mjs     # Copies src/llm/prompts/*.md and src/llm/agents/*.md into build/ for runtime reads
 ├── docs/
 │   ├── design.md             # Full design document
 │   └── plan.md               # Step-by-step implementation plan
@@ -188,7 +193,10 @@ You MUST follow the following rules for EVERY task that you perform:
 - When the coding task is finished update `CHANGELOG.md` and explain
   changes in the Unreleased section. Add entries to the appropriate
   subsection (Added, Changed, or Fixed) if it already exists; do not
-  create duplicate subsections.
+  create duplicate subsections. Only user-facing changes belong in the
+  changelog — describe what a user can now do or observe (new options,
+  changed behavior, fixed bugs); leave internal refactors, test
+  changes, and implementation details out.
 
 ## Code Guidelines
 
@@ -219,6 +227,14 @@ Universal design principles this codebase follows:
   messages only when `--verbose` is set.
 - **Keep It Boring** — prefer well-understood patterns over clever or
   novel solutions.
+- **Prompts as template files** — LLM prompt text lives in dedicated
+  markdown template files (this project: `src/llm/prompts/*.md`),
+  never inline in source code; code only renders the templates with
+  values. LLM-driven analysis runs through a dedicated agent defined
+  by an opencode agent file (`src/llm/agents/devperf-analyst.md` —
+  YAML frontmatter with description, mode, and permissions, prompt as
+  the body) that is copied into the analyzed clone's
+  `.opencode/agents/`, where the opencode server discovers it.
 
 The easiest way to achieve these principles is **layered architecture**.
 This project's layers, from top to bottom:
@@ -280,6 +296,12 @@ All code MUST meet documentation and style requirements before merge:
   justification.
 - **Error handling strategy**: Prefer throwing errors over returning error
   values. Handle errors at top-level entry points where they can be logged.
+  Preserve `cause` chains: when an error crosses a module boundary, rethrow
+  it wrapped with context (`new Error(message, { cause: error })`), and
+  render errors for the user through `errorDetail` (`src/util/error.ts`),
+  which walks the cause chain — a bare `fetch failed` without its
+  underlying `connect ECONNREFUSED`/`socket hang up` reason is a bug in
+  reporting.
 - **Import style**: Use top-level static `import` statements exclusively.
   Do NOT scatter dynamic `await import()` calls inside function bodies
   ("inline imports"). Dynamic imports placed mid-function obscure

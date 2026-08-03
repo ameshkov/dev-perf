@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Event, OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LlmToolPayload } from '../report/index.js';
+import { ANALYST_AGENT_ID } from './server.js';
 import {
   collectSessionUsage,
   createSessionService,
@@ -23,9 +24,11 @@ const PAYLOAD: LlmToolPayload = {
       types: ['feature'],
       complexity: 'medium',
       complexityReasoning: 'Several modules touched.',
+      size: 'l',
+      sizeReasoning: 'Spans the whole pipeline.',
       areas: ['src'],
       commits: ['abc1234d'],
-      qualitySignals: ['tests added'],
+      qualitySignals: ['tests-added'],
       riskFlags: [],
     },
   ],
@@ -66,6 +69,8 @@ interface StubOptions {
   promptError?: unknown;
   /** Make `session.prompt` reject instead of returning an error. */
   promptThrows?: boolean;
+  /** Custom `session.prompt` implementation (overrides the default). */
+  prompt?: () => Promise<{ data: unknown; error: unknown }>;
   /** Event stream the `event.subscribe` stub yields. */
   stream?: AsyncGenerator<Event>;
   /** Make `event.subscribe` reject. */
@@ -101,6 +106,9 @@ function stubClient(options: StubOptions = {}): OpencodeClient & {
         };
       }),
       prompt: vi.fn(async () => {
+        if (options.prompt !== undefined) {
+          return options.prompt();
+        }
         if (options.promptThrows) {
           throw new Error('prompt rejected');
         }
@@ -158,7 +166,7 @@ describe('createSessionService', () => {
     );
   });
 
-  it('sends a text part and returns the final assistant text', async () => {
+  it('sends a text part with the analyst agent and returns the final assistant text', async () => {
     const client = stubClient();
     const service = createSessionService(client);
 
@@ -168,11 +176,15 @@ describe('createSessionService', () => {
     expect(client.session.prompt).toHaveBeenCalledWith({
       path: { id: 'ses_1' },
       query: { directory: DIRECTORY },
-      body: { noReply: false, parts: [{ type: 'text', text: 'analyze' }] },
+      body: {
+        agent: ANALYST_AGENT_ID,
+        noReply: false,
+        parts: [{ type: 'text', text: 'analyze' }],
+      },
     });
   });
 
-  it('passes noReply through for context injection', async () => {
+  it('passes noReply through for context injection, still with the analyst agent', async () => {
     const client = stubClient();
     const service = createSessionService(client);
 
@@ -180,8 +192,11 @@ describe('createSessionService', () => {
       noReply: true,
     });
 
-    const call = client.session.prompt.mock.calls[0]?.[0] as { body: { noReply: boolean } };
+    const call = client.session.prompt.mock.calls[0]?.[0] as {
+      body: { noReply: boolean; agent: string };
+    };
     expect(call.body.noReply).toBe(true);
+    expect(call.body.agent).toBe(ANALYST_AGENT_ID);
   });
 
   it('aborts the session and rethrows when the server returns an error', async () => {
@@ -205,6 +220,95 @@ describe('createSessionService', () => {
       service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze'),
     ).rejects.toThrow('prompt rejected');
     expect(client.session.abort).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('promptSessionUntilReport', () => {
+  let llmDir: string;
+
+  beforeEach(async () => {
+    llmDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-session-poll-'));
+  });
+
+  afterEach(async () => {
+    await rm(llmDir, { recursive: true, force: true });
+  });
+
+  it('aborts the running session and returns the payload when the report appears mid-turn', async () => {
+    // The turn never finishes on its own; the report file is the only
+    // thing that can end the prompt.
+    let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
+    const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
+      settlePrompt = resolve;
+    });
+    const client = stubClient({ prompt: () => pendingPrompt });
+    const service = createSessionService(client);
+
+    const resultPromise = service.promptSessionUntilReport(
+      { id: 'ses_1', directory: DIRECTORY },
+      'analyze',
+      llmDir,
+    );
+    // The simulated tool writes its output while the turn is running.
+    await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
+
+    await expect(resultPromise).resolves.toEqual(PAYLOAD);
+    expect(client.session.abort).toHaveBeenCalledWith({
+      path: { id: 'ses_1' },
+      query: { directory: DIRECTORY },
+    });
+    // Settle the abandoned prompt so the test ends cleanly.
+    settlePrompt({
+      data: {
+        info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
+        parts: [{ type: 'text', text: 'assistant reply' }],
+      },
+      error: undefined,
+    });
+  });
+
+  it('returns the payload written before the turn ended, without aborting', async () => {
+    const client = stubClient({
+      prompt: async () => {
+        await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
+        return {
+          data: {
+            info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
+            parts: [{ type: 'text', text: 'assistant reply' }],
+          },
+          error: undefined,
+        };
+      },
+    });
+    const service = createSessionService(client);
+
+    await expect(
+      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+    ).resolves.toEqual(PAYLOAD);
+    expect(client.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined when the turn ends without calling the tool', async () => {
+    const client = stubClient();
+    const service = createSessionService(client);
+
+    await expect(
+      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+    ).resolves.toBeUndefined();
+    expect(client.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('aborts the session and rethrows when the prompt fails', async () => {
+    const client = stubClient({ promptError: { message: 'rate limited' } });
+    const service = createSessionService(client);
+
+    await expect(
+      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+    ).rejects.toThrow(/LLM session prompt failed in \/clone\/repo: rate limited/);
+    expect(client.session.abort).toHaveBeenCalledWith({
+      path: { id: 'ses_1' },
+      query: { directory: DIRECTORY },
+    });
   });
 });
 

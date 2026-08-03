@@ -121,6 +121,100 @@ export const contributionTypeSchema = z.enum([
 export type ContributionType = z.infer<typeof contributionTypeSchema>;
 
 /**
+ * Observability quality signal of a contribution: anything positive the
+ * change brings to the repository that can be seen in git history.
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export const qualitySignalSchema = z.enum([
+  'tests-added',
+  'tests-updated',
+  'test-coverage-expanded',
+  'docs-added',
+  'docs-updated',
+  'changelog-updated',
+  'migration-guide-added',
+  'examples-added',
+  'comments-added',
+  'validation-added',
+  'error-handling-added',
+  'error-messages-improved',
+  'logging-added',
+  'observability-added',
+  'performance-improved',
+  'memory-usage-improved',
+  'security-hardened',
+  'deprecation-marked',
+  'backwards-compatible',
+  'code-reuse-improved',
+  'naming-improved',
+  'dead-code-removed',
+  'accessibility-improved',
+  'i18n-added',
+  'benchmarks-added',
+]);
+
+/**
+ * Observable quality signal of a contribution.
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export type QualitySignal = z.infer<typeof qualitySignalSchema>;
+
+/**
+ * Observable risk flag of a contribution: anything that may bite later
+ * and is visible in git history (review status, for instance, is not).
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export const riskFlagSchema = z.enum([
+  'no-tests',
+  'snapshot-only-tests',
+  'test-assertions-weak',
+  'large-diff',
+  'breaking-change',
+  'api-changed-without-deprecation',
+  'undocumented-public-api',
+  'dead-code-introduced',
+  'duplicated-logic',
+  'commented-out-code',
+  'leftover-debug-code',
+  'temporary-workaround',
+  'todo-left-behind',
+  'unfinished-migration',
+  'incomplete-error-handling',
+  'silent-failure',
+  'swallowed-errors',
+  'unsafe-type-cast',
+  'any-type-usage',
+  'hardcoded-values',
+  'magic-numbers',
+  'hardcoded-secrets',
+  'sensitive-data-logged',
+  'config-changed-without-docs',
+  'dependency-added',
+  'dependency-removed',
+  'generated-code-modified',
+  'vendored-code-modified',
+  'concurrency-risk',
+  'performance-regression-risk',
+  'memory-regression-risk',
+  'touches-critical-path',
+  'permissions-widened',
+]);
+
+/**
+ * Observable risk flag of a contribution.
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export type RiskFlag = z.infer<typeof riskFlagSchema>;
+
+/**
  * Complexity level of a contribution.
  *
  * @internal Exported for tests only; referenced by `contributionSchema`
@@ -135,6 +229,22 @@ export const complexitySchema = z.enum(['low', 'medium', 'high']);
  * within the module. Not part of the public module API.
  */
 export type Complexity = z.infer<typeof complexitySchema>;
+
+/**
+ * Size level of a contribution (t-shirt sizing).
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export const contributionSizeSchema = z.enum(['xs', 's', 'm', 'l', 'xl']);
+
+/**
+ * Size level of a contribution (t-shirt sizing).
+ *
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
+ */
+export type ContributionSize = z.infer<typeof contributionSizeSchema>;
 
 /**
  * One distinct contribution from a user's work in the range.
@@ -163,6 +273,12 @@ export const contributionSchema = z.object({
     .describe('Overall complexity of the contribution: low, medium, or high.'),
   /** Why the complexity level was chosen. */
   complexityReasoning: z.string().describe('Why the complexity level was chosen.'),
+  /** Overall size of the contribution (t-shirt sizing). */
+  size: contributionSizeSchema.describe(
+    'Overall size of the contribution (t-shirt sizing): xs, s, m, l, or xl.',
+  ),
+  /** Why the size level was chosen. */
+  sizeReasoning: z.string().describe('Why the size level was chosen.'),
   /** Repo areas/directories touched by this contribution. */
   areas: z
     .array(z.string())
@@ -171,15 +287,19 @@ export const contributionSchema = z.object({
   commits: z
     .array(z.string())
     .describe('Commit shas (full or abbreviated) grouped into this contribution.'),
-  /** Observable quality signals, e.g. tests added, docs updated. */
+  /** Observable quality signals from the fixed enum, e.g. tests added. */
   qualitySignals: z
-    .array(z.string())
-    .describe('Observable quality signals, e.g. tests added, docs updated.'),
-  /** Observable risk flags, e.g. large change without tests. */
-  riskFlags: z
-    .array(z.string())
+    .array(qualitySignalSchema)
     .describe(
-      'Observable risk flags, e.g. a large change without accompanying tests. Only what is observable in the repository.',
+      'Observable quality signals from the fixed list (tests-added, docs-updated, ' +
+        'test-coverage-expanded, ...); only what is observable in the repository.',
+    ),
+  /** Observable risk flags from the fixed enum, e.g. no tests. */
+  riskFlags: z
+    .array(riskFlagSchema)
+    .describe(
+      'Observable risk flags from the fixed list (no-tests, large-diff, breaking-change, ...); ' +
+        'only what is observable in the repository, never inferred review status.',
     ),
 });
 

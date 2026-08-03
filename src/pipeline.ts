@@ -18,6 +18,7 @@ import { assembleReport, assembleRepository } from './report/index.js';
 import type { AnalyzedRange, LlmAnalysis, Report, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
+import { errorDetail } from './util/error.js';
 import { prettyJson, writeJsonFile } from './util/json.js';
 import { logInfo, logWarn, setVerbose } from './util/log.js';
 
@@ -96,7 +97,10 @@ async function analyzeRepository(repo: string, options: CliOptions): Promise<Rep
     try {
       llmResults = await analyzeLlm(repo, clone, range, groups, options);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      // errorDetail walks the cause chain: a bare `fetch failed` from
+      // the opencode SDK gets its real reason (e.g. `connect ECONNREFUSED
+      // 127.0.0.1:50664`) appended.
+      const detail = errorDetail(error);
       throw new Error(`LLM analysis failed for ${repo}: ${detail}`, { cause: error });
     }
   } else if (options.llm) {
@@ -156,9 +160,7 @@ async function analyzeLlm(
     try {
       await server.close();
     } catch (error) {
-      logWarn(
-        `LLM server shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      logWarn(`LLM server shutdown failed: ${errorDetail(error)}`);
     }
   }
 }

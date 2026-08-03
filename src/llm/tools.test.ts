@@ -43,6 +43,8 @@ describe('buildReportToolSource', () => {
       'types',
       'complexity',
       'complexityReasoning',
+      'size',
+      'sizeReasoning',
       'areas',
       'commits',
       'qualitySignals',
@@ -55,10 +57,15 @@ describe('buildReportToolSource', () => {
       'Short name of the contribution.',
       'Kinds of change this contribution mixes: feature, bugfix, refactor, test, docs, tooling, chore, security.',
       'Overall complexity of the contribution: low, medium, or high.',
-      'Observable risk flags, e.g. a large change without accompanying tests.',
+      'Overall size of the contribution (t-shirt sizing): xs, s, m, l, or xl.',
+      'Observable risk flags from the fixed list (no-tests, large-diff, breaking-change, ...)',
     ]) {
       expect(source).toContain(description);
     }
+    // Enum-backed fields render the fixed value lists into the schema.
+    expect(source).toContain('tool.schema.enum(["tests-added"');
+    expect(source).toContain('tool.schema.enum(["no-tests"');
+    expect(source).toContain('tool.schema.enum(["xs","s","m","l","xl"])');
   });
 
   it('keeps optional fields optional and required fields required', () => {
@@ -102,10 +109,12 @@ describe('generated tool execution', () => {
             types: ['feature'],
             complexity: 'medium',
             complexityReasoning: 'Several modules touched.',
+            size: 'm',
+            sizeReasoning: 'A few modules touched.',
             areas: ['src'],
             commits: ['abc123'],
-            qualitySignals: ['tests added'],
-            riskFlags: [],
+            qualitySignals: ['tests-added'],
+            riskFlags: ['large-diff'],
           },
         ],
       };

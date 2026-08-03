@@ -210,9 +210,12 @@ agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sd
   rather than stored in any file.
 - Before starting the server, the tool writes into the clone:
   - `opencode.json` — provider (base URL) + model, permissions (read-only for the
-    repo, deny writes), rules (analysis instructions), and a `limit` block;
+    repo, deny writes), and a `limit` block;
   - `.opencode/tools/devperf_report.ts` — the report-capture tool, registered via
-    a plugin (§6.5).
+    a plugin (§6.5);
+  - `.opencode/agents/devperf-analyst.md` — the analysis agent, following
+    opencode's markdown agent spec: YAML frontmatter (description, mode,
+    permissions) and the prompt as the body (§6.4).
 - **Token limits** — the generated `opencode.json` caps the model window so a
   single analysis cannot blow the context:
 
@@ -228,6 +231,9 @@ agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sd
 
 ### 6.3 Sessions and prompts
 
+- Prompt text lives in `src/llm/prompts/*.md` templates (`orientation.md`,
+  `user.md`, `reminder.md`); `prompts.ts` only renders them with the session
+  values, so the prose stays maintainable outside the code.
 - **Orientation session** (per repo, once): the agent explores the repo (README,
   manifests, top-level layout) and returns a compact "repo context": tech stack,
   main modules, conventions. Output is cached and injected into every user prompt,
@@ -241,11 +247,20 @@ agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sd
 
 ### 6.4 Agent tools
 
-The agent uses opencode's built-in tools (`read`, `grep`, `glob`, `ls`, `bash`).
-**git is a prerequisite of dev-perf**, so the agent runs all git operations
-directly — `git show <sha>`, `git log`, `git diff`, `git blame`, … — through
-`bash`. No custom analysis tools are needed. Permissions deny the write tools
-(`write`, `edit`, `patch`) so the analysis stays read-only.
+Analysis runs through a dedicated `devperf-analyst` agent defined by an
+opencode **markdown agent file** (`src/llm/agents/devperf-analyst.md`, copied
+into the clone's `.opencode/agents/` where the server discovers it — the file
+name is the agent name). The file follows opencode's agent spec: YAML
+frontmatter with the description, `mode: primary`, and the permission surface;
+the body is the prompt. Permissions are deny-all with a short allow-list: a
+leading `"*": deny` (opencode matches permission rules last-wins) followed by
+the read tools (`read`, `glob`, `grep`, `list`), `bash` restricted to read-only
+git commands (`git show`, `git log`, `git diff`, `git blame`, `git status` —
+git is a prerequisite of dev-perf, so all history inspection goes through
+bash), and the `devperf_report` capture tool. Everything else — edits, task
+delegation, todos, questions, web access, skills, LSP, doom-loop recovery,
+external directories — is denied by the wildcard. Sessions pass
+`agent: devperf-analyst` on every prompt, context injection included.
 
 ### 6.5 Structured output via the report tool
 
@@ -260,11 +275,13 @@ into the clone before the server starts (using `tool()` from `@opencode-ai/plugi
   the model supporting structured output.
 - Every analysis prompt ends with the instruction: **call `devperf_report` with
   the final analysis before finishing** — no other output format is accepted.
-- Enforcement: after the session finishes, dev-perf checks that the tool was
-  called (the output file exists and validates). If not, it sends a follow-up
-  prompt asking the agent to call the tool — up to 3 attempts. If the tool was
-  still not called, dev-perf **exits with a non-zero status** and an error message
-  naming the user and session; the report is not written.
+- Enforcement: the session's report file is polled while the analysis prompt
+  runs; as soon as the tool output exists, the session is aborted and the
+  analysis moves on — dev-perf never waits for an agent that keeps working
+  after reporting. If the prompt ends without a report, dev-perf sends a
+  follow-up prompt asking the agent to call the tool — up to 3 attempts. If
+  the tool was still not called, dev-perf **exits with a non-zero status** and
+  an error message naming the user and session; the report is not written.
 
 Default output shape (described in the `devperf_report` tool's schema; all fields
 have descriptions to guide the model):
@@ -277,22 +294,27 @@ have descriptions to guide the model):
   - `summary` — what was done and how;
   - `types` — `["feature" | "bugfix" | "refactor" | "test" | "docs" | "tooling" | "chore" | "security"]`;
   - `complexity` — `low | medium | high` plus `complexityReasoning`;
+  - `size` — `xs | s | m | l | xl` (t-shirt sizing) plus `sizeReasoning`;
   - `areas` — repo areas/dirs touched by this contribution;
   - `commits` — shas grouped into this contribution;
-  - `qualitySignals` — e.g. tests added, follow-ups, docs updated;
-  - `riskFlags` — e.g. large changes without accompanying tests, dead code,
-    duplicated logic. Limited to what is observable in the repository: review
-    status, for instance, cannot be determined from git history alone.
+  - `qualitySignals` — fixed enum of observable quality signals
+    (tests-added, docs-updated, test-coverage-expanded, changelog-updated, …);
+  - `riskFlags` — fixed enum of observable risk flags (no-tests, large-diff,
+    breaking-change, …). Limited to what is observable in the repository:
+    review status, for instance, cannot be determined from git history alone.
 
-Changes of different complexity are reported as separate contributions rather
-than averaged into one description.
+Changes of different complexity or size are reported as separate contributions
+rather than averaged into one description.
 
 ### 6.6 Caching and cost visibility
 
 - LLM analysis results are cached in the cache directory
   (`<cache-dir>/<hash>/llm/`), keyed by (repo, user, since, until, model, context
   and output limits). A rerun with the same parameters reuses them; `--refresh`
-  invalidates the cache and re-runs everything.
+  invalidates the cache and re-runs everything. The cached file stores all
+  cache-key components (repo, email, range, model, limits) next to the payload,
+  so each file is self-describing; the filename hash encodes the same
+  components.
 - `--no-llm` produces the deterministic-only report (also the CI mode).
 - The report includes `tokenUsage` (input/output) and an estimated cost per user
   from the SDK event stream, so runaway costs are visible.
@@ -321,7 +343,8 @@ Single JSON document (schema defined in `src/report/schema.ts` with zod):
             status: "completed" | "skipped" | "failed",
             overview?,
             contributions: [ { title, summary, types, complexity,
-              complexityReasoning, areas, commits, qualitySignals, riskFlags } ],
+              complexityReasoning, size, sizeReasoning, areas, commits,
+              qualitySignals, riskFlags } ],
             tokenUsage?, estimatedCostUsd?, error?
           }
         }
@@ -352,7 +375,9 @@ dev-perf/
 │   │   ├── server.ts                   # createOpencode lifecycle
 │   │   ├── session.ts                  # create/prompt/tool-call capture/abort
 │   │   ├── tools.ts                    # generates .opencode/tools/*.ts
-│   │   ├── prompts.ts
+│   │   ├── prompts.ts                  # renders src/llm/prompts/*.md templates
+│   │   ├── prompts/                    # LLM prompt templates (*.md)
+│   │   ├── agents/                     # the devperf-analyst agent definition (*.md)
 │   │   └── analyze.ts                  # orientation + per-user orchestration
 │   ├── report/{schema,assemble}.ts
 │   └── util/                           # logging, json
