@@ -97,9 +97,8 @@ export type DeterministicMetrics = z.infer<typeof deterministicMetricsSchema>;
 /**
  * Kind of change a contribution represents (design §6.5).
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
  */
 export const contributionTypeSchema = z.enum([
   'feature',
@@ -124,48 +123,64 @@ export type ContributionType = z.infer<typeof contributionTypeSchema>;
 /**
  * Complexity level of a contribution (design §6.5).
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
  */
 export const complexitySchema = z.enum(['low', 'medium', 'high']);
 
 /**
  * Complexity level of a contribution (design §6.5).
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; referenced by `contributionSchema`
+ * within the module. Not part of the public module API.
  */
 export type Complexity = z.infer<typeof complexitySchema>;
 
 /**
  * One distinct contribution from a user's work in the range
- * (design §6.5).
+ * (design §6.5). Field descriptions double as the model-facing
+ * documentation: `llmToolPayloadSchema` serializes them into the
+ * `devperf_report` tool's JSON schema (plan step 7), so the LLM sees
+ * exactly what the report schema requires.
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; referenced by `llmToolPayloadSchema`
+ * within the module. Not part of the public module API.
  */
 export const contributionSchema = z.object({
   /** Short name of the contribution. */
-  title: z.string(),
+  title: z.string().describe('Short name of the contribution.'),
   /** What was done and how. */
-  summary: z.string(),
+  summary: z.string().describe('What was done and how.'),
   /** Kinds of change this contribution mixes. */
-  types: z.array(contributionTypeSchema),
+  types: z
+    .array(contributionTypeSchema)
+    .describe(
+      'Kinds of change this contribution mixes: feature, bugfix, refactor, test, docs, tooling, chore, security.',
+    ),
   /** Overall complexity of the contribution. */
-  complexity: complexitySchema,
+  complexity: z
+    .enum(['low', 'medium', 'high'])
+    .describe('Overall complexity of the contribution: low, medium, or high.'),
   /** Why the complexity level was chosen. */
-  complexityReasoning: z.string(),
+  complexityReasoning: z.string().describe('Why the complexity level was chosen.'),
   /** Repo areas/directories touched by this contribution. */
-  areas: z.array(z.string()),
+  areas: z
+    .array(z.string())
+    .describe('Repository areas or directories touched by this contribution.'),
   /** Commit shas grouped into this contribution. */
-  commits: z.array(z.string()),
+  commits: z
+    .array(z.string())
+    .describe('Commit shas (full or abbreviated) grouped into this contribution.'),
   /** Observable quality signals, e.g. tests added, docs updated. */
-  qualitySignals: z.array(z.string()),
+  qualitySignals: z
+    .array(z.string())
+    .describe('Observable quality signals, e.g. tests added, docs updated.'),
   /** Observable risk flags, e.g. large change without tests. */
-  riskFlags: z.array(z.string()),
+  riskFlags: z
+    .array(z.string())
+    .describe(
+      'Observable risk flags, e.g. a large change without accompanying tests. Only what is observable in the repository.',
+    ),
 });
 
 /**
@@ -251,6 +266,44 @@ export const llmAnalysisSchema = z.object({
  * importer exists.
  */
 export type LlmAnalysis = z.infer<typeof llmAnalysisSchema>;
+
+/**
+ * Payload the `devperf_report` tool accepts (design §6.5): the model's
+ * analysis of one user — an optional overview and the changes split
+ * into distinct contributions. Everything else in `llmAnalysisSchema`
+ * (`status`, token usage, cost, error) is produced by dev-perf itself,
+ * so the model never sees it. `src/llm/tools.ts` serializes this schema
+ * (descriptions included) into the generated tool's argument schema,
+ * keeping the model-facing shape in lockstep with the report schema.
+ *
+ * @internal The sole production importer is `src/llm/tools.ts`, which
+ * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
+ * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
+ * step 9), so the import does not register as usage. Remove the tag
+ * when the pipeline lands.
+ */
+export const llmToolPayloadSchema = z.object({
+  /** 1-2 sentences summarizing the user's work in the range. */
+  overview: z
+    .string()
+    .describe("1-2 sentences summarizing the user's work in the analyzed range.")
+    .optional(),
+  /** The user's changes split into distinct contributions. */
+  contributions: z
+    .array(contributionSchema)
+    .describe(
+      "The user's changes split into a list of distinct contributions: one feature, one bug fix, one refactor, and so on. Changes of different complexity are reported as separate contributions rather than averaged into one description.",
+    ),
+});
+
+/**
+ * Payload the `devperf_report` tool accepts (design §6.5).
+ *
+ * @internal Exported for tests only; the `llmToolPayloadSchema` const is
+ * the production export (consumed by `src/llm/tools.ts`). Not part of
+ * the public module API.
+ */
+export type LlmToolPayload = z.infer<typeof llmToolPayloadSchema>;
 
 /**
  * One analyzed user of a repository (design §7); the inferred `User`

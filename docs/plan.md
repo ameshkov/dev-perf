@@ -258,11 +258,13 @@ test asserts stdout purity.
 **Goal**: opencode-as-a-library server lifecycle and the
 report-capture tool per design §6.1-6.2 and §6.5.
 
-**Dependencies**: `@opencode-ai/sdk` (check the registry for the
-latest 1.x; the design was verified against v1.18.x) and
-`@opencode-ai/plugin` (confirm at implementation time whether the
-generated tool file resolves the plugin from the opencode runtime
-rather than from dev-perf's own node_modules).
+**Dependencies**: `@opencode-ai/sdk` and `@opencode-ai/plugin`,
+pinned to 1.18.11 (the design's v1.18.x). Resolution confirmed at
+implementation time: `.opencode/tools/*.ts` files resolve
+`@opencode-ai/plugin` from the opencode runtime itself (the compiled
+binary embeds it) — verified with a smoke test against a clone that
+has no node_modules — so the generated tool file needs no dev-perf
+dependency.
 
 **Files**
 
@@ -272,26 +274,55 @@ rather than from dev-perf's own node_modules).
   analysis rules, and the `limit` block from `--limit-context` /
   `--limit-output`, §6.2); launch `createOpencode()` with cwd = the
   clone; inject the API key programmatically via
-  `client.auth.set()`; guarantee that no user config is merged (verify
-  the `OPENCODE_CONFIG` mechanism, fall back to an empty inline
-   config — §10); shut the server down in `finally`; the Step 6
-   logger prints the server URL and model when `--verbose` is set.
+  `client.auth.set()`; guarantee that no user config is merged;
+  shut the server down in `finally`; the Step 6 logger prints the
+  server URL and model when `--verbose` is set.
+  Implementation notes (verified against opencode 1.18.11):
+  - `OPENCODE_CONFIG_CONTENT` (what the SDK sets from its `config`
+    option) is the *highest-priority* config source but is **merged**
+    with the user's global config, not a replacement — global
+    providers and plugins leak through. Isolation therefore uses a
+    temp `HOME`/`XDG_CONFIG_HOME` (no global config/plugins/auth can
+    be found), clears `OPENCODE_CONFIG*` and `OPENCODE_SERVER_*` env
+    vars around the spawn, and pins `enabled_providers` as
+    defense-in-depth.
+  - The `limit` block has no top-level config key; it lives per
+    model: `provider.<id>.models.<model>.limit`.
+  - The SDK spawns `opencode serve` inheriting our cwd, and the
+    server's project directory is fixed at spawn time — so
+    `process.chdir(cloneDir)` wraps the spawn and the cwd is
+    restored immediately after.
+  - `permission.bash` is `"allow"`: the agent runs read-only git
+    commands through bash (§6.4), and `"ask"` would stall headless
+    sessions (no permission responder is planned in step 8). The
+    write surface is closed by `tools: { write/edit/patch: false }`
+    and `permission.edit: "deny"`.
+  - The API key is injected via `client.auth.set({ path: { id:
+    "devperf" }, body: { type: "api", key } })` — never stored in a
+    file.
 - `src/llm/tools.ts` (new) — generate `.opencode/tools/
-  devperf_report.ts` plugin source: `tool()` from `@opencode-ai/plugin`
-  with a JSON-schema argument derived from `schema.ts` (all field
-  descriptions included, §6.5); the tool validates the payload with
-  zod, writes it to `<cache>/<hash>/llm/<user>.json`, and returns
-  `ok`.
+  devperf_report.ts` plugin source: `tool()` from
+  `@opencode-ai/plugin` with an argument schema derived from
+  `schema.ts` (all field descriptions included, §6.5); the tool
+  validates the payload with zod, writes it to
+  `<cache>/<hash>/llm/<sessionID>.json`, and returns `ok`.
+  Deviation from §6.5's `<user>.json`: the tool executes inside the
+  opencode runtime and knows only its `sessionID`, not the analyzed
+  user's key — the orchestrator maps sessions to users (step 8).
 
 **Tests**
 
-- `src/llm/server.test.ts` — golden-file checks for the generated
-  `opencode.json` (provider, model, permissions, limit block).
+- `src/llm/server.test.ts` — golden checks for the generated
+  `opencode.json` (provider, model, permissions, limit block) and
+  the generated-files layout (cache `opencode/` + clone copies).
 - `src/llm/tools.test.ts` — generated tool source contains the full
-  schema with descriptions; output path handling.
+  schema with descriptions; output path handling; plus an execution
+  test that imports the generated module (resolving the plugin from
+  dev-perf's node_modules) and runs `execute`.
 - A lifecycle smoke test (start/stop a server against a fixture
-  clone) is marked manual and skipped in CI until the §9 manual LLM
-  integration exists.
+  clone) is gated behind `DEV_PERF_SMOKE=1` — skipped in CI until
+  the §9 manual LLM integration exists; requires the `opencode`
+  binary on PATH.
 
 **Verification**: `pnpm check`.
 
@@ -371,11 +402,11 @@ unchanged; release candidate v0.3.0.
 
 | Risk | Where | Mitigation |
 | --- | --- | --- |
-| SDK API stability | Step 7 | Pin the exact version; the server module is the only SDK touchpoint |
+| SDK API stability | Step 7 | Pinned to 1.18.11; the server module is the only SDK touchpoint |
 | Provider auth failure | Step 9 | Fail fast with a clear message when the first prompt fails |
-| Global config isolation | Step 7 | Verify the `OPENCODE_CONFIG` mechanism; fall back to an empty inline config |
-| Server startup cost | Step 7 | Verify startup time; keep the `createOpencodeClient` escape hatch |
-| Session/directory scoping | Step 8 | Sessions scoped to the server cwd; explicit directory option if available |
+| Global config isolation | Step 7 | Verified: `OPENCODE_CONFIG_CONTENT` is merged, not a replacement; isolation is a temp `HOME`/`XDG_CONFIG_HOME` plus cleared opencode env vars plus an `enabled_providers` pin |
+| Server startup cost | Step 7 | Verified startup (~1 s, smoke test); keep the `createOpencodeClient` escape hatch |
+| Session/directory scoping | Step 8 | Sessions scoped to the server cwd (fixed at spawn); explicit `directory` option on session endpoints if available |
 | Large repos | Steps 3-4 | Partial clones; per-commit diffs fetched lazily |
 | Identity / date semantics | Steps 3-4 | Email grouping and UTC author dates are the v1 contract; documented |
 

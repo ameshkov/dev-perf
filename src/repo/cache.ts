@@ -88,14 +88,18 @@ export function cloneJsonPath(entryDir: string): string {
 
 /**
  * Returns the LLM results directory inside a cache entry (`llm/`,
- * design §6.6).
+ * design §6.6). Consumed by the LLM layer: the generated
+ * `devperf_report` tool writes each session's analysis payload here
+ * (plan step 7).
  *
  * @param entryDir - The cache entry directory.
  * @returns The llm directory path.
  *
- * @internal Exported for tests only; consumed by the LLM layer (plan
- * steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal The sole production importer is `src/llm/server.ts`, which
+ * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
+ * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
+ * step 9), so the import does not register as usage. Remove the tag
+ * when the pipeline lands.
  */
 export function llmDir(entryDir: string): string {
   return path.join(entryDir, 'llm');
@@ -103,14 +107,18 @@ export function llmDir(entryDir: string): string {
 
 /**
  * Returns the generated opencode directory inside a cache entry
- * (`opencode/`, design §6.2, §6.5).
+ * (`opencode/`, design §6.2, §6.5): the source of the generated
+ * `opencode.json` and `.opencode/tools/devperf_report.ts`, which are
+ * copied into the clone before the LLM server starts (plan step 7).
  *
  * @param entryDir - The cache entry directory.
  * @returns The opencode directory path.
  *
- * @internal Exported for tests only; consumed by the LLM layer (plan
- * steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal The sole production importer is `src/llm/server.ts`, which
+ * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
+ * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
+ * step 9), so the import does not register as usage. Remove the tag
+ * when the pipeline lands.
  */
 export function opencodeDir(entryDir: string): string {
   return path.join(entryDir, 'opencode');

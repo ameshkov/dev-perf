@@ -45,8 +45,10 @@ user**:
 The full design and implementation plan lives in
 [docs/design.md](./docs/design.md). The deterministic analysis path
 (M2) is implemented: `dev-perf --no-llm <repo>` clones the repository
-and produces the JSON report. The LLM-based analysis layer (plan steps
-7-9) is not implemented yet.
+and produces the JSON report. The LLM layer (plan steps 7-9) is in
+progress: the opencode server lifecycle and the `devperf_report` tool
+generation (plan step 7) are implemented; sessions, prompts, and
+orchestration (plan steps 8-9) are not wired yet.
 
 ## Technical Context
 
@@ -90,6 +92,11 @@ dev-perf/
 │   │   ├── metrics.test.ts   # Exact-value metrics tests against fixture repos
 │   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
 │   │   └── languages.test.ts # Language mapping and counting tests
+│   ├── llm/                  # LLM agentic layer (design §6; server + tool generation in, sessions/prompts/analyze planned)
+│   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json, env isolation, auth.set
+│   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
+│   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
+│   │   └── tools.test.ts     # Generated tool content + execution tests
 │   ├── util/                 # Shared helpers, no business logic
 │   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
 │   │   └── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
@@ -212,7 +219,8 @@ This project's layers, from top to bottom:
 - **Services** — own all business logic: clone/cache management,
   deterministic analysis, LLM orchestration, report assembly.
   Directories: `src/repo/` (implemented), `src/deterministic/`
-  (implemented), `src/llm/` (planned), `src/report/`.
+  (implemented), `src/llm/` (server and tool generation implemented;
+  sessions/prompts/analyze planned), `src/report/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 

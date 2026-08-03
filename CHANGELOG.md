@@ -10,6 +10,52 @@ and this project adheres to
 
 ### Added
 
+- LLM server lifecycle (`src/llm/server.ts`, plan step 7): starts an
+  opencode server as a library (`createOpencode` from
+  `@opencode-ai/sdk`, 1.18.11, pinned exactly) scoped to the analyzed
+  clone. The generated `opencode.json` declares the provider
+  (`@ai-sdk/openai-compatible` with the `--provider-url` base URL),
+  the model with the `limit` block from `--limit-context` /
+  `--limit-output`, read-only permissions that deny the write tools
+  (`write`/`edit`/`patch` disabled, `webfetch`/`external_directory`
+  denied), the analysis rules in the `build` agent prompt, and an
+  `enabled_providers` pin. The API key is injected programmatically
+  via `client.auth.set()` — never stored in a file.
+- Global opencode config isolation (plan step 7, verified against
+  opencode 1.18.11): the SDK's `OPENCODE_CONFIG_CONTENT` is *merged*
+  with the user's global config rather than replacing it, so the
+  spawned server runs with `HOME`/`XDG_CONFIG_HOME` pointed at an
+  empty temp directory and with `OPENCODE_CONFIG*` and server-auth
+  env vars cleared — no global config, plugins, or stored auth can
+  reach the analysis. The process cwd is switched to the clone for
+  the spawn (the server's project directory is fixed at spawn time)
+  and both are restored immediately; `--verbose` logs the server URL
+  and model.
+- `devperf_report` tool generation (`src/llm/tools.ts`, design §6.5):
+  the plugin source written to the clone's `.opencode/tools/` (and
+  mirrored in the cache entry's `opencode/` directory, design §4).
+  The tool's argument schema is derived from the report schema
+  (`llmToolPayloadSchema`, now with model-facing field descriptions)
+  via `z.toJSONSchema`, rendered back into `tool.schema.*` zod code,
+  so the model-facing shape cannot drift from the report. The
+  self-contained file imports only `@opencode-ai/plugin` (resolved by
+  the opencode runtime) and `node:` builtins, validates the payload
+  with zod, and writes it to `<cache>/<hash>/llm/<sessionID>.json`
+  — session-scoped naming instead of the design's `<user>.json`,
+  because the tool cannot know the user key; the orchestrator maps
+  sessions to users (plan step 8).
+- Tests for the LLM layer: golden checks for the generated
+  `opencode.json` (provider, model, permissions, limit block), the
+  generated-files layout (cache `opencode/` + clone copies), the
+  generated tool's schema/descriptions and its real execution
+  (valid payload written, invalid payload rejected), and a manual
+  server lifecycle smoke test gated behind `DEV_PERF_SMOKE=1`
+  (skipped in CI; needs the `opencode` binary).
+- `@opencode-ai/sdk` and `@opencode-ai/plugin` dependencies
+  (1.18.11, pinned exactly).
+- `llmToolPayloadSchema` (`src/report/schema.ts`): the model-facing
+  analysis payload (overview + contributions) with `describe()`d
+  fields, exported through the report barrel.
 - Report assembler (`src/report/assemble.ts`, design §7): builds the
   report document — parameters, per-repository entries (repo,
   clonePath, branch, head, analyzed range, stats), and per-user
@@ -123,6 +169,13 @@ and this project adheres to
 
 ### Changed
 
+- `knip.config.ts`: added `src/llm/**` to `ignoreFiles` and the
+  `@opencode-ai/sdk` / `@opencode-ai/plugin` packages to
+  `ignoreDependencies` — the LLM layer (plan step 7) has no
+  production importer until the pipeline wires it in step 9; remove
+  both entries then. The exports it consumes (`llmToolPayloadSchema`
+  in the report barrel, `llmDir`/`opencodeDir` in `src/repo/cache.ts`)
+  carry transitional `@internal` tags with the same removal note.
 - `--verbose` is now wired through the pipeline (plan step 6): progress
   messages — cache reuse vs a fresh clone (with duration), the
   resolved author-date range, and per-repo commit counts — go to
