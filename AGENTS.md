@@ -69,7 +69,13 @@ dev-perf/
 ├── src/                      # Application source code
 │   ├── index.ts              # CLI entry point: .env loading, version, error handling
 │   ├── cli.ts                # Commander program definition (arguments + options) + analysis stub
-│   └── cli.test.ts           # CLI surface tests
+│   ├── cli.test.ts           # CLI surface tests
+│   ├── config.ts             # zod validation of parsed CLI options (cross-field rules)
+│   ├── config.test.ts        # CLI options validation tests
+│   └── report/               # Report schema, the single source of truth (design §7)
+│       ├── index.ts          # Barrel: public API of the report module
+│       ├── schema.ts         # zod schemas + inferred types for the whole report
+│       └── schema.test.ts    # Report schema validation tests
 ├── docs/
 │   ├── design.md             # Full design document
 │   └── plan.md               # Step-by-step implementation plan

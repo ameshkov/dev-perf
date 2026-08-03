@@ -10,6 +10,19 @@ and this project adheres to
 
 ### Added
 
+- Report schema (`src/report/schema.ts`) — the single source of truth
+  for the report shape (design §7): parameters, repository and user
+  entries, deterministic metrics, per-language contributions, and the
+  LLM analysis. `churn` stays optional (reserved for v2), and
+  `llm.status` defaults to `"skipped"`.
+- CLI option validation (`src/config.ts`) — zod schema for the parsed
+  options: LLM analysis requires `--model`, `--provider-url` and
+  `--api-key` (the key may come from `DEV_PERF_API_KEY`);
+  `--limit-context` / `--limit-output` are positive integers (defaults
+  262144 / 65536); empty repo lists are rejected. Errors name each
+  failing option.
+- `--limit-context <n>` and `--limit-output <n>` CLI options (design
+  §3), and validation of all parsed options in the CLI action.
 - Project scaffolding modeled on mcp-compress-router: TypeScript CLI
   skeleton (commander entry with the documented argument/option
   surface), Vitest + oxlint + Knip + Prettier + Markdownlint + Husky

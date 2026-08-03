@@ -25,6 +25,8 @@ describe('cli', () => {
     expect(help).toContain('--model <model>');
     expect(help).toContain('--provider-url <url>');
     expect(help).toContain('--api-key <key>');
+    expect(help).toContain('--limit-context <n>');
+    expect(help).toContain('--limit-output <n>');
     expect(help).toContain('--verbose');
   });
 
@@ -67,5 +69,42 @@ describe('cli', () => {
     await expect(
       program.parseAsync(['node', 'dev-perf', '--no-llm', 'https://github.com/org/repo.git']),
     ).rejects.toThrow(/not implemented yet/);
+  });
+
+  it('passes validation for numeric limit options when LLM analysis is disabled', async () => {
+    const program = createProgram();
+    await expect(
+      program.parseAsync([
+        'node',
+        'dev-perf',
+        '--no-llm',
+        '--limit-context',
+        '65536',
+        '--limit-output',
+        '32768',
+        'https://github.com/org/repo.git',
+      ]),
+    ).rejects.toThrow(/not implemented yet/);
+  });
+
+  it('rejects non-numeric limit options with the option name in the error', async () => {
+    const program = createProgram();
+    await expect(
+      program.parseAsync([
+        'node',
+        'dev-perf',
+        '--no-llm',
+        '--limit-context',
+        'nope',
+        'https://github.com/org/repo.git',
+      ]),
+    ).rejects.toThrow(/--limit-context/);
+  });
+
+  it('rejects LLM-enabled runs without provider configuration', async () => {
+    const program = createProgram();
+    await expect(
+      program.parseAsync(['node', 'dev-perf', 'https://github.com/org/repo.git']),
+    ).rejects.toThrow(/required when LLM analysis is enabled/);
   });
 });

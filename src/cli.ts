@@ -1,6 +1,13 @@
 import { Command } from 'commander';
+import { parseCliOptions } from './config.js';
+import type { Report } from './report/index.js';
 
-interface CliOptions {
+/**
+ * Raw options as parsed by commander before validation: limit options
+ * are strings, and unset options are `undefined`. The validated,
+ * defaulted shape is `CliOptions` from `src/config.ts`.
+ */
+interface RawCliOptions {
   since?: string;
   until?: string;
   output?: string;
@@ -10,6 +17,8 @@ interface CliOptions {
   model?: string;
   providerUrl?: string;
   apiKey?: string;
+  limitContext?: string;
+  limitOutput?: string;
   verbose?: boolean;
 }
 
@@ -31,15 +40,27 @@ export function registerCommands(program: Command): void {
       'OpenAI-compatible provider base URL (required for LLM analysis)',
     )
     .option('--api-key <key>', 'Provider API key (required for LLM analysis; or DEV_PERF_API_KEY)')
+    .option('--limit-context <n>', 'Max context tokens for LLM analysis (default: 262144)')
+    .option('--limit-output <n>', 'Max output tokens for LLM analysis (default: 65536)')
     .option('--verbose', 'Verbose logging')
-    .action((repos: string[], options: CliOptions) => runAnalysis(repos, options));
+    .action(async (repos: string[], options: RawCliOptions) => {
+      await runAnalysis(repos, options);
+    });
 }
 
 /**
  * Runs the full analysis pipeline: clone → deterministic analysis →
- * LLM analysis → report assembly. Not implemented yet — see
- * docs/design.md for the complete design and implementation plan.
+ * LLM analysis → report assembly, producing the report document
+ * (docs/design.md §2, §7). Not implemented yet — the stub validates
+ * the parsed options (design §3) and throws.
+ *
+ * @param repos - Repositories to analyze, as given on the command line.
+ * @param options - Raw commander options for this invocation.
+ * @returns The assembled report document (not yet implemented).
+ * @throws {Error} When the options fail validation, or the not-implemented
+ * error while the pipeline is still a stub.
  */
-async function runAnalysis(_repos: string[], _options: CliOptions): Promise<void> {
+async function runAnalysis(repos: string[], options: RawCliOptions): Promise<Report> {
+  parseCliOptions({ ...options, repos });
   throw new Error('The analysis pipeline is not implemented yet — see docs/design.md');
 }
