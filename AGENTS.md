@@ -71,7 +71,8 @@ dev-perf/
 │   ├── cli.ts                # Commander program definition (arguments + options) + analysis stub
 │   └── cli.test.ts           # CLI surface tests
 ├── docs/
-│   └── design.md             # Full design and implementation plan
+│   ├── design.md             # Full design document
+│   └── plan.md               # Step-by-step implementation plan
 ├── .github/                  # GitHub Actions workflows
 │   └── workflows/
         └── ci.yml            # Quality gate + npm publish on version tags

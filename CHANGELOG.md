@@ -18,3 +18,5 @@ and this project adheres to
 - `AGENTS.md` with contribution and code guidelines,
   `DEVELOPMENT.md` development guide, and `.env.example` documenting
   `DEV_PERF_API_KEY`.
+- `docs/plan.md` with the step-by-step implementation plan for the
+  analysis pipeline described in `docs/design.md`.
