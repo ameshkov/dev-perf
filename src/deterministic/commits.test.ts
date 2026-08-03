@@ -187,7 +187,7 @@ describe('readCommits', () => {
     }
   });
 
-  it('treats a date-only bound as the whole day, independent of the run time', async () => {
+  it('resolves a date-only bound to UTC midnight, independent of the run time', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -197,33 +197,46 @@ describe('readCommits', () => {
       },
       {
         author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-31T00:00:00Z',
+        message: 'jan 31 midnight',
+        files: [{ path: 'b.txt', content: 'b\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
         date: '2026-01-31T23:30:00Z',
         message: 'late jan 31',
-        files: [{ path: 'b.txt', content: 'b\n' }],
+        files: [{ path: 'c.txt', content: 'c\n' }],
       },
       {
         author: { name: 'Alice', email: 'alice@example.com' },
         date: '2026-02-01T00:00:00Z',
         message: 'feb 1 midnight',
-        files: [{ path: 'c.txt', content: 'c\n' }],
+        files: [{ path: 'd.txt', content: 'd\n' }],
       },
     ]);
     try {
       const subjects = (commits: { subject: string }[]) => commits.map((commit) => commit.subject);
-      // A commit at 00:30 on Jan 1 stays in: the bare date means the
-      // whole day, not "from the run moment on" (git's own resolution
-      // would use the current time of day, dropping it on any run
-      // after 00:30 UTC).
+      // A commit at 00:30 on Jan 1 stays in: the bare date means
+      // midnight of that day, not "from the run moment on" (git's own
+      // resolution would use the current time of day, dropping it on
+      // any run after 00:30 UTC).
       expect(subjects(await readCommits(repo.dir, { since: '2026-01-01' }))).toEqual([
         'feb 1 midnight',
         'late jan 31',
+        'jan 31 midnight',
         'early jan 1',
       ]);
-      // The `until` side covers its whole day too, and stays exclusive
-      // of the next day.
+      // The `until` side resolves to midnight too: the range ends at
+      // the start of Jan 31, so the rest of that day — and February —
+      // stays out. The exact boundary instant is still included (the
+      // bounds are inclusive).
       expect(
         subjects(await readCommits(repo.dir, { since: '2026-01-01', until: '2026-01-31' })),
-      ).toEqual(['late jan 31', 'early jan 1']);
+      ).toEqual(['jan 31 midnight', 'early jan 1']);
+      expect(subjects(await readCommits(repo.dir, { until: '2026-01-31' }))).toEqual([
+        'jan 31 midnight',
+        'early jan 1',
+      ]);
     } finally {
       await removeFixtureRepo(repo);
     }
@@ -393,14 +406,16 @@ describe('readCommits', () => {
 });
 
 describe('resolveBoundDate', () => {
-  it('resolves a date-only bound to a fixed time of day, not the run moment', async () => {
+  it('resolves a date-only bound to UTC midnight, not the run moment', async () => {
     const repo = await buildFixtureRepo([]);
     try {
-      expect((await resolveBoundDate(repo.dir, '2026-01-01', 'since')).toISOString()).toBe(
+      expect((await resolveBoundDate(repo.dir, '2026-01-01')).toISOString()).toBe(
         '2026-01-01T00:00:00.000Z',
       );
-      expect((await resolveBoundDate(repo.dir, '2026-02-01', 'until')).toISOString()).toBe(
-        '2026-02-01T23:59:59.000Z',
+      // The `until` side gets the same midnight default, so a date-only
+      // until bounds the range at the start of its day.
+      expect((await resolveBoundDate(repo.dir, '2026-02-01')).toISOString()).toBe(
+        '2026-02-01T00:00:00.000Z',
       );
     } finally {
       await removeFixtureRepo(repo);
@@ -410,12 +425,12 @@ describe('resolveBoundDate', () => {
   it('leaves bounds with an explicit time or a non-date format unchanged', async () => {
     const repo = await buildFixtureRepo([]);
     try {
-      expect((await resolveBoundDate(repo.dir, '2026-01-01 12:30', 'since')).toISOString()).toBe(
+      expect((await resolveBoundDate(repo.dir, '2026-01-01 12:30')).toISOString()).toBe(
         '2026-01-01T12:30:00.000Z',
       );
-      expect(
-        (await resolveBoundDate(repo.dir, '2026-01-31T23:59:59Z', 'until')).toISOString(),
-      ).toBe('2026-01-31T23:59:59.000Z');
+      expect((await resolveBoundDate(repo.dir, '2026-01-31T23:59:59Z')).toISOString()).toBe(
+        '2026-01-31T23:59:59.000Z',
+      );
     } finally {
       await removeFixtureRepo(repo);
     }

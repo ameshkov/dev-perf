@@ -1,9 +1,10 @@
 /**
  * Tests for time-based period splitting: UTC-anchored period bounds
  * per unit (day/week/month/quarter/year), trimming of the first and
- * last periods, inclusive `until` bounds, empty-period inclusion,
- * fallbacks for unbounded/inverted ranges, and per-period commit
- * filtering that preserves the master user list.
+ * last periods, a boundary-midnight `until` closing the split at the
+ * previous period, empty-period inclusion, fallbacks for
+ * unbounded/inverted ranges, and per-period commit filtering that
+ * preserves the master user list.
  */
 import { describe, expect, it } from 'vitest';
 import type { Commit } from '../deterministic/commits.js';
@@ -27,7 +28,9 @@ function commit(overrides: Partial<Commit> = {}): Commit {
 }
 
 describe('splitPeriods', () => {
-  it('splits a range into whole days, anchored at UTC midnight, inclusive until', () => {
+  it('splits a range into whole days, anchored at UTC midnight', () => {
+    // An `until` exactly on a unit boundary (the start of Jan 3) ends
+    // the split at the previous day: no zero-length boundary period.
     const periods = splitPeriods(
       { since: '2026-01-01T00:00:00.000Z', until: '2026-01-03T00:00:00.000Z' },
       'day',
@@ -36,7 +39,6 @@ describe('splitPeriods', () => {
     expect(periods).toEqual([
       { since: '2026-01-01T00:00:00.000Z', until: '2026-01-01T23:59:59.999Z' },
       { since: '2026-01-02T00:00:00.000Z', until: '2026-01-02T23:59:59.999Z' },
-      { since: '2026-01-03T00:00:00.000Z', until: '2026-01-03T00:00:00.000Z' },
     ]);
   });
 
@@ -69,6 +71,7 @@ describe('splitPeriods', () => {
   });
 
   it('splits a range into quarters anchored at Jan/Apr/Jul/Oct', () => {
+    // An `until` at the start of Q4 closes the split after Q3.
     const periods = splitPeriods(
       { since: '2026-01-01T00:00:00.000Z', until: '2026-10-01T00:00:00.000Z' },
       'quarter',
@@ -78,7 +81,6 @@ describe('splitPeriods', () => {
       { since: '2026-01-01T00:00:00.000Z', until: '2026-03-31T23:59:59.999Z' },
       { since: '2026-04-01T00:00:00.000Z', until: '2026-06-30T23:59:59.999Z' },
       { since: '2026-07-01T00:00:00.000Z', until: '2026-09-30T23:59:59.999Z' },
-      { since: '2026-10-01T00:00:00.000Z', until: '2026-10-01T00:00:00.000Z' },
     ]);
   });
 

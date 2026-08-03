@@ -70,6 +70,10 @@ and this project adheres to
   the server's whole process tree — including child processes a stuck
   server is waiting on — so a hung server leaks nothing either.
 - Date-only `--since`/`--until` values (e.g. `2026-01-01`) are now
-  resolved to midnight / end of day (UTC) instead of the run's time of
-  day, so the analyzed range — and the LLM result cache keyed on it —
-  stays stable across reruns and the whole boundary day is included.
+  resolved to UTC midnight instead of the run's time of day, so the
+  analyzed range — and the LLM result cache keyed on it — stays stable
+  across reruns. The `until` bound ends at the start of its day, so
+  `--since 2026-01-01 --until 2026-03-01` covers exactly two months
+  rather than two months plus the boundary day; with `--unit`, a range
+  ending on a period boundary no longer emits a zero-length boundary
+  period.

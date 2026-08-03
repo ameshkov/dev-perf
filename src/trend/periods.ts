@@ -4,7 +4,10 @@
  * year) and filters author groups' commits down to one period. The
  * master user list is preserved — zero-commit groups stay, so every
  * period reports the same users with zeroed metrics when they were
- * inactive.
+ * inactive. A range whose `until` falls exactly on a unit boundary
+ * (UTC midnight) ends the split at the previous period, so a date-only
+ * `until` like `2026-03-01` yields February as the last period — not a
+ * zero-length boundary period.
  */
 import type { AuthorGroup } from '../deterministic/identity.js';
 import type { AnalyzedRange, PeriodUnit } from '../report/index.js';
@@ -62,10 +65,13 @@ function parseBound(bound: string): number | undefined {
  * (Jan/Apr/Jul/Oct) for quarters, and January 1 for years. The first
  * and last periods are trimmed to the range bounds; every period's
  * `until` is inclusive (the next boundary minus one millisecond).
- * Periods with no commits are kept — the caller reports them with
- * zeroed metrics. Without `--unit`, or for an unbounded or inverted
- * range (until before since), a single whole-range period is
- * returned.
+ * A range whose `until` falls exactly on a unit boundary is closed at
+ * the previous period — no zero-length boundary period is emitted,
+ * unless the range is a single instant, which yields that one
+ * zero-length period. Periods with no commits are kept — the caller
+ * reports them with zeroed metrics. Without `--unit`, or for an
+ * unbounded or inverted range (until before since), a single
+ * whole-range period is returned.
  *
  * @param range - The resolved range to split (UTC instants).
  * @param unit - The period unit, or `undefined` for no splitting.
@@ -85,6 +91,13 @@ export function splitPeriods(range: AnalyzedRange, unit: PeriodUnit | undefined)
   let start = since;
   while (start <= until) {
     const end = Math.min(nextUnitStart(start, unit) - 1, until);
+    // A zero-length period at the range's `until` boundary covers only
+    // the boundary instant; the split ends at the previous period
+    // instead (the first period is never dropped, so a single-instant
+    // range still yields its one period).
+    if (periods.length > 0 && end === start) {
+      break;
+    }
     periods.push({
       since: new Date(start).toISOString(),
       until: new Date(end).toISOString(),

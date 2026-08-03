@@ -374,4 +374,73 @@ describe('runPipeline', () => {
       await removeFixtureRepo(repo);
     }
   });
+
+  it('covers exactly two months for a date-only since/until range', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-15T10:00:00Z',
+        message: 'feat: january',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-02-10T10:00:00Z',
+        message: 'feat: february',
+        files: [{ path: 'b.txt', content: 'b\n' }],
+      },
+      {
+        // Authored on March 1: outside a range ending 2026-03-01.
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-03-01T09:00:00Z',
+        message: 'feat: march 1',
+        files: [{ path: 'c.txt', content: 'c\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    try {
+      const report = await runPipeline(
+        options({ repos: [repo.url], cacheDir, since: '2026-01-01', until: '2026-03-01' }),
+      );
+
+      // The date-only `until` resolves to the start of its day, so the
+      // range covers January and February exactly — not March 1 too.
+      expect(report.parameters.since).toBe('2026-01-01T00:00:00.000Z');
+      expect(report.parameters.until).toBe('2026-03-01T00:00:00.000Z');
+      expect(report.periods[0].repositories[0].stats.totalCommits).toBe(2);
+      expect(report.periods[0].repositories[0].users[0].deterministic.firstCommitAt).toBe(
+        '2026-01-15T10:00:00.000Z',
+      );
+      expect(report.periods[0].repositories[0].users[0].deterministic.lastCommitAt).toBe(
+        '2026-02-10T10:00:00.000Z',
+      );
+
+      // With --unit month the boundary-midnight until ends the split
+      // after February: exactly two periods, no zero-length third one.
+      const monthly = await runPipeline(
+        options({
+          repos: [repo.url],
+          cacheDir,
+          unit: 'month',
+          since: '2026-01-01',
+          until: '2026-03-01',
+        }),
+      );
+      expect(monthly.periods).toHaveLength(2);
+      expect(monthly.periods[0]).toMatchObject({
+        since: '2026-01-01T00:00:00.000Z',
+        until: '2026-01-31T23:59:59.999Z',
+      });
+      expect(monthly.periods[1]).toMatchObject({
+        since: '2026-02-01T00:00:00.000Z',
+        until: '2026-02-28T23:59:59.999Z',
+      });
+      expect(monthly.periods.map((period) => period.repositories[0].stats.totalCommits)).toEqual([
+        1, 1,
+      ]);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
 });

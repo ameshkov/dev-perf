@@ -56,6 +56,11 @@ Options:
   --help                 Show help
 ```
 
+Date-only `--since`/`--until` values (e.g. `2026-01-01`) are interpreted as
+UTC midnight: the range starts at the beginning of the `since` day and ends at
+the beginning of the `until` day, so `--since 2026-01-01 --until 2026-03-01`
+covers exactly two months. Bounds with an explicit time keep that time.
+
 `--model`, `--provider-url` and `--api-key` are required for the LLM analysis.
 `dev-perf` does not read your global opencode configuration — provider, model and
 API key are always specified explicitly. `--limit-context` and `--limit-output`
@@ -117,7 +122,7 @@ Example output (abridged):
   "parameters": {
     "repos": ["https://github.com/org/repo.git"],
     "since": "2026-01-01T00:00:00.000Z",
-    "until": "2026-06-30T23:59:59.000Z",
+    "until": "2026-06-30T00:00:00.000Z",
     "llmEnabled": true
   },
   "periods": [

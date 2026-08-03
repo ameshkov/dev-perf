@@ -410,7 +410,9 @@ function pluralize(count: number, unit: string): string {
  * A missing `--since` leaves the start unbounded (`''`); a
  * missing `--until` defaults to `today`. A date-only bound resolves
  * to a fixed time of day instead of the run moment: midnight for
- * `since`, end of day for `until`.
+ * `since` and for `until` alike, so a date-only `until` bounds the
+ * range at the start of its day (e.g. `--since 2026-01-01 --until
+ * 2026-03-01` covers exactly two months).
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param since - Start bound as given on the command line, if any.
@@ -423,11 +425,10 @@ async function resolveRange(
   until: string | undefined,
 ): Promise<AnalyzedRange> {
   return {
-    since:
-      since === undefined ? '' : (await resolveBoundDate(repoDir, since, 'since')).toISOString(),
+    since: since === undefined ? '' : (await resolveBoundDate(repoDir, since)).toISOString(),
     until:
       until === undefined
-        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL, 'until')).toISOString()
-        : (await resolveBoundDate(repoDir, until, 'until')).toISOString(),
+        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL)).toISOString()
+        : (await resolveBoundDate(repoDir, until)).toISOString(),
   };
 }
