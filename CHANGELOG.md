@@ -10,6 +10,45 @@ and this project adheres to
 
 ### Added
 
+- LLM orchestration (`src/llm/analyze.ts`, design §6.3-6.6, plan step
+  8): per repository — one orientation session establishes the repo
+  context (tech stack, main modules, conventions), which is injected
+  into every user session with `noReply: true`; per-user sessions run
+  sequentially and are scoped to the clone directory. The
+  `devperf_report` output is enforced (§6.5): up to 3 follow-up
+  reminders, then an error naming the user and session that the
+  top-level handler turns into a non-zero exit without writing the
+  report. Results are cached in the cache entry's `llm/` directory
+  keyed by (repo, user, since, until, model, context/output limits)
+  and reused on reruns; `--refresh` skips the reads and re-runs
+  everything (§6.6). Per-session token usage and cost are accumulated
+  and logged with the session progress when `--verbose` is set.
+- Session layer (`src/llm/session.ts`, plan step 8): the
+  `SessionService` interface (session creation, prompting with
+  `noReply` context injection, and abort-on-error) plus tool-call
+  detection — the session's report file exists and zod-validates
+  against `llmToolPayloadSchema` — and per-session token usage and
+  cost collected from the server's event stream
+  (`message.part.updated` events with `step-finish` parts, §6.6). The
+  real implementation binds to the opencode SDK client
+  (`createSessionService`); tests stub the interface.
+- LLM prompts (`src/llm/prompts.ts`, design §6.3, §6.5): the
+  orientation prompt, the per-user prompt (identity, date range, repo
+  context, and the commit list with sha/date/subject/numstat
+  totals/files, truncated at 20 paths per commit), and the enforcement
+  reminder. Both analysis prompts end with the instruction to call
+  `devperf_report` with the final analysis before finishing.
+- The report barrel (`src/report/index.ts`) now also exports
+  `tokenUsageSchema` and the `LlmAnalysis` / `LlmToolPayload` /
+  `TokenUsage` types for the LLM layer (plan step 8).
+- Tests for the LLM layer (plan step 8): prompt contents and the
+  required tool-call instruction; session wrappers (creation, prompt,
+  abort-on-error, report-file detection, usage collection) against a
+  stubbed client; and orchestration with stub sessions — enforcement
+  (3 reminders then a non-zero exit naming user and session), cache
+  idempotency (a rerun with the same parameters makes no second
+  call), `--refresh` invalidation, orientation reuse, and session
+  scoping to the clone directory.
 - LLM server lifecycle (`src/llm/server.ts`, plan step 7): starts an
   opencode server as a library (`createOpencode` from
   `@opencode-ai/sdk`, 1.18.11, pinned exactly) scoped to the analyzed

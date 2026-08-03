@@ -18,7 +18,19 @@ export type { AnalyzedRange } from './assemble.js';
  * step 9), so the import does not register as usage. Remove the tag
  * when the pipeline lands.
  */
-export { llmToolPayloadSchema } from './schema.js';
+export { llmToolPayloadSchema, tokenUsageSchema } from './schema.js';
+
+/**
+ * LLM analysis types consumed by the LLM layer (plan step 8:
+ * `src/llm/session.ts` and `src/llm/analyze.ts`), which Knip excludes
+ * from analysis (`src/llm/**` in `knip.config.ts` `ignoreFiles`,
+ * removed when the pipeline wires the LLM layer in plan step 9), so
+ * the imports do not register as usage. Remove the tag when the
+ * pipeline lands.
+ *
+ * @internal Transitional until the pipeline lands (plan step 9).
+ */
+export type { LlmAnalysis, LlmToolPayload, TokenUsage } from './schema.js';
 export type {
   DeterministicMetrics,
   LanguageContribution,

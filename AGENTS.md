@@ -47,8 +47,9 @@ The full design and implementation plan lives in
 (M2) is implemented: `dev-perf --no-llm <repo>` clones the repository
 and produces the JSON report. The LLM layer (plan steps 7-9) is in
 progress: the opencode server lifecycle and the `devperf_report` tool
-generation (plan step 7) are implemented; sessions, prompts, and
-orchestration (plan steps 8-9) are not wired yet.
+generation (plan step 7) and the sessions, prompts, orchestration, and
+LLM result cache (plan step 8) are implemented; wiring the LLM phase
+into the pipeline (plan step 9) is not done yet.
 
 ## Technical Context
 
@@ -92,11 +93,17 @@ dev-perf/
 │   │   ├── metrics.test.ts   # Exact-value metrics tests against fixture repos
 │   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
 │   │   └── languages.test.ts # Language mapping and counting tests
-│   ├── llm/                  # LLM agentic layer (design §6; server + tool generation in, sessions/prompts/analyze planned)
+│   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration in)
 │   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json, env isolation, auth.set
 │   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
 │   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
-│   │   └── tools.test.ts     # Generated tool content + execution tests
+│   │   ├── tools.test.ts     # Generated tool content + execution tests
+│   │   ├── prompts.ts        # Orientation + per-user prompts, tool-call instruction, reminder (§6.3, §6.5)
+│   │   ├── prompts.test.ts   # Prompt content and tool-call instruction tests
+│   │   ├── session.ts        # SessionService: create/prompt (noReply), abort-on-error, report detection, usage stream
+│   │   ├── session.test.ts   # Session wrapper, report-file, and usage-collector tests with a stubbed client
+│   │   ├── analyze.ts        # Orchestration: orientation, per-user sessions, enforcement loop, LLM result cache (§6.6)
+│   │   └── analyze.test.ts   # Enforcement, cache idempotency/refresh, and session scoping with stub sessions
 │   ├── util/                 # Shared helpers, no business logic
 │   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
 │   │   └── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
@@ -219,8 +226,9 @@ This project's layers, from top to bottom:
 - **Services** — own all business logic: clone/cache management,
   deterministic analysis, LLM orchestration, report assembly.
   Directories: `src/repo/` (implemented), `src/deterministic/`
-  (implemented), `src/llm/` (server and tool generation implemented;
-  sessions/prompts/analyze planned), `src/report/`.
+  (implemented), `src/llm/` (server, tools, prompts, sessions, and
+  orchestration implemented; the pipeline wiring lands in plan step
+  9), `src/report/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 
