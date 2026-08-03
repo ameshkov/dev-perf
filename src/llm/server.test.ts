@@ -1,7 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createOpencode } from '@opencode-ai/sdk';
+import type { OpencodeClient } from '@opencode-ai/sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
 import { llmDir, opencodeDir } from '../repo/cache.js';
 import { buildReportToolSource } from './tools.js';
@@ -12,6 +15,14 @@ import {
   writeServerFiles,
 } from './server.js';
 import type { LlmServerConfig } from './server.js';
+
+// `startServer`'s lifecycle tests stub the SDK's server launch while
+// the smoke test below still gets the real implementation (the mock
+// factory passes it through).
+vi.mock('@opencode-ai/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opencode-ai/sdk')>();
+  return { ...actual, createOpencode: vi.fn(actual.createOpencode) };
+});
 
 const CONFIG: LlmServerConfig = {
   providerUrl: 'https://llm.example.com/v1',
@@ -30,6 +41,25 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
+
+/**
+ * Returns a localhost TCP port nothing is listening on: a listener is
+ * bound to an ephemeral port and immediately closed. Used to fake the
+ * server URL in lifecycle tests, so `waitForServerExit` sees a dead
+ * port without risking a real force-kill.
+ *
+ * @returns A currently-free port number.
+ */
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (address === null || typeof address === 'string') {
+    throw new Error('no port assigned');
+  }
+  return address.port;
+}
 
 describe('generateOpencodeConfig', () => {
   it('declares the provider, model, and limit block from the options', () => {
@@ -155,6 +185,30 @@ describe('writeServerFiles', () => {
     expect(agentFile).toContain('read-only');
     expect(agentFile).toContain('never create, modify, or delete');
     expect(agentFile).toContain('git show, git log, git diff, git blame');
+  });
+});
+
+describe('startServer close', () => {
+  afterEach(() => {
+    vi.mocked(createOpencode).mockClear();
+  });
+
+  it('stops the SDK server and shuts down the child process', async () => {
+    const closeServer = vi.fn();
+    const port = await freePort();
+    vi.mocked(createOpencode).mockResolvedValueOnce({
+      client: {
+        auth: { set: vi.fn(async () => undefined) },
+      } as unknown as OpencodeClient,
+      server: { url: `http://127.0.0.1:${port}`, close: closeServer },
+    });
+
+    const handle = await startServer(path.join(tmpRoot, 'entry', 'repo'), CONFIG);
+    await handle.close();
+
+    // The SDK SIGTERM path runs first; `waitForServerExit` finds the
+    // port closed (nothing listens on the free port) and returns.
+    expect(closeServer).toHaveBeenCalledTimes(1);
   });
 });
 

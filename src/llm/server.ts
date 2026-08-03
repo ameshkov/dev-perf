@@ -30,6 +30,7 @@ import { createOpencode } from '@opencode-ai/sdk';
 import type { Config as OpencodeConfig } from '@opencode-ai/sdk';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { llmDir, opencodeDir } from '../repo/cache.js';
+import { waitForServerExit } from './shutdown.js';
 import { buildReportToolSource } from './tools.js';
 import { errorDetail } from '../util/error.js';
 import { logInfo } from '../util/log.js';
@@ -95,7 +96,10 @@ export interface LlmServerHandle {
   client: OpencodeClient;
   /** Server base URL, e.g. `http://127.0.0.1:4096`. */
   url: string;
-  /** Stops the server and cleans up its isolated state directory. */
+  /**
+   * Stops the server and cleans up its isolated state directory: the
+   * SDK sends SIGTERM; a server that does not exit is force-killed.
+   */
   close(): Promise<void>;
 }
 
@@ -226,6 +230,11 @@ export async function startServer(
       url: server.url,
       async close(): Promise<void> {
         server.close();
+        // The SDK's close() sends one SIGTERM and returns immediately.
+        // Wait (bounded) for the process to actually exit and
+        // force-kill it when it does not — a stuck server would
+        // otherwise keep this process alive through its stdio pipes.
+        await waitForServerExit(server.url);
         await rm(tempHome, { recursive: true, force: true });
       },
     };
