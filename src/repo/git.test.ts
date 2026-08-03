@@ -113,4 +113,22 @@ describe('git helpers', () => {
       await removeFixtureRepo(repo);
     }
   });
+
+  it('passes extra environment variables to the git process', async () => {
+    const repo = await buildFixtureRepo([]);
+    try {
+      await runGit(repo.dir, ['config', 'user.name', 'Env']);
+      await runGit(repo.dir, ['config', 'user.email', 'env@example.com']);
+      await runGit(repo.dir, ['commit', '--allow-empty', '-m', 'env commit'], {
+        env: {
+          GIT_AUTHOR_DATE: '2026-01-15T10:00:00Z',
+          GIT_COMMITTER_DATE: '2026-01-15T10:00:00Z',
+        },
+      });
+      const stamp = await gitLog(repo.dir, ['-1', '--format=%aI %cI']);
+      expect(stamp).toBe('2026-01-15T10:00:00Z 2026-01-15T10:00:00Z');
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
 });

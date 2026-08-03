@@ -10,6 +10,25 @@ and this project adheres to
 
 ### Added
 
+- Commit extraction (`src/deterministic/commits.ts`, design §5.1): a
+  single-pass `git log --numstat --no-renames` with the `%x1f`/`%x1e`
+  record format. Each commit's sha, parents, author name/email, ISO
+  author date, subject, and numstat rows are parsed; binary files
+  (numstat `-`) are recorded without line counts; merge commits are
+  detected via parent count and carry no numstat rows. `--since` /
+  `--until` bound the scan by commit date while the author-date range
+  is applied in code (§5.4) with git's own date parsing under
+  `TZ=UTC`; an empty repository yields an empty list.
+- Author identity resolution (`src/deterministic/identity.ts`,
+  design §5.3): commits are grouped by lowercased author email with
+  the most frequent author name as the display name, and a heuristic
+  bot flag (`[bot]`, `dependabot`, `renovate`) marks bots — a flag
+  only, bots are counted like everyone else (§5.4).
+- `runGit` accepts extra environment variables (`env` option) for
+  pinned commit dates and UTC date interpretation.
+- Fixture repos now set committer dates equal to author dates, so
+  commit-date bounding in fixture-based tests behaves like real
+  repositories.
 - Repo management (`src/repo/`, design §4): an `execa`-based git
   wrapper (`git.ts`) with typed `GitError` and helpers for clone, log,
   show, shortlog, and rev-parse; the cache layout (`cache.ts`) with the

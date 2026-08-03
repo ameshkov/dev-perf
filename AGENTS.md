@@ -79,6 +79,11 @@ dev-perf/
 │   │   ├── cache.test.ts     # Cache layout and clone.json tests
 │   │   ├── clone.ts          # ensureClone: cache reuse, --refresh, partial-clone fallback
 │   │   └── clone.test.ts     # Clone/cache reuse integration tests
+│   ├── deterministic/        # Deterministic analysis (design §5)
+│   │   ├── commits.ts        # Single-pass git log --numstat parsing + author-date filtering (§5.1, §5.4)
+│   │   ├── commits.test.ts   # Parsing golden tests against fixture repos
+│   │   ├── identity.ts       # Email grouping, display name, bot flag (§5.3)
+│   │   └── identity.test.ts  # Identity grouping tests
 │   ├── util/                 # Shared helpers, no business logic
 │   │   └── json.ts           # Pretty-print, read/write, safe JSON parse
 │   └── report/               # Report schema, the single source of truth (design §7)
@@ -191,8 +196,8 @@ This project's layers, from top to bottom:
   options, and the action that drives the analysis pipeline.
 - **Services** — own all business logic: clone/cache management,
   deterministic analysis, LLM orchestration, report assembly.
-  Directories: `src/repo/` (implemented), `src/deterministic/`,
-  `src/llm/` (planned), `src/report/`.
+  Directories: `src/repo/` (implemented), `src/deterministic/`
+  (implemented), `src/llm/` (planned), `src/report/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 

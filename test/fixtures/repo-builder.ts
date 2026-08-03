@@ -42,8 +42,11 @@ export interface FixtureRepo {
 
 /**
  * Builds a temporary git repo with the given commits applied in order
- * (newest last). Commits are created with `--author` and `--date` so
- * author names, emails, and dates are exact; the default branch is
+ * (newest last). Commits are created with `--author` and `--date` and a
+ * `GIT_COMMITTER_DATE` matching the author date, so author names,
+ * emails, and both author and committer dates are exact — the repo
+ * behaves like a real one where commit-date bounds (`git log
+ * --since/--until`) agree with author dates. The default branch is
  * `main`. The caller removes the repo with `removeFixtureRepo`.
  *
  * @param commits - Commits to create, oldest first.
@@ -63,15 +66,19 @@ export async function buildFixtureRepo(commits: FixtureCommit[]): Promise<Fixtur
       await writeFile(filePath, file.content, 'utf8');
     }
     await runGit(dir, ['add', '-A']);
-    await runGit(dir, [
-      'commit',
-      '--author',
-      `${commit.author.name} <${commit.author.email}>`,
-      '--date',
-      commit.date,
-      '-m',
-      commit.message,
-    ]);
+    await runGit(
+      dir,
+      [
+        'commit',
+        '--author',
+        `${commit.author.name} <${commit.author.email}>`,
+        '--date',
+        commit.date,
+        '-m',
+        commit.message,
+      ],
+      { env: { GIT_COMMITTER_DATE: commit.date } },
+    );
   }
 
   return { dir, url: pathToFileURL(dir).href };

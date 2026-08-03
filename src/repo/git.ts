@@ -9,6 +9,13 @@ import { execa, ExecaError } from 'execa';
 export interface RunGitOptions {
   /** Git executable to run; defaults to `git`. */
   gitBinary?: string;
+  /**
+   * Extra environment variables for the git process, merged over the
+   * parent environment. Used to pin dates (`GIT_AUTHOR_DATE`,
+   * `GIT_COMMITTER_DATE`) and to force UTC date interpretation
+   * (`TZ=UTC`, design §5.4).
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** Options accepted by `GitError`. */
@@ -70,9 +77,9 @@ export async function runGit(
   args: string[],
   options: RunGitOptions = {},
 ): Promise<string> {
-  const { gitBinary = 'git' } = options;
+  const { gitBinary = 'git', env } = options;
   try {
-    const result = await execa(gitBinary, args, { cwd: repoDir });
+    const result = await execa(gitBinary, args, { cwd: repoDir, env });
     return result.stdout;
   } catch (error) {
     if (error instanceof ExecaError) {
