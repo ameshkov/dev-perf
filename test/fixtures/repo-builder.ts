@@ -1,7 +1,7 @@
 /**
  * Test fixture helper: builds temporary git repositories with known
- * files, authors, and commits (design §9) so metrics can be asserted
- * exactly. Shared by every later plan step; not a test file itself.
+ * files, authors, and commits so metrics can be asserted
+ * exactly. Not a test file itself.
  */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';

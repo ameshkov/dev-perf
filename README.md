@@ -23,10 +23,11 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 ## Usage
 
 ```text
-dev-perf [options] <repo...>
+dev-perf [options] [repo...]
 
 Arguments:
-  repo                   Git repository URL or local path (repeatable)
+  repo                   Git repository URL or local path (repeatable;
+                         default: DEV_PERF_REPOS)
 
 Options:
   --since <date>         Start date, e.g. 2026-01-01 (any git date format)
@@ -34,6 +35,8 @@ Options:
   --output <file>        Write the JSON report to a file (default: stdout)
   --cache-dir <dir>      Cache directory for cloned repos and LLM results
                          (default: .dev-perf/cache)
+  --refresh              Force re-clone and re-analysis, invalidating the
+                         LLM result cache
   --no-llm               Deterministic stats only, skip LLM analysis
   --model <model>        Model id, e.g. gpt-4.1 (required for LLM analysis)
   --provider-url <url>   OpenAI-compatible provider base URL (required for LLM)
@@ -48,6 +51,17 @@ Options:
 `dev-perf` does not read your global opencode configuration — provider, model and
 API key are always specified explicitly. `--limit-context` and `--limit-output`
 optionally cap the model window (defaults: 256k context / 64k output tokens).
+The `opencode` CLI must be installed and on `PATH` (the analysis runs opencode
+as a library, scoped to each cloned repository).
+
+LLM analysis results are cached in the cache directory
+(`.dev-perf/cache/<hash>/llm/`), keyed by repo, user, date range, model and
+limits — a rerun with the same parameters reuses them and makes no new calls.
+`--refresh` forces a re-clone and invalidates the cached LLM results.
+
+Cost visibility: the report records, per user, the `tokenUsage` (input/output
+tokens) and the `estimatedCostUsd` from the provider's event stream, so runaway
+costs are visible in the report itself.
 
 `--verbose` prints progress to stderr — cache reuse vs a fresh clone (with
 duration), the resolved author-date range, and per-repo commit counts. stdout
@@ -96,6 +110,7 @@ Example output (abridged):
             }
           },
           "llm": {
+            "status": "completed",
             "overview": "Jane shipped the reporting module and cleaned up the CLI…",
             "contributions": [
               {
@@ -110,7 +125,9 @@ Example output (abridged):
                 "complexity": "medium",
                 "areas": ["src/cli"]
               }
-            ]
+            ],
+            "tokenUsage": { "input": 102400, "output": 5120 },
+            "estimatedCostUsd": 0.0031
           }
         }
       ]
@@ -119,16 +136,58 @@ Example output (abridged):
 }
 ```
 
+## Configuration
+
+Every command-line option has a `DEV_PERF_*` environment variable
+equivalent; when both are given, the flag wins. A `.env` file in the
+current working directory is loaded automatically at startup — copy
+[`.env.example`](.env.example), fill in the values you need, and keep
+it out of version control (it is gitignored). Values already exported
+in the shell are never overridden by `.env`.
+
+| CLI option | Environment variable | Notes |
+| --- | --- | --- |
+| `<repo...>` | `DEV_PERF_REPOS` | Comma-separated list |
+| `--since <date>` | `DEV_PERF_SINCE` | Any git date format |
+| `--until <date>` | `DEV_PERF_UNTIL` | Default: today |
+| `--output <file>` | `DEV_PERF_OUTPUT` | Default: stdout |
+| `--cache-dir <dir>` | `DEV_PERF_CACHE_DIR` | Default: .dev-perf/cache |
+| `--refresh` | `DEV_PERF_REFRESH` | Boolean |
+| `--no-llm` | `DEV_PERF_NO_LLM` | Boolean; `true` skips LLM analysis |
+| `--model <model>` | `DEV_PERF_MODEL` | Required for LLM analysis |
+| `--provider-url <url>` | `DEV_PERF_PROVIDER_URL` | Required for LLM analysis |
+| `--api-key <key>` | `DEV_PERF_API_KEY` | Required for LLM analysis |
+| `--limit-context <n>` | `DEV_PERF_LIMIT_CONTEXT` | Default: 262144 |
+| `--limit-output <n>` | `DEV_PERF_LIMIT_OUTPUT` | Default: 65536 |
+| `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
+
+Boolean environment variables accept `1`/`true`/`yes`/`on` and
+`0`/`false`/`no`/`off`.
+
+Example — the whole run configured through the environment (no flags,
+no positional arguments):
+
+```console
+DEV_PERF_REPOS=https://github.com/org/repo.git \
+DEV_PERF_NO_LLM=true \
+dev-perf
+```
+
 ## Status
 
-The deterministic analysis path (milestone M2) is implemented:
-`dev-perf --no-llm <repo>` clones the repository (into the cache,
-reusing it on later runs) and produces the JSON report — commits,
-lines, files, active days, and per-language contributions, per user
-and per repository. The LLM-based agentic layer (design §6, plan steps
-7-9) is not implemented yet, so runs without `--no-llm` fail
-validation until then. See [docs/design.md](docs/design.md) for the
-full design and implementation plan.
+Both analysis layers are implemented: the deterministic path (milestone
+M2) and the LLM agentic layer (milestone M3). `dev-perf --no-llm <repo>`
+clones the repository (into the cache, reusing it on later runs) and
+produces the JSON report — commits, lines, files, active days, and
+per-language contributions, per user and per repository. A run without
+`--no-llm` additionally starts an opencode server per repository and
+produces per-user `llm` entries: `status: "completed"` with the
+assessed work types, complexity, areas, quality signals and risk flags,
+plus token usage and estimated cost. LLM failures (e.g. a provider
+rejecting the key, or a session that never calls the report tool) fail
+the run fast with a clear message and no report is written. See
+[docs/design.md](docs/design.md) for the full design and
+implementation plan.
 
 ## Development
 

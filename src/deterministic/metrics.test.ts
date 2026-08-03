@@ -1,7 +1,7 @@
 /**
- * Tests for deterministic metrics aggregation (design §5.2): per-user
+ * Tests for deterministic metrics aggregation: per-user
  * metrics from parsed commits, repo-level statistics, and exact
- * hand-computed values against fixture repos (§9).
+ * hand-computed values against fixture repos.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';

@@ -1,5 +1,5 @@
 /**
- * Deterministic metrics aggregation (docs/design.md §5.2): per-user
+ * Deterministic metrics aggregation: per-user
  * metrics counted from parsed commits, and repo-level statistics.
  */
 import type { DeterministicMetrics, RepositoryStats } from '../report/index.js';
@@ -37,8 +37,8 @@ interface DateTotals {
 }
 
 /**
- * Computes the deterministic per-user metrics for one author's commits
- * (design §5.2): counts, line sums, file and day distinctness, first
+ * Computes the deterministic per-user metrics for one author's commits:
+ * counts, line sums, file and day distinctness, first
  * and last author dates (UTC), the average non-merge commit size, and
  * per-language contributions. Merge commits count toward `commits` and
  * `mergeCommits` but carry no numstat rows of their own, so they do
@@ -73,7 +73,7 @@ export function userMetrics(commits: Commit[]): DeterministicMetrics {
 }
 
 /**
- * Zeroed metrics for an empty commit list (design §5.2): every count
+ * Zeroed metrics for an empty commit list: every count
  * is zero and the date fields are empty strings.
  *
  * @returns The zeroed metrics.
@@ -97,7 +97,7 @@ function zeroMetrics(): DeterministicMetrics {
 }
 
 /**
- * Sums lines and files over one author's commits (design §5.2). Merge
+ * Sums lines and files over one author's commits. Merge
  * commits contribute nothing to `nonMergeCommits` / `nonMergeSize` —
  * merge diffs are not attributed, so they carry no rows of their own.
  *
@@ -139,7 +139,7 @@ function changeTotals(commits: Commit[]): ChangeTotals {
 }
 
 /**
- * Computes the date-derived per-user values (design §5.2): the
+ * Computes the date-derived per-user values: the
  * earliest and latest author-date instants, and the distinct author
  * dates counted in UTC (a commit at 23:30-05:00 belongs to the next
  * UTC day).
@@ -161,7 +161,7 @@ function dateTotals(commits: Commit[]): DateTotals {
 }
 
 /**
- * Computes the repository-level statistics (design §5.2): total
+ * Computes the repository-level statistics: total
  * commits and users in the range, and the top languages by lines
  * added, best first. Ties break by language name (ascending); the
  * list is capped at `TOP_LANGUAGES_LIMIT` entries.

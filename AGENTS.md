@@ -43,13 +43,14 @@ user**:
    per repository and per user.
 
 The full design and implementation plan lives in
-[docs/design.md](./docs/design.md). The deterministic analysis path
-(M2) is implemented: `dev-perf --no-llm <repo>` clones the repository
-and produces the JSON report. The LLM layer (plan steps 7-9) is in
-progress: the opencode server lifecycle and the `devperf_report` tool
-generation (plan step 7) and the sessions, prompts, orchestration, and
-LLM result cache (plan step 8) are implemented; wiring the LLM phase
-into the pipeline (plan step 9) is not done yet.
+[docs/design.md](./docs/design.md). Both layers are implemented: the
+deterministic analysis path (M2) — `dev-perf --no-llm <repo>` clones
+the repository and produces the JSON report — and the LLM agentic
+layer (M3, plan steps 7-9): the opencode server lifecycle and the
+`devperf_report` tool generation (step 7), the sessions, prompts,
+orchestration, and LLM result cache (step 8), and the pipeline wiring
+that runs the LLM phase between deterministic analysis and assembly
+(step 9).
 
 ## Technical Context
 
@@ -73,8 +74,9 @@ dev-perf/
 │   ├── index.ts              # CLI entry point: .env loading, version, error handling
 │   ├── cli.ts                # Commander program definition (arguments + options) + pipeline entry
 │   ├── cli.test.ts           # CLI surface tests
-│   ├── pipeline.ts           # Orchestration: clone → deterministic analysis → assemble → write
+│   ├── pipeline.ts           # Orchestration: clone → deterministic analysis → LLM phase → assemble → write
 │   ├── pipeline.test.ts      # Pipeline integration tests against fixture repos
+│   ├── pipeline-llm.test.ts  # Pipeline LLM-phase tests (stubbed server, real session service)
 │   ├── config.ts             # zod validation of parsed CLI options (cross-field rules)
 │   ├── config.test.ts        # CLI options validation tests
 │   ├── repo/                 # Clone/cache management (design §4)
@@ -93,7 +95,7 @@ dev-perf/
 │   │   ├── metrics.test.ts   # Exact-value metrics tests against fixture repos
 │   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
 │   │   └── languages.test.ts # Language mapping and counting tests
-│   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration in)
+│   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration, pipeline wiring)
 │   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json, env isolation, auth.set
 │   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
 │   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
@@ -121,9 +123,11 @@ dev-perf/
 ├── docs/
 │   ├── design.md             # Full design document
 │   └── plan.md               # Step-by-step implementation plan
+├── .env.example              # Environment variables template (all DEV_PERF_* vars)
 ├── .github/                  # GitHub Actions workflows
 │   └── workflows/
         └── ci.yml            # Quality gate + npm publish on version tags
+├── .vscode/                  # VS Code launch configuration (loads .env)
 ├── AGENTS.md                 # This file
 ├── DEVELOPMENT.md            # Local setup & manual testing guide
 ├── CHANGELOG.md              # Project changelog (Keep a Changelog)
@@ -226,9 +230,8 @@ This project's layers, from top to bottom:
 - **Services** — own all business logic: clone/cache management,
   deterministic analysis, LLM orchestration, report assembly.
   Directories: `src/repo/` (implemented), `src/deterministic/`
-  (implemented), `src/llm/` (server, tools, prompts, sessions, and
-  orchestration implemented; the pipeline wiring lands in plan step
-  9), `src/report/`.
+  (implemented), `src/llm/` (implemented, wired into the pipeline),
+  `src/report/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 
@@ -407,11 +410,14 @@ Configuration and documentation MUST stay synchronized with code:
 - **Structure tracking**: Changes to project structure MUST update the
   Project Structure section in `AGENTS.md`.
 - **Environment variables**: A `.env` file in the current working
-  directory is auto-loaded at startup (`dotenv`). The only documented
-  variable today is `DEV_PERF_API_KEY` (see `.env.example`); it is an
-  alternative to the `--api-key` flag. The user's global opencode
-  configuration is NEVER read — provider, model, and API key are always
-  passed explicitly via `--provider-url`, `--model`, and `--api-key`.
+  directory is auto-loaded at startup (`dotenv`). Every command-line
+  option has a `DEV_PERF_*` environment variable equivalent (see
+  `.env.example` and the README); the flag wins when both are set.
+  `src/config.ts` resolves the environment (`resolveRawOptions`) before
+  validating the options. The user's global opencode configuration is
+  NEVER read — provider, model, and API key are always passed
+  explicitly via `--provider-url`/`DEV_PERF_PROVIDER_URL`,
+  `--model`/`DEV_PERF_MODEL`, and `--api-key`/`DEV_PERF_API_KEY`.
 
 **Rationale**: Stale documentation causes onboarding friction and
 operational incidents.

@@ -1,15 +1,80 @@
 /**
- * Validation of the parsed CLI options (docs/design.md §3). The
+ * Resolution and validation of the parsed CLI options. `resolveRawOptions`
+ * fills options that were not passed as flags from their `DEV_PERF_*`
+ * environment variables (the flag always wins), and `parseCliOptions`
+ * validates the merged options against `cliOptionsSchema`. The
  * cross-field rule: when LLM analysis is enabled, `model`,
- * `providerUrl` and `apiKey` are required — the API key may come from
- * the `DEV_PERF_API_KEY` environment variable instead of `--api-key`.
- * `limitContext` / `limitOutput` are positive integers with the design
- * defaults (262144 / 65536).
+ * `providerUrl` and `apiKey` are required. `limitContext` /
+ * `limitOutput` are positive integers with the defaults 262144 / 65536.
  */
 import { z } from 'zod';
 
+/**
+ * Raw options as parsed by commander before validation: limit options
+ * are strings, and unset options are `undefined`. The validated,
+ * defaulted shape is `CliOptions` from this module.
+ */
+export interface RawCliOptions {
+  /** Start date (author date, UTC; any git date format). */
+  since?: string;
+  /** End date (author date, UTC; any git date format; default: today). */
+  until?: string;
+  /** Write the JSON report to this file instead of stdout. */
+  output?: string;
+  /** Cache directory for cloned repos and LLM results (default: .dev-perf/cache). */
+  cacheDir?: string;
+  /** Force re-clone and re-analysis even if the cache is present. */
+  refresh?: boolean;
+  /** LLM analysis enabled (default: true; `--no-llm` disables it). */
+  llm?: boolean;
+  /** Model id, e.g. gpt-4.1. Required when LLM analysis is enabled. */
+  model?: string;
+  /** OpenAI-compatible provider base URL. Required when LLM is enabled. */
+  providerUrl?: string;
+  /** Provider API key; `DEV_PERF_API_KEY` is an alternative. Required for LLM. */
+  apiKey?: string;
+  /** Max context tokens for LLM analysis (default: 262144). */
+  limitContext?: string;
+  /** Max output tokens for LLM analysis (default: 65536). */
+  limitOutput?: string;
+  /** Verbose logging. */
+  verbose?: boolean;
+}
+
+/**
+ * Environment variable backing each raw option. `DEV_PERF_NO_LLM`
+ * backs `llm` with inverted meaning: `true` disables LLM analysis,
+ * like `--no-llm`.
+ */
+const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
+  since: 'DEV_PERF_SINCE',
+  until: 'DEV_PERF_UNTIL',
+  output: 'DEV_PERF_OUTPUT',
+  cacheDir: 'DEV_PERF_CACHE_DIR',
+  refresh: 'DEV_PERF_REFRESH',
+  llm: 'DEV_PERF_NO_LLM',
+  model: 'DEV_PERF_MODEL',
+  providerUrl: 'DEV_PERF_PROVIDER_URL',
+  apiKey: 'DEV_PERF_API_KEY',
+  limitContext: 'DEV_PERF_LIMIT_CONTEXT',
+  limitOutput: 'DEV_PERF_LIMIT_OUTPUT',
+  verbose: 'DEV_PERF_VERBOSE',
+};
+
 /** Environment variable accepted as an alternative to `--api-key`. */
-const API_KEY_ENV_VAR = 'DEV_PERF_API_KEY';
+const API_KEY_ENV_VAR = OPTION_ENV.apiKey;
+
+/** Environment variable backing the positional `<repo...>` argument. */
+const REPOS_ENV_VAR = 'DEV_PERF_REPOS';
+
+/** True spellings accepted for boolean environment variables. */
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
+
+/** False spellings accepted for boolean environment variables. */
+const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off']);
+
+/** Raw-option keys whose environment values are booleans. */
+const BOOLEAN_OPTIONS: ReadonlySet<keyof RawCliOptions> = new Set(['refresh', 'llm', 'verbose']);
 
 /**
  * zod schema for the parsed CLI options. `llm` defaults to `true`
@@ -67,7 +132,7 @@ export const cliOptionsSchema = z
         message: 'required when LLM analysis is enabled (or pass --no-llm)',
       });
     }
-    if (!options.apiKey && process.env[API_KEY_ENV_VAR] === undefined) {
+    if (options.apiKey === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['apiKey'],
@@ -83,9 +148,123 @@ export const cliOptionsSchema = z
 export type CliOptions = z.infer<typeof cliOptionsSchema>;
 
 /**
+ * Fills raw options that were not passed as flags from their
+ * `DEV_PERF_*` environment variables; a CLI flag always wins over the
+ * environment. Boolean options (`refresh`, `llm`, `verbose`) accept
+ * `1`/`true`/`yes`/`on` for on and `0`/`false`/`no`/`off` for off;
+ * empty values are treated as unset.
+ *
+ * @param raw - Raw options as parsed by commander.
+ * @param env - Environment source; defaults to `process.env`. Tests
+ * pass a controlled object.
+ * @returns The merged raw options.
+ * @throws {Error} When a boolean environment variable holds an
+ * unrecognized value.
+ */
+function applyEnvOptions(raw: RawCliOptions, env: NodeJS.ProcessEnv = process.env): RawCliOptions {
+  const merged: Record<string, unknown> = { ...raw };
+  for (const key of Object.keys(OPTION_ENV) as Array<keyof RawCliOptions>) {
+    // `--no-llm` is a negated commander flag, so `llm` is `true` by
+    // default even when the flag was not passed; only an explicit
+    // `false` (the flag itself) counts as flag-provided.
+    const providedByFlag = key === 'llm' ? merged.llm === false : merged[key] !== undefined;
+    if (providedByFlag) {
+      continue;
+    }
+    const value = env[OPTION_ENV[key]];
+    if (value === undefined || value === '') {
+      continue;
+    }
+    merged[key] = BOOLEAN_OPTIONS.has(key) ? booleanValue(key, value, OPTION_ENV[key]) : value;
+  }
+  return merged as RawCliOptions;
+}
+
+/**
+ * Parses one boolean environment value for an option. `DEV_PERF_NO_LLM`
+ * backs `llm` with inverted meaning: `true` disables LLM analysis,
+ * like `--no-llm`.
+ *
+ * @param key - The option the value belongs to.
+ * @param value - The raw environment value.
+ * @param envVar - The variable name, for error messages.
+ * @returns The parsed boolean.
+ * @throws {Error} When the value is not a recognized boolean spelling.
+ */
+function booleanValue(key: keyof RawCliOptions, value: string, envVar: string): boolean {
+  const parsed = parseBoolean(value, envVar);
+  return key === 'llm' ? !parsed : parsed;
+}
+
+/**
+ * Parses a boolean environment value: `1`/`true`/`yes`/`on` are true,
+ * `0`/`false`/`no`/`off` are false.
+ *
+ * @param value - The raw environment value.
+ * @param envVar - The variable name, for error messages.
+ * @returns The parsed boolean.
+ * @throws {Error} When the value is not a recognized boolean spelling.
+ */
+function parseBoolean(value: string, envVar: string): boolean {
+  const normalized = value.toLowerCase();
+  if (TRUE_ENV_VALUES.has(normalized)) {
+    return true;
+  }
+  if (FALSE_ENV_VALUES.has(normalized)) {
+    return false;
+  }
+  throw new Error(
+    `Invalid options:\n${envVar}: expected a boolean ('true' or 'false'), got '${value}'`,
+  );
+}
+
+/**
+ * Parses `DEV_PERF_REPOS`: a comma-separated repository list with each
+ * entry trimmed; `undefined` when the variable is unset or empty.
+ *
+ * @param env - Environment source.
+ * @returns The repositories, or `undefined`.
+ */
+function envRepos(env: NodeJS.ProcessEnv): string[] | undefined {
+  const value = env[REPOS_ENV_VAR];
+  if (value === undefined || value.trim() === '') {
+    return undefined;
+  }
+  return value
+    .split(',')
+    .map((repo) => repo.trim())
+    .filter((repo) => repo !== '');
+}
+
+/**
+ * Resolves the raw options for validation: environment variables fill
+ * every option whose flag was not passed, and `DEV_PERF_REPOS`
+ * supplies the repositories when no positional arguments were given.
+ *
+ * @param repos - Repositories passed on the command line.
+ * @param options - Raw commander options for this invocation.
+ * @param env - Environment source; defaults to `process.env`. Tests
+ * pass a controlled object.
+ * @returns The merged raw options, ready for `parseCliOptions`.
+ * @throws {Error} When a boolean environment variable holds an
+ * unrecognized value.
+ */
+export function resolveRawOptions(
+  repos: string[],
+  options: RawCliOptions,
+  env: NodeJS.ProcessEnv = process.env,
+): RawCliOptions & { repos: string[] } {
+  return {
+    ...applyEnvOptions(options, env),
+    repos: repos.length > 0 ? repos : (envRepos(env) ?? []),
+  };
+}
+
+/**
  * Renders an issue path as the CLI flag the user would pass, e.g.
- * `limitContext` → `--limit-context`; an empty path renders as
- * `options`.
+ * `limitContext` → `--limit-context`; the `repos` path renders as
+ * `repos` (a positional argument, not a flag), and an empty path
+ * renders as `options`.
  *
  * @param path - Issue path from a zod validation error.
  * @returns The flag name for error messages.
@@ -93,6 +272,9 @@ export type CliOptions = z.infer<typeof cliOptionsSchema>;
 function flagName(path: PropertyKey[]): string {
   if (path.length === 0) {
     return 'options';
+  }
+  if (path.length === 1 && path[0] === 'repos') {
+    return 'repos';
   }
   const flag = path
     .map((segment) => String(segment).replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`))

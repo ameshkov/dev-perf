@@ -1,15 +1,15 @@
 /**
- * Minimal stderr logger (docs/design.md §8, plan step 6): level-based
+ * Minimal stderr logger: level-based
  * with no dependencies. Quiet by default — `error` and `warn` messages
  * are always printed; `--verbose` enables `info` (progress) and
  * `debug`. Every message goes to stderr; stdout carries nothing but
- * the report JSON (design §2).
+ * the report JSON.
  */
 
 /**
  * Whether verbose levels (`info`, `debug`) are enabled. Module-level
  * state, set once per invocation from the `--verbose` CLI option by the
- * pipeline (plan step 6).
+ * pipeline.
  */
 let verbose = false;
 
@@ -67,10 +67,6 @@ export function logInfo(message: string): void {
  * (`--verbose`); hidden in quiet mode.
  *
  * @param message - The message to write to stderr.
- *
- * @internal Exported for tests only (`log.test.ts`), which pins the
- * debug level's gating behavior; no production importer exists yet
- * (later plan steps log at `info`). Not part of the public module API.
  */
 export function logDebug(message: string): void {
   if (verbose) {

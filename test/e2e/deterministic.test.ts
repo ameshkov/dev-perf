@@ -1,10 +1,10 @@
 /**
- * End-to-end tests for the deterministic analysis path (design §9,
- * plan steps 5-6): the compiled CLI runs with `--no-llm` against a
- * fixture repo as a child process, and the emitted JSON is validated
- * against the report schema and checked exactly. A `--verbose` run is
- * checked the same way, additionally asserting that progress lines go
- * to stderr only while stdout stays pure JSON.
+ * End-to-end tests for the deterministic analysis path: the compiled
+ * CLI runs with `--no-llm` against a fixture repo as a child process,
+ * and the emitted JSON is validated against the report schema and
+ * checked exactly. A `--verbose` run is checked the same way,
+ * additionally asserting that progress lines go to stderr only while
+ * stdout stays pure JSON.
  *
  * The suite needs `pnpm build` to have produced `build/index.js`; it
  * is skipped when the build is missing so a plain `pnpm test` stays
@@ -24,6 +24,17 @@ import { reportSchema } from '../../src/report/schema.js';
 
 /** Compiled CLI entry point; the suite runs it as a child process. */
 const BUILD_ENTRY = path.resolve(process.cwd(), 'build', 'index.js');
+
+/**
+ * The parent environment without `DEV_PERF_*` variables, so settings a
+ * developer shell exports (e.g. `DEV_PERF_VERBOSE`) cannot leak into
+ * the child runs and break the expected outputs.
+ */
+function cleanEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('DEV_PERF_')),
+  );
+}
 
 /**
  * Builds the fixture repo both e2e cases analyze: two authors, a
@@ -154,17 +165,21 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout } = await execa('node', [
-        BUILD_ENTRY,
-        '--no-llm',
-        '--since',
-        '2026-01-01T00:00:00Z',
-        '--until',
-        '2026-01-31T23:59:59Z',
-        '--cache-dir',
-        cacheDir,
-        repo.url,
-      ]);
+      const { stdout } = await execa(
+        'node',
+        [
+          BUILD_ENTRY,
+          '--no-llm',
+          '--since',
+          '2026-01-01T00:00:00Z',
+          '--until',
+          '2026-01-31T23:59:59Z',
+          '--cache-dir',
+          cacheDir,
+          repo.url,
+        ],
+        { env: cleanEnv() },
+      );
 
       expect(reportSchema.safeParse(JSON.parse(stdout)).success).toBe(true);
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
@@ -178,18 +193,22 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout, stderr } = await execa('node', [
-        BUILD_ENTRY,
-        '--no-llm',
-        '--verbose',
-        '--since',
-        '2026-01-01T00:00:00Z',
-        '--until',
-        '2026-01-31T23:59:59Z',
-        '--cache-dir',
-        cacheDir,
-        repo.url,
-      ]);
+      const { stdout, stderr } = await execa(
+        'node',
+        [
+          BUILD_ENTRY,
+          '--no-llm',
+          '--verbose',
+          '--since',
+          '2026-01-01T00:00:00Z',
+          '--until',
+          '2026-01-31T23:59:59Z',
+          '--cache-dir',
+          cacheDir,
+          repo.url,
+        ],
+        { env: cleanEnv() },
+      );
 
       // stdout parses as the exact same report as a quiet run.
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
@@ -208,17 +227,21 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout, stderr } = await execa('node', [
-        BUILD_ENTRY,
-        '--no-llm',
-        '--since',
-        '2026-01-01T00:00:00Z',
-        '--until',
-        '2026-01-31T23:59:59Z',
-        '--cache-dir',
-        cacheDir,
-        repo.url,
-      ]);
+      const { stdout, stderr } = await execa(
+        'node',
+        [
+          BUILD_ENTRY,
+          '--no-llm',
+          '--since',
+          '2026-01-01T00:00:00Z',
+          '--until',
+          '2026-01-31T23:59:59Z',
+          '--cache-dir',
+          cacheDir,
+          repo.url,
+        ],
+        { env: cleanEnv() },
+      );
 
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
       expect(stderr).toBe('');
@@ -233,19 +256,23 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
     try {
-      await execa('node', [
-        BUILD_ENTRY,
-        '--no-llm',
-        '--since',
-        '2026-01-01T00:00:00Z',
-        '--until',
-        '2026-01-31T23:59:59Z',
-        '--cache-dir',
-        cacheDir,
-        '--output',
-        outFile,
-        repo.url,
-      ]);
+      await execa(
+        'node',
+        [
+          BUILD_ENTRY,
+          '--no-llm',
+          '--since',
+          '2026-01-01T00:00:00Z',
+          '--until',
+          '2026-01-31T23:59:59Z',
+          '--cache-dir',
+          cacheDir,
+          '--output',
+          outFile,
+          repo.url,
+        ],
+        { env: cleanEnv() },
+      );
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as {
         schemaVersion: number;
@@ -256,6 +283,32 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(written.schemaVersion).toBe(1);
       expect(written.parameters).toMatchObject({ repos: [repo.url], llmEnabled: false });
       expect(written.repositories[0].users).toHaveLength(2);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('runs from environment variables alone with the flag-equivalent report', async () => {
+    const repo = await buildFixture();
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    const outFile = path.join(cacheDir, 'report.json');
+    try {
+      await execa('node', [BUILD_ENTRY], {
+        env: {
+          ...cleanEnv(),
+          DEV_PERF_REPOS: repo.url,
+          DEV_PERF_NO_LLM: 'true',
+          DEV_PERF_SINCE: '2026-01-01T00:00:00Z',
+          DEV_PERF_UNTIL: '2026-01-31T23:59:59Z',
+          DEV_PERF_CACHE_DIR: cacheDir,
+          DEV_PERF_OUTPUT: outFile,
+        },
+      });
+
+      const written = JSON.parse(await readFile(outFile, 'utf8')) as unknown;
+      expect(reportSchema.safeParse(written).success).toBe(true);
+      expect(written).toStrictEqual(await expectedReport(repo, cacheDir));
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import { registerCommands } from './cli.js';
@@ -15,12 +15,16 @@ function createProgram(): Command {
   return program;
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('cli', () => {
   it('documents the repository argument and all options in help', () => {
     const program = createProgram();
     const help = program.helpInformation();
 
-    expect(help).toContain('<repo...>');
+    expect(help).toContain('[repo...]');
     expect(help).toContain('--since <date>');
     expect(help).toContain('--until <date>');
     expect(help).toContain('--output <file>');
@@ -33,6 +37,7 @@ describe('cli', () => {
     expect(help).toContain('--limit-context <n>');
     expect(help).toContain('--limit-output <n>');
     expect(help).toContain('--verbose');
+    expect(help).toContain('DEV_PERF_');
   });
 
   it('parses repositories and options, including the negated --no-llm flag', () => {
@@ -64,9 +69,72 @@ describe('cli', () => {
     );
   });
 
-  it('rejects when no repository is given', () => {
+  it('rejects when neither positional arguments nor DEV_PERF_REPOS are given', async () => {
     const program = createProgram();
-    expect(() => program.parse(['node', 'dev-perf'])).toThrow("missing required argument 'repo'");
+    await expect(program.parseAsync(['node', 'dev-perf'])).rejects.toThrow(
+      'repos: at least one repository is required',
+    );
+  });
+
+  it('fills options from DEV_PERF_* environment variables when flags are not passed', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-cli-cache-'));
+    const outFile = path.join(cacheDir, 'report.json');
+    vi.stubEnv('DEV_PERF_NO_LLM', 'true');
+    vi.stubEnv('DEV_PERF_OUTPUT', outFile);
+    vi.stubEnv('DEV_PERF_CACHE_DIR', cacheDir);
+    try {
+      const program = createProgram();
+      await program.parseAsync(['node', 'dev-perf', repo.url]);
+
+      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.parameters.llmEnabled).toBe(false);
+        expect(result.data.repositories).toHaveLength(1);
+      }
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('takes repositories from DEV_PERF_REPOS when no positional arguments are given', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-cli-cache-'));
+    const outFile = path.join(cacheDir, 'report.json');
+    vi.stubEnv('DEV_PERF_REPOS', repo.url);
+    vi.stubEnv('DEV_PERF_NO_LLM', 'true');
+    vi.stubEnv('DEV_PERF_OUTPUT', outFile);
+    vi.stubEnv('DEV_PERF_CACHE_DIR', cacheDir);
+    try {
+      const program = createProgram();
+      await program.parseAsync(['node', 'dev-perf']);
+
+      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.parameters.repos).toEqual([repo.url]);
+        expect(result.data.repositories).toHaveLength(1);
+      }
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
   });
 
   it('runs the deterministic pipeline and writes a valid report to the output file', async () => {

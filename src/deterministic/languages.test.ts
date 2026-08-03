@@ -1,5 +1,5 @@
 /**
- * Tests for language identification (design §5.2): the built-in
+ * Tests for language identification: the built-in
  * extension→language mapping and per-language contribution counting
  * from numstat paths (cloc-style, applied to contributions).
  */

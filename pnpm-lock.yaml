@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@opencode-ai/plugin':
-        specifier: 1.18.11
-        version: 1.18.11
       '@opencode-ai/sdk':
         specifier: 1.18.11
         version: 1.18.11
@@ -27,6 +24,9 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      '@opencode-ai/plugin':
+        specifier: 1.18.11
+        version: 1.18.11
       '@types/node':
         specifier: 26.1.2
         version: 26.1.2

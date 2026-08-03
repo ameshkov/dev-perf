@@ -1,5 +1,5 @@
 /**
- * Language identification (docs/design.md §5.2): a built-in
+ * Language identification: a built-in
  * extension→language map, so per-language contribution counts can be
  * computed cloc-style from numstat paths — applied to contributions,
  * not the whole tree.
@@ -92,8 +92,8 @@ const FILENAME_LANGUAGES: Record<string, string> = {
 };
 
 /**
- * Maps a file path to a language name via the built-in map
- * (design §5.2): the basename is matched against the filename map
+ * Maps a file path to a language name via the built-in map:
+ * the basename is matched against the filename map
  * first, then the extension after its last dot. Matching is
  * case-insensitive; paths nothing matches fall back to `Unknown`.
  *
@@ -118,7 +118,7 @@ export function languageForPath(filePath: string): string {
 }
 
 /**
- * Counts per-language contributions over commits (design §5.2):
+ * Counts per-language contributions over commits:
  * `linesAdded`, `linesRemoved`, and `filesTouched` (commit-file pairs)
  * are summed per language mapped from each numstat path. Binary files
  * (no line counts) contribute zero lines but still count as touched;

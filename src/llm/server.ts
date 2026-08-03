@@ -1,6 +1,6 @@
 /**
- * opencode-as-a-library server lifecycle (docs/design.md §6.1-6.2,
- * plan step 7): `startServer` prepares the generated `opencode.json`
+ * opencode-as-a-library server lifecycle: `startServer` prepares the
+ * generated `opencode.json`
  * and the `devperf_report` tool inside the analyzed clone, launches an
  * opencode server scoped to that clone with `createOpencode()`, and
  * injects the provider API key programmatically via `client.auth.set()`
@@ -53,7 +53,7 @@ const BLOCKED_ENV_VARS = [
 
 /**
  * Read-only analysis rules injected into the server's `build` agent
- * prompt (design §6.4): the agent inspects history with read tools and
+ * prompt: the agent inspects history with read tools and
  * read-only git commands and never modifies anything.
  */
 const ANALYSIS_RULES =
@@ -66,7 +66,7 @@ const ANALYSIS_RULES =
 
 /**
  * Everything the LLM server needs to run one analysis, derived from
- * the validated CLI options (design §3).
+ * the validated CLI options.
  */
 export interface LlmServerConfig {
   /** OpenAI-compatible provider base URL (`--provider-url`). */
@@ -95,7 +95,7 @@ export interface LlmServerHandle {
 }
 
 /**
- * Builds the isolated opencode config (design §6.2): the provider with
+ * Builds the isolated opencode config: the provider with
  * the given base URL, the model with the `limit` block from
  * `--limit-context`/`--limit-output`, read-only permissions that deny
  * the write tools, the analysis rules, and an `enabled_providers`
@@ -103,6 +103,10 @@ export interface LlmServerHandle {
  *
  * @param config - LLM server configuration.
  * @returns The opencode config document.
+ *
+ * @internal Exported for tests only (`server.test.ts` golden checks);
+ * also used by `writeServerFiles` and `startServer` within the module.
+ * Not part of the public module API.
  */
 export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig {
   return {
@@ -132,7 +136,7 @@ export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig 
 }
 
 /**
- * Writes the generated opencode files (design §4, §6.2, §6.5): the
+ * Writes the generated opencode files: the
  * `opencode.json` and the `devperf_report` tool source land in the
  * cache entry's `opencode/` directory (the layout's generated-files
  * home) and are copied into the clone, where the server discovers
@@ -142,6 +146,10 @@ export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig 
  *
  * @param cloneDir - The clone's working tree (`<cache>/<hash>/repo`).
  * @param config - LLM server configuration.
+ *
+ * @internal Exported for tests only (`server.test.ts` layout checks);
+ * also called by `startServer` within the module. Not part of the
+ * public module API.
  */
 export async function writeServerFiles(cloneDir: string, config: LlmServerConfig): Promise<void> {
   const entryDir = path.dirname(cloneDir);

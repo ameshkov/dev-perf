@@ -1,5 +1,5 @@
 /**
- * The small `execa`-based git wrapper (docs/design.md §4): all git
+ * The small `execa`-based git wrapper: all git
  * operations in the project go through `runGit` or one of the helpers,
  * so failure handling stays in one place.
  */
@@ -13,7 +13,7 @@ export interface RunGitOptions {
    * Extra environment variables for the git process, merged over the
    * parent environment. Used to pin dates (`GIT_AUTHOR_DATE`,
    * `GIT_COMMITTER_DATE`) and to force UTC date interpretation
-   * (`TZ=UTC`, design §5.4).
+   * (`TZ=UTC`).
    */
   env?: NodeJS.ProcessEnv;
 }

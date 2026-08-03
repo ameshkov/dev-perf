@@ -4,8 +4,9 @@
 # Dependencies
 node_modules/
 
-# VSCode config
-.vscode
+# VSCode config (the launch configuration is committed)
+.vscode/*
+!.vscode/launch.json
 
 # Build output
 build/

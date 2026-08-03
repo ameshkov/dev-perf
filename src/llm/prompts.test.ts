@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildOrientationPrompt, buildToolCallReminder, buildUserPrompt } from './prompts.js';
 import type { UserPromptInput } from './prompts.js';
 
-/** The tool-call instruction every analysis prompt must carry (§6.5). */
+/** The tool-call instruction every analysis prompt must carry. */
 const TOOL_CALL_FRAGMENT = 'call the devperf_report tool with the final analysis';
 
 const RANGE = { since: '2026-01-01T00:00:00.000Z', until: '2026-01-31T00:00:00.000Z' };

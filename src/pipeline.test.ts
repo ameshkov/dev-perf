@@ -1,5 +1,5 @@
 /**
- * Tests for the pipeline orchestration (plan step 5): end-to-end
+ * Tests for the pipeline orchestration: end-to-end
  * deterministic analysis against fixture repos — report shape, range
  * resolution, output-file writing, and empty repositories.
  */

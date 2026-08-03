@@ -1,7 +1,7 @@
 /**
- * Tests for author identity resolution (design §5.3): email grouping
+ * Tests for author identity resolution: email grouping
  * with case folding, display-name selection by frequency, and the
- * heuristic bot flag that never filters (§5.4).
+ * heuristic bot flag that never filters.
  */
 import { describe, expect, it } from 'vitest';
 import type { Commit } from './commits.js';
@@ -68,7 +68,7 @@ describe('groupByAuthor', () => {
     expect(groups[0].name).toBe('Alice');
   });
 
-  it('flags bots but counts them like everyone else (§5.4)', () => {
+  it('flags bots but counts them like everyone else', () => {
     const groups = groupByAuthor([
       commit('dependabot[bot]', 'dependabot[bot]@users.noreply.github.com'),
       commit('Alice', 'alice@example.com'),

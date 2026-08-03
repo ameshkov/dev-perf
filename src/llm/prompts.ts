@@ -1,20 +1,19 @@
 /**
- * LLM prompts (docs/design.md §6.3, §6.5, plan step 8): the
- * orientation prompt that produces the repository context (tech stack,
+ * LLM prompts: the orientation prompt that produces the repository context (tech stack,
  * main modules, conventions), the per-user prompt with identity, date
  * range, repo context, and the user's commit list (sha, date, subject,
  * numstat totals, files), and the tool-call reminder used by the
  * enforcement loop. Both analysis prompts end with the instruction to
  * call `devperf_report` with the final analysis before finishing — no
  * other output format is accepted. The orientation context is injected
- * into user sessions with `noReply: true` (design §6.3).
+ * into user sessions with `noReply: true`.
  */
 import type { Commit, CommitFile } from '../deterministic/commits.js';
 import type { AnalyzedRange } from '../report/index.js';
 
 /**
  * The closing instruction shared by the orientation and per-user
- * prompts (design §6.5): the analysis is only accepted through the
+ * prompts: the analysis is only accepted through the
  * `devperf_report` tool.
  */
 const TOOL_CALL_INSTRUCTION =
@@ -24,7 +23,7 @@ const TOOL_CALL_INSTRUCTION =
 /** How many file paths a commit line lists before they are truncated. */
 const MAX_FILES_PER_COMMIT = 20;
 
-/** Everything the per-user analysis prompt needs (design §6.3). */
+/** Everything the per-user analysis prompt needs. */
 export interface UserPromptInput {
   /** Repository URL or local path as given on the command line. */
   repo: string;
@@ -41,7 +40,7 @@ export interface UserPromptInput {
 }
 
 /**
- * Builds the orientation prompt (design §6.3): the agent explores the
+ * Builds the orientation prompt: the agent explores the
  * repository with the read tools and read-only git commands and
  * returns a compact repository context — tech stack, main modules,
  * conventions — that every user session then receives. The prompt ends
@@ -71,7 +70,7 @@ export function buildOrientationPrompt(repo: string): string {
 }
 
 /**
- * Builds the per-user analysis prompt (design §6.3): identity, date
+ * Builds the per-user analysis prompt: identity, date
  * range, the repository context from the orientation session, and the
  * user's commit list with sha, author date, subject, numstat totals,
  * and files per commit. The agent inspects the commits with read tools
@@ -111,7 +110,7 @@ export function buildUserPrompt(input: UserPromptInput): string {
 
 /**
  * Builds the follow-up reminder the enforcement loop sends when a
- * session finished without calling `devperf_report` (design §6.5).
+ * session finished without calling `devperf_report`.
  *
  * @returns The reminder prompt text.
  */
@@ -126,7 +125,7 @@ export function buildToolCallReminder(): string {
 /**
  * Renders one commit as a prompt line: abbreviated sha, author date,
  * subject, and — for non-merge commits — the numstat totals and file
- * list (design §6.3). Binary files count zero lines; a file list
+ * list. Binary files count zero lines; a file list
  * longer than `MAX_FILES_PER_COMMIT` is truncated.
  *
  * @param commit - The commit to render.

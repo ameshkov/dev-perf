@@ -10,6 +10,53 @@ and this project adheres to
 
 ### Added
 
+- Environment-variable configuration for every CLI option: each flag
+  has a `DEV_PERF_*` equivalent (`DEV_PERF_SINCE`, `DEV_PERF_UNTIL`,
+  `DEV_PERF_OUTPUT`, `DEV_PERF_CACHE_DIR`, `DEV_PERF_REFRESH`,
+  `DEV_PERF_NO_LLM`, `DEV_PERF_MODEL`, `DEV_PERF_PROVIDER_URL`,
+  `DEV_PERF_API_KEY`, `DEV_PERF_LIMIT_CONTEXT`,
+  `DEV_PERF_LIMIT_OUTPUT`, `DEV_PERF_VERBOSE`, and `DEV_PERF_REPOS`
+  for the positional repositories), resolved by `resolveRawOptions`
+  in `src/config.ts` before validation — the flag wins when both are
+  set, boolean variables accept `1`/`true`/`yes`/`on` and
+  `0`/`false`/`no`/`off`, and `.env` (gitignored, loaded via dotenv)
+  now drives any option, not just the API key.
+- `.env.example` documents every `DEV_PERF_*` variable; the README
+  gains a Configuration section with the full flag-to-variable
+  mapping, and DEVELOPMENT.md explains `.env` setup and usage.
+- VS Code launch configuration (`.vscode/launch.json`, committed):
+  two configurations — deterministic (`--no-llm`) and full LLM — that
+  run the TypeScript sources through `tsx` and load `.env` via
+  `envFile`, so an F5 debug session picks up the same variables as a
+  shell run.
+- Full pipeline integration of the LLM layer (plan step 9, milestone
+  M3): `src/pipeline.ts` now runs the LLM phase between deterministic
+  analysis and assembly when enabled — one opencode server per
+  repository (started and shut down around the analysis), the real
+  session service bound to it, and `analyzeRepositoryLLM` producing
+  one analysis per user (cached results reused unless `--refresh`).
+  The completed per-user analyses are merged into the report
+  (`llm.status: "completed"` with overview, contributions, token usage
+  and cost); users without a result keep `status: "skipped"`. LLM
+  failures fail fast with a clear message naming the repository (the
+  server is shut down first) and no report is written (§6.5, §10);
+  repositories without authors in the range skip the LLM phase
+  entirely.
+- The report assembler (`src/report/assemble.ts`) now maps per-user
+  LLM results into the report: `assembleRepository` accepts an
+  optional `llmResults` map keyed by lowercased email, so completed,
+  failed (with the error message), and skipped statuses all flow into
+  the document.
+- Pipeline LLM-phase integration tests (`src/pipeline-llm.test.ts`):
+  with `startServer` stubbed at the module boundary, the real session
+  service and orchestration run against a stub client that simulates
+  the `devperf_report` tool — the completed analyses land in the
+  report, enforcement failures and server-start failures fail fast
+  (server closed, no stdout output), and `--no-llm` / author-less
+  repositories never start a server.
+- Report-assembler tests for LLM result mapping: completed analyses
+  onto the matching users, failed analyses with their error message,
+  and skipped status when no results are given.
 - LLM orchestration (`src/llm/analyze.ts`, design §6.3-6.6, plan step
   8): per repository — one orientation session establishes the repo
   context (tech stack, main modules, conventions), which is injected
@@ -90,8 +137,9 @@ and this project adheres to
   (valid payload written, invalid payload rejected), and a manual
   server lifecycle smoke test gated behind `DEV_PERF_SMOKE=1`
   (skipped in CI; needs the `opencode` binary).
-- `@opencode-ai/sdk` and `@opencode-ai/plugin` dependencies
-  (1.18.11, pinned exactly).
+- `@opencode-ai/sdk` dependency (1.18.11, pinned exactly);
+  `@opencode-ai/plugin` (1.18.11, pinned exactly) is a devDependency
+  — the opencode runtime resolves it for the generated tool file.
 - `llmToolPayloadSchema` (`src/report/schema.ts`): the model-facing
   analysis payload (overview + contributions) with `describe()`d
   fields, exported through the report barrel.
@@ -208,13 +256,38 @@ and this project adheres to
 
 ### Changed
 
-- `knip.config.ts`: added `src/llm/**` to `ignoreFiles` and the
-  `@opencode-ai/sdk` / `@opencode-ai/plugin` packages to
-  `ignoreDependencies` — the LLM layer (plan step 7) has no
-  production importer until the pipeline wires it in step 9; remove
-  both entries then. The exports it consumes (`llmToolPayloadSchema`
-  in the report barrel, `llmDir`/`opencodeDir` in `src/repo/cache.ts`)
-  carry transitional `@internal` tags with the same removal note.
+- Code comments no longer reference `docs/design.md` / `docs/plan.md`
+  sections — module JSDoc is self-contained, with the README as the
+  single pointer to the design document.
+- The CLI repository argument is now optional (`[repo...]`):
+  repositories may come from `DEV_PERF_REPOS` instead of positional
+  arguments, and an empty list fails validation with `repos: at least
+  one repository is required`.
+- The API-key fallback moved into option resolution: `--api-key` and
+  `DEV_PERF_API_KEY` are merged by `resolveRawOptions` before
+  validation, so `src/pipeline.ts` no longer reads `process.env`
+  itself.
+- The e2e suite sanitizes `DEV_PERF_*` variables from the child
+  environment (a developer shell exporting them cannot skew expected
+  outputs) and adds an env-only run case asserting the flag-equivalent
+  report.
+- `knip.config.ts`: removed the `src/llm/**` `ignoreFiles` entry and
+  the `@opencode-ai/sdk` / `@opencode-ai/plugin` `ignoreDependencies`
+  entries — the pipeline (plan step 9) wires the LLM layer in, so
+  every module now has a production importer. The transitional
+  `@internal` tags this enabled were removed accordingly
+  (`llmToolPayloadSchema`, `tokenUsageSchema`, `TokenUsage`,
+  `LlmAnalysis`, `LlmToolPayload`, `llmDir`, `opencodeDir`,
+  `logDebug`, `CommitFile`); remaining test-only exports keep their
+  tags with updated wording.
+- `@opencode-ai/plugin` moved to `devDependencies`: the generated
+  `devperf_report.ts` tool is loaded by the opencode runtime itself,
+  which resolves the package from its own embedded modules — only the
+  tool-execution test imports it from dev-perf's `node_modules`. The
+  runtime dependency is `@opencode-ai/sdk` alone.
+- `--refresh` help text now mentions that the cached LLM results are
+  invalidated too: "Force re-clone and re-analysis, invalidating the
+  LLM result cache".
 - `--verbose` is now wired through the pipeline (plan step 6): progress
   messages — cache reuse vs a fresh clone (with duration), the
   resolved author-date range, and per-repo commit counts — go to

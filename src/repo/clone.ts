@@ -1,5 +1,5 @@
 /**
- * Clone/cache management (docs/design.md §4): `ensureClone` reuses a
+ * Clone/cache management: `ensureClone` reuses a
  * cached clone when `repo/` exists and `clone.json` matches the URL,
  * re-clones on `--refresh`, and clones with `--filter=blob:none`
  * (partial clone), falling back to a full clone when the hosting
@@ -23,7 +23,7 @@ const SCP_LIKE_URL_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/;
 export interface EnsureCloneOptions {
   /** Cache directory (default: `.dev-perf/cache` under the cwd). */
   cacheDir?: string;
-  /** Force a fresh clone even when the cache matches (§4). */
+  /** Force a fresh clone even when the cache matches. */
   refresh?: boolean;
   /** Git executable to run; defaults to `git`. Tests override it to
    * simulate hosts that reject partial clones. */
@@ -90,7 +90,7 @@ export function cloneTarget(repo: string): string {
 }
 
 /**
- * Ensures a repository is cloned into the cache (design §4): reuses the
+ * Ensures a repository is cloned into the cache: reuses the
  * clone when `repo/` exists and `clone.json` matches the URL; re-clones
  * (removing the old `repo/`) on `--refresh` or when the cache is stale;
  * clones with `--filter=blob:none` and falls back to a full clone when

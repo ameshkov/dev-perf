@@ -1,13 +1,13 @@
 /**
- * Report assembly (docs/design.md §7): builds the report document from
+ * Report assembly: builds the report document from
  * the deterministic analysis results. The assembler is pure — all git
  * access happens in the pipeline; here the report is constructed and
- * validated against the shared schema, so nothing can drift (§3).
+ * validated against the shared schema, so nothing can drift.
  */
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { repoStats, userMetrics } from '../deterministic/metrics.js';
 import { reportSchema } from './schema.js';
-import type { Report, Repository, User } from './schema.js';
+import type { LlmAnalysis, Report, Repository, User } from './schema.js';
 
 /**
  * Analyzed author-date range as resolved UTC instants; the empty
@@ -34,6 +34,11 @@ export interface RepositoryEntryInput {
   range: AnalyzedRange;
   /** Author groups of the range, one per user. */
   groups: AuthorGroup[];
+  /**
+   * LLM analyses keyed by lowercased author email, from the LLM phase;
+   * users without a result get a skipped analysis.
+   */
+  llmResults?: ReadonlyMap<string, LlmAnalysis>;
 }
 
 /** Everything the assembler needs for the report document. */
@@ -53,12 +58,14 @@ export interface ReportInput {
 }
 
 /**
- * Builds one repository entry (design §7): identity, analyzed range,
+ * Builds one repository entry: identity, analyzed range,
  * repository statistics, and one user entry per author group with
- * deterministic metrics and a skipped LLM analysis. User entries keep
- * the group order (first-encounter order of the parsed commits).
+ * deterministic metrics and the user's LLM analysis — the completed
+ * result when the LLM phase produced one, skipped otherwise. User
+ * entries keep the group order (first-encounter order of the parsed
+ * commits).
  *
- * @param input - Clone identity, range, and author groups.
+ * @param input - Clone identity, range, author groups, and LLM results.
  * @returns The repository entry.
  */
 export function assembleRepository(input: RepositoryEntryInput): Repository {
@@ -69,31 +76,33 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
     head: input.head,
     range: input.range,
     stats: repoStats(input.groups),
-    users: input.groups.map(userEntry),
+    users: input.groups.map((group) => userEntry(group, input.llmResults)),
   };
 }
 
 /**
- * Builds the user entry for one author group (design §7): display
- * name, the grouped email, bot flag, deterministic metrics, and a
- * skipped LLM analysis — the LLM phase (plan steps 7-9) replaces it
- * once it runs.
+ * Builds the user entry for one author group: display
+ * name, the grouped email, bot flag, deterministic metrics, and the
+ * LLM analysis — the completed result from the LLM phase when one
+ * exists for the email, otherwise a skipped analysis.
  *
  * @param group - The author group.
+ * @param llmResults - LLM analyses keyed by lowercased email, if the
+ * LLM phase ran.
  * @returns The user entry.
  */
-function userEntry(group: AuthorGroup): User {
+function userEntry(group: AuthorGroup, llmResults?: ReadonlyMap<string, LlmAnalysis>): User {
   return {
     name: group.name,
     emails: [group.email],
     isBot: group.isBot,
     deterministic: userMetrics(group.commits),
-    llm: { status: 'skipped', contributions: [] },
+    llm: llmResults?.get(group.email) ?? { status: 'skipped', contributions: [] },
   };
 }
 
 /**
- * Builds the full report document (design §7): parameters, the
+ * Builds the full report document: parameters, the
  * generated-at timestamp, and one entry per repository. The result is
  * validated against `reportSchema`, which applies defaults (e.g.
  * `llm.contributions`) — an invalid assembly fails here rather than at

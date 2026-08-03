@@ -25,6 +25,9 @@ For usage as an end user, see the [README](./README.md) instead.
   pnpm@latest --activate`, then verify with `pnpm --version`).
 - **git** on `PATH` — the analysis pipeline shells out to git, and the
   LLM agent runs git commands through its `bash` tool.
+- **opencode** on `PATH` (only for LLM analysis) — the LLM layer starts
+  an opencode server as a library per repository; without it, LLM runs
+  fail fast with a hint. `dev-perf --no-llm` never needs it.
 - A terminal running from the **repository root** for all commands below.
 
 ## Initial Setup
@@ -72,13 +75,12 @@ node build/index.js --no-llm /path/to/some/git/repo
 
 This clones the repository into the cache (`.dev-perf/cache` by
 default), analyzes git history, and prints the JSON report to stdout.
-LLM analysis (plan steps 7-9) is not implemented yet: running without
-`--no-llm` fails validation because `--model`, `--provider-url`, and
-`--api-key` are required for it. A `.env` file in the current working
-directory is auto-loaded (`DEV_PERF_API_KEY` is the only documented
-variable, see `.env.example`).
+LLM analysis (milestone M3) is wired in: a run without `--no-llm`
+requires `--model`, `--provider-url`, and `--api-key`, and the
+`opencode` CLI on `PATH`. Provider settings can come from the
+environment instead of flags (see below).
 
-Once the LLM layer lands, the intended flow is:
+Full LLM run:
 
 ```bash
 node build/index.js --since 2026-01-01 --until 2026-06-30 \
@@ -88,6 +90,46 @@ node build/index.js --since 2026-01-01 --until 2026-06-30 \
   --api-key "$DEV_PERF_API_KEY" \
   https://github.com/org/repo.git
 ```
+
+### Environment variables (.env)
+
+Every command-line option has a `DEV_PERF_*` environment variable
+equivalent; the flag wins when both are set. The template documents
+all of them:
+
+```bash
+cp .env.example .env
+```
+
+A `.env` file in the current working directory is auto-loaded at
+startup (`dotenv`), and `.env` is gitignored — the right place for API
+keys and machine-specific settings. Values already exported in the
+shell are never overridden by `.env` entries.
+
+For example, with a `.env` containing:
+
+```text
+DEV_PERF_NO_LLM=true
+DEV_PERF_OUTPUT=report.json
+```
+
+`node build/index.js /path/to/repo` behaves exactly like `--no-llm
+--output report.json /path/to/repo`. Boolean variables accept
+`1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`.
+
+### Running from VS Code
+
+The repository ships `.vscode/launch.json` with two launch
+configurations that load `.env` via `envFile`:
+
+- *dev-perf: run (deterministic)* — `--no-llm` against the repository
+  root, no provider configuration needed.
+- *dev-perf: run (with LLM)* — full pipeline; set `DEV_PERF_MODEL`,
+  `DEV_PERF_PROVIDER_URL`, and `DEV_PERF_API_KEY` in `.env` first.
+
+Create `.env` (from `.env.example`) before launching, then press F5 in
+the Run and Debug view. The configurations run the TypeScript sources
+through `tsx`, so no `pnpm build` is needed.
 
 ## Manual Testing
 
@@ -131,6 +173,36 @@ A second run with the same repository reuses the cached clone; pass
 `--verbose` shows what the pipeline is doing on stderr — clone vs cache
 reuse (with duration), the resolved author-date range, and per-repo
 commit counts — while stdout stays reserved for the report JSON.
+
+### Manual LLM run
+
+With the `opencode` CLI installed and a provider key, run the full
+pipeline against a small public repository (keep the range narrow so
+the run is quick):
+
+```bash
+node build/index.js \
+  --since 2026-01-01 --until 2026-06-30 \
+  --model gpt-4.1 \
+  --provider-url https://api.openai.com/v1 \
+  --api-key "$DEV_PERF_API_KEY" \
+  --verbose \
+  https://github.com/org/small-public-repo.git
+```
+
+Expectations:
+
+- Verbose stderr shows the server URL and model, the orientation
+  session, and per-user sessions with token usage and cost.
+- The report's per-user `llm` entries have `status: "completed"` with
+  `overview`, `contributions`, `tokenUsage` and `estimatedCostUsd`.
+- A rerun with identical parameters makes no new LLM calls (results
+  are cached in `.dev-perf/cache/<hash>/llm/`); `--refresh` re-runs
+  everything.
+- A provider that rejects the key fails fast: the run exits non-zero
+  with a message naming the failing prompt, and no report is written.
+- A model that never calls `devperf_report` fails after 3 reminders
+  with an error naming the user and session.
 
 ## Code Quality Gates
 
@@ -202,6 +274,13 @@ attached.
 
 - **`Error: Cannot find module 'build/index.js'`** — run `pnpm build`
   first.
+- **LLM run fails with "Is the opencode CLI installed and on PATH?"** —
+  the LLM layer spawns an opencode server via the SDK; install the
+  `opencode` CLI and make sure it is on `PATH`. Deterministic runs
+  (`--no-llm`) never need it.
+- **LLM run fails with an auth error on the first prompt** — the
+  provider rejected the API key; check `--api-key` /
+  `DEV_PERF_API_KEY` and the provider base URL.
 - **E2E tests are skipped** — the e2e suite
   (`test/e2e/deterministic.test.ts`) runs the compiled CLI and needs
   `pnpm build` first; `pnpm test` skips it when `build/index.js` is

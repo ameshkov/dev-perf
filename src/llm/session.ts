@@ -1,11 +1,11 @@
 /**
- * Session layer for the LLM analysis (docs/design.md §6.3, plan step
- * 8): the `SessionService` interface the orchestration layer drives —
+ * Session layer for the LLM analysis: the `SessionService` interface
+ * the orchestration layer drives —
  * session creation and prompting scoped to the clone directory, with
  * `noReply` support and abort-on-error — plus tool-call detection
  * (the `devperf_report` output file exists and zod-validates) and
- * per-session token usage collected from the server's event stream
- * (§6.6). The real implementation talks to the opencode server via the
+ * per-session token usage collected from the server's event stream.
+ * The real implementation talks to the opencode server via the
  * `@opencode-ai/sdk` client (the v1 client the server handle exposes:
  * `{ query, body, path }` option style); tests stub the interface.
  */
@@ -23,16 +23,21 @@ export interface SessionHandle {
   directory: string;
 }
 
-/** Options for a single prompt. */
+/** Options for a single prompt.
+ *
+ * @internal Exported for tests only (`analyze.test.ts`); also used by
+ * `promptSessionWith` within the module. Not part of the public module
+ * API.
+ */
 export interface PromptOptions {
   /**
    * True to record the message without triggering a reply (context
-   * injection, design §6.3).
+   * injection).
    */
   noReply?: boolean;
 }
 
-/** Token usage and cost accumulated for one session (§6.6). */
+/** Token usage and cost accumulated for one session. */
 export interface SessionUsage {
   /** Input/output token counts. */
   tokenUsage: TokenUsage;
@@ -49,7 +54,7 @@ export interface UsageCollector {
 }
 
 /**
- * The session operations the orchestration layer needs (plan step 8).
+ * The session operations the orchestration layer needs.
  * `createSessionService` provides the real implementation bound to an
  * opencode client; `analyze.ts` accepts any implementation, which lets
  * the enforcement and caching tests stub the model's behavior.
@@ -79,7 +84,7 @@ export function createSessionService(client: OpencodeClient): SessionService {
 
 /**
  * Creates a session scoped to the clone directory (risk mitigation:
- * sessions are pinned to the server's project directory, design §10).
+ * sessions are pinned to the server's project directory).
  *
  * @param client - The opencode client.
  * @param directory - The clone directory to create the session in.
@@ -103,7 +108,7 @@ async function createSessionWith(
 
 /**
  * Sends a text prompt to a session; with `noReply: true` the message
- * is recorded without triggering a reply (context injection, §6.3).
+ * is recorded without triggering a reply (context injection).
  * On any failure the session is aborted and the error rethrown.
  *
  * @param client - The opencode client.
@@ -161,7 +166,7 @@ async function abortSession(client: OpencodeClient, handle: SessionHandle): Prom
 /**
  * Returns the path of a session's report file inside the entry's
  * `llm/` directory — where the generated `devperf_report` tool writes
- * its validated payload (plan step 7).
+ * its validated payload.
  *
  * @param llmDir - The cache entry's `llm/` directory.
  * @param sessionID - The session id.
@@ -172,7 +177,7 @@ export function sessionReportPath(llmDir: string, sessionID: string): string {
 }
 
 /**
- * Tool-call detection (design §6.5): reads the session's report file
+ * Tool-call detection: reads the session's report file
  * and returns the validated analysis payload, or `undefined` when the
  * file is missing, malformed, or fails validation — meaning the model
  * did not call `devperf_report` (or produced an unusable payload).
@@ -197,7 +202,7 @@ export async function readSessionReport(
 
 /**
  * Starts collecting per-session token usage and cost from the server's
- * event stream (design §6.6): `message.part.updated` events carry the
+ * event stream: `message.part.updated` events carry the
  * provider-reported tokens and cost of each completed step in their
  * `step-finish` part. The collection is best-effort — when the
  * subscription fails, a no-op collector is returned and the analysis
@@ -206,6 +211,10 @@ export async function readSessionReport(
  * @param client - The opencode client.
  * @param directory - The clone directory to scope the subscription to.
  * @returns The usage collector; call `close()` when analysis is done.
+ *
+ * @internal Exported for tests only (`session.test.ts`); also used by
+ * `createSessionService` within the module. Not part of the public
+ * module API.
  */
 export async function collectSessionUsage(
   client: OpencodeClient,

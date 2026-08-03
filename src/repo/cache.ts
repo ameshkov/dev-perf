@@ -1,5 +1,5 @@
 /**
- * Cache layout for cloned repositories (docs/design.md §4): cache root
+ * Cache layout for cloned repositories: cache root
  * resolution, the per-repository entry hash, path builders for the
  * layout, and zod-validated `clone.json` read/write.
  *
@@ -10,8 +10,8 @@
  * └── <sha256(url).slice(0, 16)>/
  *     ├── repo/        # the git clone
  *     ├── clone.json   # { url, clonedAt, branch, head }
- *     ├── llm/         # cached LLM analysis results (§6.6)
- *     └── opencode/    # generated opencode config and tool (§6.2, §6.5)
+ *     ├── llm/         # cached LLM analysis results
+ *     └── opencode/    # generated opencode config and tool
  * ```
  */
 import { createHash } from 'node:crypto';
@@ -19,15 +19,15 @@ import path from 'node:path';
 import { z } from 'zod';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 
-/** Default cache directory, relative to the working directory (§4). */
+/** Default cache directory, relative to the working directory. */
 const DEFAULT_CACHE_DIR = '.dev-perf/cache';
 
-/** Length of the per-repository entry hash (§4). */
+/** Length of the per-repository entry hash. */
 const ENTRY_HASH_LENGTH = 16;
 
 /**
  * Resolves the cache root: the `--cache-dir` option if given, otherwise
- * `.dev-perf/cache` under the working directory (§4).
+ * `.dev-perf/cache` under the working directory.
  *
  * @param cacheDir - Cache directory as given on the command line.
  * @returns The absolute cache root path.
@@ -38,7 +38,7 @@ export function resolveCacheDir(cacheDir?: string): string {
 
 /**
  * Computes the cache entry hash for a repository URL: the first 16 hex
- * characters of the URL's SHA-256 (§4).
+ * characters of the URL's SHA-256.
  *
  * @param url - Repository URL or local path as given on the command line.
  * @returns The 16-character entry hash.
@@ -87,19 +87,13 @@ export function cloneJsonPath(entryDir: string): string {
 }
 
 /**
- * Returns the LLM results directory inside a cache entry (`llm/`,
- * design §6.6). Consumed by the LLM layer: the generated
- * `devperf_report` tool writes each session's analysis payload here
- * (plan step 7).
+ * Returns the LLM results directory inside a cache entry (`llm/`).
+ * Consumed by the LLM layer: the generated
+ * `devperf_report` tool writes each session's analysis payload here,
+ * and the orchestrator caches and reads the per-user results here.
  *
  * @param entryDir - The cache entry directory.
  * @returns The llm directory path.
- *
- * @internal The sole production importer is `src/llm/server.ts`, which
- * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
- * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
- * step 9), so the import does not register as usage. Remove the tag
- * when the pipeline lands.
  */
 export function llmDir(entryDir: string): string {
   return path.join(entryDir, 'llm');
@@ -107,18 +101,12 @@ export function llmDir(entryDir: string): string {
 
 /**
  * Returns the generated opencode directory inside a cache entry
- * (`opencode/`, design §6.2, §6.5): the source of the generated
+ * (`opencode/`): the source of the generated
  * `opencode.json` and `.opencode/tools/devperf_report.ts`, which are
- * copied into the clone before the LLM server starts (plan step 7).
+ * copied into the clone before the LLM server starts.
  *
  * @param entryDir - The cache entry directory.
  * @returns The opencode directory path.
- *
- * @internal The sole production importer is `src/llm/server.ts`, which
- * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
- * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
- * step 9), so the import does not register as usage. Remove the tag
- * when the pipeline lands.
  */
 export function opencodeDir(entryDir: string): string {
   return path.join(entryDir, 'opencode');
@@ -126,7 +114,7 @@ export function opencodeDir(entryDir: string): string {
 
 /**
  * zod schema for `clone.json`: the URL the clone was made from, when it
- * was cloned (ISO 8601), the checked-out branch, and the head sha (§4).
+ * was cloned (ISO 8601), the checked-out branch, and the head sha.
  *
  * @internal Exported for tests only (`cache.test.ts`); referenced by
  * `readCloneInfo` within the module. Not part of the public module
@@ -144,7 +132,7 @@ export const cloneInfoSchema = z.object({
 });
 
 /**
- * Content of a `clone.json` file (§4).
+ * Content of a `clone.json` file.
  */
 export type CloneInfo = z.infer<typeof cloneInfoSchema>;
 

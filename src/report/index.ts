@@ -9,26 +9,15 @@ export { assembleReport, assembleRepository } from './assemble.js';
 export type { AnalyzedRange } from './assemble.js';
 
 /**
- * Payload schema of the `devperf_report` tool (design §6.5), consumed
- * by the LLM layer (plan step 7).
- *
- * @internal The sole production importer is `src/llm/tools.ts`, which
- * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
- * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
- * step 9), so the import does not register as usage. Remove the tag
- * when the pipeline lands.
+ * Payload schema of the `devperf_report` tool and the
+ * token-usage schema of an LLM analysis, consumed by the LLM
+ * layer (`src/llm/tools.ts`, `src/llm/session.ts`, `src/llm/analyze.ts`).
  */
 export { llmToolPayloadSchema, tokenUsageSchema } from './schema.js';
 
 /**
- * LLM analysis types consumed by the LLM layer (plan step 8:
- * `src/llm/session.ts` and `src/llm/analyze.ts`), which Knip excludes
- * from analysis (`src/llm/**` in `knip.config.ts` `ignoreFiles`,
- * removed when the pipeline wires the LLM layer in plan step 9), so
- * the imports do not register as usage. Remove the tag when the
- * pipeline lands.
- *
- * @internal Transitional until the pipeline lands (plan step 9).
+ * LLM analysis types consumed by the LLM layer (`src/llm/analyze.ts`,
+ * `src/llm/session.ts`) and the pipeline (`src/pipeline.ts`).
  */
 export type { LlmAnalysis, LlmToolPayload, TokenUsage } from './schema.js';
 export type {

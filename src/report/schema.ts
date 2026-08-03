@@ -1,14 +1,14 @@
 /**
  * Report schema — the single source of truth for the dev-perf report
- * document (docs/design.md §7). The same schemas are reused verbatim by
+ * document. The same schemas are reused verbatim by
  * the deterministic layer and the LLM structured-output tool schema, so
- * nothing can drift. `churn` is reserved for v2 (§5.2); `llm.status`
+ * nothing can drift. `churn` is reserved for v2; `llm.status`
  * defaults to `"skipped"`.
  */
 import { z } from 'zod';
 
 /**
- * Per-language contribution counts (design §5.2): cloc-style counting
+ * Per-language contribution counts: cloc-style counting
  * applied to the contributions, not the whole tree. Consumed by the
  * deterministic layer through the `LanguageContribution` type.
  *
@@ -26,13 +26,13 @@ export const languageContributionSchema = z.object({
 });
 
 /**
- * Per-language contribution counts (design §5.2); consumed by the
+ * Per-language contribution counts; consumed by the
  * deterministic layer.
  */
 export type LanguageContribution = z.infer<typeof languageContributionSchema>;
 
 /**
- * Churn per file (design §5.2, v2): deletions by the author on files
+ * Churn per file (v2): deletions by the author on files
  * they added earlier in the range — an approximation of rework. The
  * metric is not computed in v1; the field stays reserved.
  *
@@ -42,7 +42,7 @@ export type LanguageContribution = z.infer<typeof languageContributionSchema>;
 export const churnSchema = z.record(z.string(), z.number().int().nonnegative());
 
 /**
- * Churn per file (design §5.2, v2) — reserved, not computed in v1.
+ * Churn per file (v2) — reserved, not computed in v1.
  *
  * @internal Exported for tests only; the field is reserved for the v2
  * churn metric. Remove the tag when a production importer exists.
@@ -50,8 +50,8 @@ export const churnSchema = z.record(z.string(), z.number().int().nonnegative());
 export type Churn = z.infer<typeof churnSchema>;
 
 /**
- * Deterministic per-user metrics counted from git history
- * (design §5.2); consumed by the deterministic layer and the report
+ * Deterministic per-user metrics counted from git history;
+ * consumed by the deterministic layer and the report
  * assembler through the `DeterministicMetrics` type.
  *
  * @internal Exported for tests only; referenced by `userSchema`
@@ -89,13 +89,13 @@ export const deterministicMetricsSchema = z.object({
 });
 
 /**
- * Deterministic per-user metrics (design §5.2); consumed by the
+ * Deterministic per-user metrics; consumed by the
  * deterministic layer and the report assembler.
  */
 export type DeterministicMetrics = z.infer<typeof deterministicMetricsSchema>;
 
 /**
- * Kind of change a contribution represents (design §6.5).
+ * Kind of change a contribution represents.
  *
  * @internal Exported for tests only; referenced by `contributionSchema`
  * within the module. Not part of the public module API.
@@ -112,16 +112,16 @@ export const contributionTypeSchema = z.enum([
 ]);
 
 /**
- * Kind of change a contribution represents (design §6.5).
+ * Kind of change a contribution represents.
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; no production importer (the
+ * model-facing shapes are serialized from `llmToolPayloadSchema` in
+ * `src/llm/tools.ts`). Not part of the public module API.
  */
 export type ContributionType = z.infer<typeof contributionTypeSchema>;
 
 /**
- * Complexity level of a contribution (design §6.5).
+ * Complexity level of a contribution.
  *
  * @internal Exported for tests only; referenced by `contributionSchema`
  * within the module. Not part of the public module API.
@@ -129,7 +129,7 @@ export type ContributionType = z.infer<typeof contributionTypeSchema>;
 export const complexitySchema = z.enum(['low', 'medium', 'high']);
 
 /**
- * Complexity level of a contribution (design §6.5).
+ * Complexity level of a contribution.
  *
  * @internal Exported for tests only; referenced by `contributionSchema`
  * within the module. Not part of the public module API.
@@ -137,10 +137,10 @@ export const complexitySchema = z.enum(['low', 'medium', 'high']);
 export type Complexity = z.infer<typeof complexitySchema>;
 
 /**
- * One distinct contribution from a user's work in the range
- * (design §6.5). Field descriptions double as the model-facing
+ * One distinct contribution from a user's work in the range.
+ * Field descriptions double as the model-facing
  * documentation: `llmToolPayloadSchema` serializes them into the
- * `devperf_report` tool's JSON schema (plan step 7), so the LLM sees
+ * `devperf_report` tool's JSON schema, so the LLM sees
  * exactly what the report schema requires.
  *
  * @internal Exported for tests only; referenced by `llmToolPayloadSchema`
@@ -184,39 +184,33 @@ export const contributionSchema = z.object({
 });
 
 /**
- * One distinct contribution from a user's work in the range
- * (design §6.5).
+ * One distinct contribution from a user's work in the range.
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (step 7) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; no production importer (the
+ * model-facing shapes are serialized from `llmToolPayloadSchema` in
+ * `src/llm/tools.ts`). Not part of the public module API.
  */
 export type Contribution = z.infer<typeof contributionSchema>;
 
 /**
- * Status of the LLM analysis for a user (design §7).
+ * Status of the LLM analysis for a user.
  *
- * @internal Exported for tests only; consumed by the LLM layer
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal Exported for tests only; referenced by `llmAnalysisSchema`
+ * within the module. Not part of the public module API.
  */
 export const llmStatusSchema = z.enum(['completed', 'skipped', 'failed']);
 
 /**
- * Status of the LLM analysis for a user (design §7).
+ * Status of the LLM analysis for a user.
  *
- * @internal Exported for tests only; consumed by the LLM layer
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal Exported for tests only; referenced by `llmAnalysisSchema`
+ * within the module. Not part of the public module API.
  */
 export type LlmStatus = z.infer<typeof llmStatusSchema>;
 
 /**
- * Token usage of an LLM analysis (design §6.6).
- *
- * @internal Exported for tests only; consumed by the LLM layer
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * Token usage of an LLM analysis; consumed by the LLM
+ * layer (`src/llm/analyze.ts`).
  */
 export const tokenUsageSchema = z.object({
   /** Input tokens. */
@@ -226,22 +220,19 @@ export const tokenUsageSchema = z.object({
 });
 
 /**
- * Token usage of an LLM analysis (design §6.6).
- *
- * @internal Exported for tests only; consumed by the LLM layer
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * Token usage of an LLM analysis; consumed by the LLM
+ * layer.
  */
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 
 /**
- * LLM-based analysis for one user (design §6.5, §7). `status` defaults
+ * LLM-based analysis for one user. `status` defaults
  * to `"skipped"` so a deterministic-only report needs no explicit
  * LLM section.
  *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal Exported for tests only; referenced by `userSchema` within
+ * the module. The inferred `LlmAnalysis` type is the production export.
+ * Not part of the public module API.
  */
 export const llmAnalysisSchema = z.object({
   /** Whether the analysis completed, was skipped, or failed. */
@@ -259,28 +250,19 @@ export const llmAnalysisSchema = z.object({
 });
 
 /**
- * LLM-based analysis for one user (design §6.5, §7).
- *
- * @internal Exported for tests only; consumed by the LLM tool schema
- * (steps 7-9) once it exists. Remove the tag when a production
- * importer exists.
+ * LLM-based analysis for one user; consumed by the
+ * report assembler and the LLM layer (`src/llm/analyze.ts`).
  */
 export type LlmAnalysis = z.infer<typeof llmAnalysisSchema>;
 
 /**
- * Payload the `devperf_report` tool accepts (design §6.5): the model's
+ * Payload the `devperf_report` tool accepts: the model's
  * analysis of one user — an optional overview and the changes split
  * into distinct contributions. Everything else in `llmAnalysisSchema`
  * (`status`, token usage, cost, error) is produced by dev-perf itself,
  * so the model never sees it. `src/llm/tools.ts` serializes this schema
  * (descriptions included) into the generated tool's argument schema,
  * keeping the model-facing shape in lockstep with the report schema.
- *
- * @internal The sole production importer is `src/llm/tools.ts`, which
- * Knip excludes from analysis (`src/llm/**` in `knip.config.ts`
- * `ignoreFiles`, removed when the pipeline wires the LLM layer in plan
- * step 9), so the import does not register as usage. Remove the tag
- * when the pipeline lands.
  */
 export const llmToolPayloadSchema = z.object({
   /** 1-2 sentences summarizing the user's work in the range. */
@@ -297,16 +279,13 @@ export const llmToolPayloadSchema = z.object({
 });
 
 /**
- * Payload the `devperf_report` tool accepts (design §6.5).
- *
- * @internal Exported for tests only; the `llmToolPayloadSchema` const is
- * the production export (consumed by `src/llm/tools.ts`). Not part of
- * the public module API.
+ * Payload the `devperf_report` tool accepts; consumed by
+ * the LLM layer (`src/llm/analyze.ts`, `src/llm/session.ts`).
  */
 export type LlmToolPayload = z.infer<typeof llmToolPayloadSchema>;
 
 /**
- * One analyzed user of a repository (design §7); the inferred `User`
+ * One analyzed user of a repository; the inferred `User`
  * type is consumed by the report assembler.
  *
  * @internal Exported for tests only; referenced by `repositorySchema`
@@ -326,7 +305,7 @@ export const userSchema = z.object({
 });
 
 /**
- * One analyzed user of a repository (design §7); consumed by the
+ * One analyzed user of a repository; consumed by the
  * report assembler.
  */
 export type User = z.infer<typeof userSchema>;
@@ -335,8 +314,8 @@ export type User = z.infer<typeof userSchema>;
  * One entry in the repository's top languages list.
  *
  * @internal Exported for tests only; referenced by
- * `repositoryStatsSchema` within the module. Remove the tag when a
- * production importer exists.
+ * `repositoryStatsSchema` within the module. Not part of the public
+ * module API.
  */
 export const topLanguageSchema = z.object({
   /** Language name (mapped from the file extension). */
@@ -349,13 +328,13 @@ export const topLanguageSchema = z.object({
  * One entry in the repository's top languages list.
  *
  * @internal Exported for tests only; referenced by
- * `repositoryStatsSchema` within the module. Remove the tag when a
- * production importer exists.
+ * `repositoryStatsSchema` within the module. Not part of the public
+ * module API.
  */
 export type TopLanguage = z.infer<typeof topLanguageSchema>;
 
 /**
- * Repository-level statistics (design §5.2); consumed by the
+ * Repository-level statistics; consumed by the
  * deterministic layer through the `RepositoryStats` type.
  *
  * @internal Exported for tests only; referenced by `repositorySchema`
@@ -371,17 +350,16 @@ export const repositoryStatsSchema = z.object({
 });
 
 /**
- * Repository-level statistics (design §5.2); consumed by the
+ * Repository-level statistics; consumed by the
  * deterministic layer.
  */
 export type RepositoryStats = z.infer<typeof repositoryStatsSchema>;
 
 /**
- * One analyzed repository entry (design §7).
+ * One analyzed repository entry.
  *
  * @internal Exported for tests only; referenced by `reportSchema`
- * within the module. Remove the tag when a production importer
- * exists.
+ * within the module. Not part of the public module API.
  */
 export const repositorySchema = z.object({
   /** Repository URL or local path as given on the command line. */
@@ -406,17 +384,16 @@ export const repositorySchema = z.object({
 });
 
 /**
- * One analyzed repository entry (design §7); consumed by the report
+ * One analyzed repository entry; consumed by the report
  * assembler.
  */
 export type Repository = z.infer<typeof repositorySchema>;
 
 /**
- * Parameters of the analysis run that produced the report (design §7).
+ * Parameters of the analysis run that produced the report.
  *
  * @internal Exported for tests only; referenced by `reportSchema`
- * within the module. Remove the tag when a production importer
- * exists.
+ * within the module. Not part of the public module API.
  */
 export const parametersSchema = z.object({
   /** Repositories analyzed, as given on the command line. */
@@ -432,16 +409,15 @@ export const parametersSchema = z.object({
 });
 
 /**
- * Parameters of the analysis run that produced the report (design §7).
+ * Parameters of the analysis run that produced the report.
  *
  * @internal Exported for tests only; referenced by `reportSchema`
- * within the module. Remove the tag when a production importer
- * exists.
+ * within the module. Not part of the public module API.
  */
 export type Parameters = z.infer<typeof parametersSchema>;
 
 /**
- * The full dev-perf report document (design §7): parameters,
+ * The full dev-perf report document: parameters,
  * repository entries, and per-user analysis. Exported through the
  * module barrel as the report module's public API.
  */
@@ -457,6 +433,6 @@ export const reportSchema = z.object({
 });
 
 /**
- * The full dev-perf report document (design §7).
+ * The full dev-perf report document.
  */
 export type Report = z.infer<typeof reportSchema>;

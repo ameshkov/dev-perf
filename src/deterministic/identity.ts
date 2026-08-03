@@ -1,16 +1,16 @@
 /**
- * Author identity resolution (docs/design.md §5.3): commits are
+ * Author identity resolution: commits are
  * grouped by lowercased author email; the display name is the most
  * frequent author name for that email. v1 does no email merging —
  * every distinct email is its own identity. Bots are flagged by a
- * heuristic but never filtered (§5.4): they are counted like everyone
+ * heuristic but never filtered: they are counted like everyone
  * else.
  */
 import type { Commit } from './commits.js';
 
 /**
- * One author identity: the commits grouped by a lowercased email
- * (design §5.3). Consumed by the deterministic metrics layer.
+ * One author identity: the commits grouped by a lowercased email.
+ * Consumed by the deterministic metrics layer.
  */
 export interface AuthorGroup {
   /** Lowercased email the commits are grouped by. */
@@ -19,7 +19,7 @@ export interface AuthorGroup {
   name: string;
   /** The author's commits, newest first as parsed. */
   commits: Commit[];
-  /** Heuristic bot flag; bots are counted like everyone else (§5.4). */
+  /** Heuristic bot flag; bots are counted like everyone else. */
   isBot: boolean;
 }
 
@@ -38,11 +38,11 @@ interface AuthorAccumulator {
 }
 
 /**
- * Groups commits by lowercased author email (design §5.3). The display
+ * Groups commits by lowercased author email. The display
  * name is the most frequent author name; ties break by first-seen
  * order in the commit list. Groups appear in first-encounter order
  * (newest author first for the usual newest-first input). Bots are
- * flagged but never removed (§5.4).
+ * flagged but never removed.
  *
  * @param commits - Commits to group, typically newest first.
  * @returns One group per distinct lowercased email.
@@ -76,7 +76,7 @@ export function groupByAuthor(commits: Commit[]): AuthorGroup[] {
 
 /**
  * The most frequent author name of a group; ties break by first-seen
- * order (§5.3). The group always has at least one commit.
+ * order. The group always has at least one commit.
  *
  * @param group - The accumulated group.
  * @returns The display name.
@@ -95,7 +95,7 @@ function mostFrequentName(group: AuthorAccumulator): string {
 }
 
 /**
- * Heuristic bot detection (design §5.4): `[bot]` in the name or email,
+ * Heuristic bot detection: `[bot]` in the name or email,
  * or the known bot names `dependabot` / `renovate` in the email. This
  * is a flag only — bots are counted like everyone else.
  *

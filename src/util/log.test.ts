@@ -1,5 +1,5 @@
 /**
- * Tests for the stderr logger (plan step 6): level gating (quiet vs
+ * Tests for the stderr logger: level gating (quiet vs
  * verbose) and stderr targeting (stdout untouched).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

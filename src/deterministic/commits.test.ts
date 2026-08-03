@@ -1,8 +1,8 @@
 /**
- * Tests for commit extraction (design §5.1): golden parsing of the
+ * Tests for commit extraction: golden parsing of the
  * `%x1f`/`%x1e` `git log --numstat` format, and integration against
  * fixture repos for date ranges, merge commits, binary files, and
- * empty repositories (§5.4).
+ * empty repositories.
  */
 import { describe, expect, it } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
@@ -207,7 +207,7 @@ describe('readCommits', () => {
     }
   });
 
-  it('applies the author-date range in code, not the commit-date bound (§5.4)', async () => {
+  it('applies the author-date range in code, not the commit-date bound', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },

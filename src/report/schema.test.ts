@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { reportSchema } from './schema.js';
 
 /**
- * Builds a full, valid sample report (design §7) exercising every
+ * Builds a full, valid sample report exercising every
  * schema: parameters, repository entry, deterministic metrics with
  * languages and churn, and a completed LLM analysis with one
  * contribution.

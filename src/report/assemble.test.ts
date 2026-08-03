@@ -1,5 +1,5 @@
 /**
- * Tests for report assembly (design §7): repository entries with
+ * Tests for report assembly: repository entries with
  * deterministic metrics and skipped LLM analysis, the report document
  * with defaults applied, and validation of the assembled output.
  */
@@ -9,6 +9,7 @@ import { groupByAuthor } from '../deterministic/identity.js';
 import { assembleReport, assembleRepository } from './assemble.js';
 import type { AnalyzedRange } from './assemble.js';
 import { reportSchema } from './schema.js';
+import type { LlmAnalysis } from './schema.js';
 
 /** A commit with defaults, for tests that override only what matters. */
 function commit(overrides: Partial<Commit> = {}): Commit {
@@ -92,6 +93,61 @@ describe('assembleRepository', () => {
     const repository = assembleRepository(repoInput({ groups: [] }));
     expect(repository.users).toEqual([]);
     expect(repository.stats).toEqual({ totalCommits: 0, totalUsers: 0, topLanguages: [] });
+  });
+});
+
+describe('assembleRepository with LLM results', () => {
+  /** A completed LLM analysis fixture. */
+  const COMPLETED: LlmAnalysis = {
+    status: 'completed',
+    overview: 'Shipped the pipeline.',
+    contributions: [
+      {
+        title: 'Add pipeline',
+        summary: 'Wired clone to report assembly.',
+        types: ['feature'],
+        complexity: 'medium',
+        complexityReasoning: 'Several modules touched.',
+        areas: ['src'],
+        commits: ['abc1234d'],
+        qualitySignals: ['tests added'],
+        riskFlags: [],
+      },
+    ],
+    tokenUsage: { input: 10, output: 5 },
+    estimatedCostUsd: 0.01,
+  };
+
+  it('maps completed analyses onto the matching users and skips the rest', () => {
+    const repository = assembleRepository(
+      repoInput({ llmResults: new Map([['alice@example.com', COMPLETED]]) }),
+    );
+
+    expect(repository.users[0].llm).toEqual(COMPLETED);
+    expect(repository.users[1].llm).toEqual({ status: 'skipped', contributions: [] });
+  });
+
+  it('maps a failed analysis with its error message into the report', () => {
+    const repository = assembleRepository(
+      repoInput({
+        llmResults: new Map([
+          ['alice@example.com', { status: 'failed', contributions: [], error: 'boom' }],
+        ]),
+      }),
+    );
+
+    expect(repository.users[0].llm).toEqual({
+      status: 'failed',
+      contributions: [],
+      error: 'boom',
+    });
+    expect(repository.users[1].llm).toEqual({ status: 'skipped', contributions: [] });
+  });
+
+  it('keeps a skipped analysis for every user when no LLM results are given', () => {
+    const repository = assembleRepository(repoInput());
+    expect(repository.users[0].llm).toEqual({ status: 'skipped', contributions: [] });
+    expect(repository.users[1].llm).toEqual({ status: 'skipped', contributions: [] });
   });
 });
 

@@ -18,7 +18,7 @@ import {
 
 const URL = 'https://github.com/org/repo.git';
 
-/** Expected entry hash: sha256(url) hex, first 16 characters (§4). */
+/** Expected entry hash: sha256(url) hex, first 16 characters. */
 function expectedHash(url: string): string {
   return createHash('sha256').update(url).digest('hex').slice(0, 16);
 }
@@ -52,7 +52,7 @@ describe('cacheEntryDir', () => {
 });
 
 describe('layout path builders', () => {
-  it('builds the design §4 layout paths', () => {
+  it('builds the cache entry layout paths', () => {
     const entry = cacheEntryDir('/cache', URL);
     expect(repoDir(entry)).toBe(path.join(entry, 'repo'));
     expect(cloneJsonPath(entry)).toBe(path.join(entry, 'clone.json'));

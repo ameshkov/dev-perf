@@ -1,14 +1,14 @@
 /**
- * LLM analysis orchestration (docs/design.md §6.3-6.6, plan step 8):
- * one orientation session per repository produces the repo context,
+ * LLM analysis orchestration: one orientation session per repository
+ * produces the repo context,
  * which is injected into every user session with `noReply: true`;
  * per-user sessions run sequentially and their `devperf_report` output
  * is enforced (up to 3 follow-up reminders, then a non-zero exit
- * naming the user and session, §6.5). Results are cached in the cache
+ * naming the user and session). Results are cached in the cache
  * entry's `llm/` directory keyed by (repo, user, since, until, model,
  * context/output limits) and reused on reruns unless `--refresh`
- * invalidates the cache (§6.6); per-session token usage and cost come
- * from the event stream and are logged when verbose (plan step 6).
+ * invalidates the cache; per-session token usage and cost come
+ * from the event stream and are logged when verbose.
  */
 import { createHash } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -28,7 +28,7 @@ import type { LlmServerConfig } from './server.js';
 /** Title of the per-repo orientation session. */
 const ORIENTATION_TITLE = 'dev-perf: repository orientation';
 
-/** Follow-up reminders after the initial prompt (§6.5: "up to 3 attempts"). */
+/** Follow-up reminders after the initial prompt ("up to 3 attempts"). */
 const MAX_REMINDERS = 3;
 
 /** Length of the LLM result cache key hash. */
@@ -38,7 +38,7 @@ const CACHE_KEY_LENGTH = 16;
 const ZERO_USAGE: SessionUsage = { tokenUsage: { input: 0, output: 0 }, estimatedCostUsd: 0 };
 
 /**
- * The persisted LLM result for one user (design §6.6): the
+ * The persisted LLM result for one user: the
  * `devperf_report` payload plus the usage that produced it, so cache
  * hits reproduce the full report entry without new calls.
  */
@@ -70,7 +70,7 @@ export interface AnalyzeRepoInput {
   groups: AuthorGroup[];
   /** Session operations; the pipeline binds the real service. */
   service: SessionService;
-  /** True to ignore cached results and re-run everything (§6.6). */
+  /** True to ignore cached results and re-run everything. */
   refresh: boolean;
 }
 
@@ -91,7 +91,7 @@ interface OrientationState {
 }
 
 /**
- * Runs the LLM analysis for one repository (design §6.3, §6.6): cached
+ * Runs the LLM analysis for one repository: cached
  * results are reused per user (unless `--refresh`); otherwise one
  * orientation session establishes the repo context, then each user
  * gets a sequential session whose `devperf_report` output is enforced
@@ -101,11 +101,11 @@ interface OrientationState {
  * @returns One completed analysis per user.
  * @throws {Error} When a session's `devperf_report` output is still
  * missing after the enforcement loop; the message names the user and
- * session (design §6.5) and the top-level error handler exits non-zero.
+ * session and the top-level error handler exits non-zero.
  */
 export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<UserLlmResult[]> {
   // Phase 1: load cached results (reads are skipped entirely on
-  // --refresh, §6.6).
+  // --refresh).
   const cached = new Map<string, CachedResult>();
   for (const group of input.groups) {
     const result = await loadCached(input, group);
@@ -114,7 +114,7 @@ export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<Use
     }
   }
   // Phase 2: one orientation session per repo, then one session per
-  // uncached user; sessions run one at a time (design §6.2).
+  // uncached user; sessions run one at a time.
   const results: UserLlmResult[] = [];
   let orientation: OrientationState | undefined;
   try {
@@ -135,7 +135,7 @@ export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<Use
 }
 
 /**
- * Runs the orientation session (design §6.3): the agent explores the
+ * Runs the orientation session: the agent explores the
  * repository and its final text becomes the repo context that every
  * user session receives. The orientation prompt ends with the standard
  * tool-call instruction, so a compliant agent may call `devperf_report`
@@ -163,7 +163,7 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
 }
 
 /**
- * Analyzes one user in a sequential session (design §6.3, §6.5): the
+ * Analyzes one user in a sequential session: the
  * repo context is injected with `noReply: true`, the analysis prompt
  * follows, and the `devperf_report` output is enforced. The validated
  * payload plus its usage is cached, and the completed entry is
@@ -210,7 +210,7 @@ async function analyzeUser(
 }
 
 /**
- * The enforcement loop (design §6.5): after the analysis prompt, the
+ * The enforcement loop: after the analysis prompt, the
  * session's report file is checked; when the tool was not called, a
  * reminder is sent — up to `MAX_REMINDERS` times. If the tool is still
  * not called, an error naming the user and session is thrown, which
@@ -249,7 +249,7 @@ async function enforceReport(
 /**
  * Loads the cached LLM result for a user, or `undefined` when the
  * cache is invalidated (`--refresh`), the file is missing, or it does
- * not validate — all treated as a cache miss (design §6.6).
+ * not validate — all treated as a cache miss.
  *
  * @param input - Repo-level analysis input.
  * @param group - The user's author group.
@@ -273,7 +273,7 @@ async function loadCached(
 
 /**
  * The cache file path of a user's LLM result inside the entry's
- * `llm/` directory (design §6.6).
+ * `llm/` directory.
  *
  * @param input - Repo-level analysis input.
  * @param group - The user's author group.
@@ -286,8 +286,7 @@ function cachedResultPath(input: AnalyzeRepoInput, group: AuthorGroup): string {
 /**
  * The deterministic cache key of one user's LLM result: SHA-256 of
  * (repo, user email, resolved since/until, model, context/output
- * limits) — the exact parameters that change the analysis (design
- * §6.6).
+ * limits) — the exact parameters that change the analysis.
  *
  * @param input - Repo-level analysis input.
  * @param email - The user's lowercased author email.

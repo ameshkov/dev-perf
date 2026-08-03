@@ -1,14 +1,14 @@
 /**
- * Commit extraction from git history (docs/design.md §5.1): a single
+ * Commit extraction from git history: a single
  * `git log --numstat --no-renames` pass with the `%x1f` / `%x1e`
- * record format, plus author-date range filtering in code (§5.4).
+ * record format, plus author-date range filtering in code.
  *
  * `git log --since/--until` filters by *commit* date, so those bounds
  * are passed through only to limit the scan; the author-date range is
  * applied on the parsed `%aI` field so the returned commits honor
  * author dates. Both the scan bound and the in-code filter resolve
  * dates with git's own date parser (any git date format) under
- * `TZ=UTC`, so naive dates are interpreted in UTC (§5.4).
+ * `TZ=UTC`, so naive dates are interpreted in UTC.
  */
 import { GitError, runGit } from '../repo/git.js';
 
@@ -21,11 +21,8 @@ const FIELD_SEP = '\x1f';
 /** Git date parsing runs in UTC so naive dates are interpreted as UTC. */
 const UTC_ENV: NodeJS.ProcessEnv = { TZ: 'UTC' };
 
-/** One file changed by a commit, from a numstat row (§5.1).
- *
- * @internal Exported for tests only; referenced by `Commit` within
- * the module. Not part of the public module API.
- */
+/** One file changed by a commit, from a numstat row; consumed
+ * by the LLM prompt builder (`src/llm/prompts.ts`). */
 export interface CommitFile {
   /** Path as reported by git numstat. */
   path: string;
@@ -42,7 +39,7 @@ export interface CommitFile {
 }
 
 /**
- * One parsed commit (design §5.1): the header fields from the `%x1f` /
+ * One parsed commit: the header fields from the `%x1f` /
  * `%x1e` format followed by its numstat rows. Consumed by the
  * deterministic metrics layer.
  */
@@ -66,7 +63,7 @@ export interface Commit {
 }
 
 /**
- * Date range the scan is bounded by and filtered to (design §5.4).
+ * Date range the scan is bounded by and filtered to.
  */
 export interface CommitRange {
   /** Start bound, any git date format; both ends of the range inclusive. */
@@ -144,9 +141,9 @@ function parseNumstatRow(line: string): CommitFile {
 
 /**
  * Reads all commits of a repository with one `git log --numstat
- * --no-renames` pass (design §5.1). `--since`/`--until` bound the scan
+ * --no-renames` pass. `--since`/`--until` bound the scan
  * by *commit* date; the author-date range is then applied in code on
- * the parsed `%aI` field (§5.4), so the returned list honors author
+ * the parsed `%aI` field, so the returned list honors author
  * dates. Bounds are resolved by git's own date parser under `TZ=UTC`.
  * An empty repository yields an empty list.
  *
@@ -210,7 +207,7 @@ function isEmptyRepoError(error: unknown): boolean {
 
 /**
  * Resolves a git-format date to the instant git itself uses for the
- * scan bounds (`--since`/`--until`, design §5.4): the same
+ * scan bounds (`--since`/`--until`): the same
  * approxidate interpretation the scan gets, under `TZ=UTC`. The
  * pipeline uses it to record the analyzed range in the report.
  *
@@ -249,7 +246,7 @@ async function resolveBoundEpoch(repoDir: string, date: string): Promise<number>
 }
 
 /**
- * Inclusive author-date range check (design §5.4); dates are compared
+ * Inclusive author-date range check; dates are compared
  * as instants in UTC.
  *
  * @param commit - The commit to test.

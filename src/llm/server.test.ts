@@ -89,7 +89,7 @@ describe('writeServerFiles', () => {
     const expectedConfig = `${JSON.stringify(generateOpencodeConfig(CONFIG), null, 2)}\n`;
     const expectedTool = buildReportToolSource(llmDir(entryDir));
 
-    // Cache entry layout (design §4): opencode/ holds the generated files.
+    // Cache entry layout: opencode/ holds the generated files.
     const cacheConfig = await readFile(path.join(opencodeDir(entryDir), 'opencode.json'), 'utf8');
     const cacheTool = await readFile(
       path.join(opencodeDir(entryDir), 'tools', 'devperf_report.ts'),
@@ -98,7 +98,7 @@ describe('writeServerFiles', () => {
     expect(cacheConfig).toBe(expectedConfig);
     expect(cacheTool).toBe(expectedTool);
 
-    // The clone gets copies the server discovers at startup (design §6.2).
+    // The clone gets copies the server discovers at startup.
     const cloneConfig = await readFile(path.join(cloneDir, 'opencode.json'), 'utf8');
     const cloneTool = await readFile(
       path.join(cloneDir, '.opencode', 'tools', 'devperf_report.ts'),
@@ -109,7 +109,7 @@ describe('writeServerFiles', () => {
   });
 });
 
-// Lifecycle smoke test (plan step 7): starts and stops a real opencode
+// Lifecycle smoke test: starts and stops a real opencode
 // server against a fixture clone and checks the generated tool loads.
 // Requires the `opencode` binary on PATH; skipped in CI. Run manually
 // with `DEV_PERF_SMOKE=1 pnpm test -- src/llm/server.test.ts`.
