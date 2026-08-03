@@ -62,6 +62,13 @@ dev-perf --since 2026-01-01 --until 2026-06-30 \
   https://github.com/org/repo.git
 ```
 
+Deterministic stats only (no LLM analysis — no provider configuration
+needed):
+
+```console
+dev-perf --no-llm --since 2026-01-01 --until 2026-06-30 /path/to/repo
+```
+
 Example output (abridged):
 
 ```json
@@ -108,11 +115,14 @@ Example output (abridged):
 
 ## Status
 
-Early design phase. The CLI skeleton (argument parsing, `--help`,
-`--version`) is in place, but the analysis pipeline is not implemented
-yet — running an analysis currently prints a not-implemented error.
-See [docs/design.md](docs/design.md) for the full design and
-implementation plan.
+The deterministic analysis path (milestone M2) is implemented:
+`dev-perf --no-llm <repo>` clones the repository (into the cache,
+reusing it on later runs) and produces the JSON report — commits,
+lines, files, active days, and per-language contributions, per user
+and per repository. The LLM-based agentic layer (design §6, plan steps
+6-8) is not implemented yet, so runs without `--no-llm` fail
+validation until then. See [docs/design.md](docs/design.md) for the
+full design and implementation plan.
 
 ## Development
 

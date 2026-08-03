@@ -21,7 +21,11 @@ const FIELD_SEP = '\x1f';
 /** Git date parsing runs in UTC so naive dates are interpreted as UTC. */
 const UTC_ENV: NodeJS.ProcessEnv = { TZ: 'UTC' };
 
-/** One file changed by a commit, from a numstat row (§5.1). */
+/** One file changed by a commit, from a numstat row (§5.1).
+ *
+ * @internal Exported for tests only; referenced by `Commit` within
+ * the module. Not part of the public module API.
+ */
 export interface CommitFile {
   /** Path as reported by git numstat. */
   path: string;
@@ -39,11 +43,8 @@ export interface CommitFile {
 
 /**
  * One parsed commit (design §5.1): the header fields from the `%x1f` /
- * `%x1e` format followed by its numstat rows.
- *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
+ * `%x1e` format followed by its numstat rows. Consumed by the
+ * deterministic metrics layer.
  */
 export interface Commit {
   /** Full commit sha. */
@@ -66,10 +67,6 @@ export interface Commit {
 
 /**
  * Date range the scan is bounded by and filtered to (design §5.4).
- *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
  */
 export interface CommitRange {
   /** Start bound, any git date format; both ends of the range inclusive. */
@@ -89,9 +86,9 @@ export interface CommitRange {
  * @param output - Raw git log output; may be empty for an empty repo.
  * @returns The parsed commits, newest first.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
+ * @internal Exported for tests only (`commits.test.ts` asserts the
+ * golden format); used by `readCommits` within the module. Not part
+ * of the public module API.
  */
 export function parseCommitLog(output: string): Commit[] {
   const commits: Commit[] = [];
@@ -158,20 +155,14 @@ function parseNumstatRow(line: string): CommitFile {
  * @returns The commits in range, newest first.
  * @throws {GitError} When git log fails for a reason other than an
  * empty repository, or when a bound date cannot be parsed.
- *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
  */
 export async function readCommits(repoDir: string, range: CommitRange = {}): Promise<Commit[]> {
   const output = await gitLogBounded(repoDir, range);
   const commits = parseCommitLog(output);
-  // `resolveBound` returns epoch seconds; `Date.parse` (used by
-  // `inAuthorRange`) returns milliseconds, so bounds are scaled here.
   const since =
-    range.since === undefined ? undefined : (await resolveBound(repoDir, range.since)) * 1000;
+    range.since === undefined ? undefined : await resolveBoundEpoch(repoDir, range.since);
   const until =
-    range.until === undefined ? undefined : (await resolveBound(repoDir, range.until)) * 1000;
+    range.until === undefined ? undefined : await resolveBoundEpoch(repoDir, range.until);
   return commits.filter((commit) => inAuthorRange(commit, since, until));
 }
 
@@ -218,16 +209,31 @@ function isEmptyRepoError(error: unknown): boolean {
 }
 
 /**
- * Resolves a git-format date to epoch seconds using git's own date
- * parser (approxidate) in UTC — the same interpretation the scan bound
- * gets from `git log --since/--until`.
+ * Resolves a git-format date to the instant git itself uses for the
+ * scan bounds (`--since`/`--until`, design §5.4): the same
+ * approxidate interpretation the scan gets, under `TZ=UTC`. The
+ * pipeline uses it to record the analyzed range in the report.
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param date - Date in any git date format.
- * @returns The epoch seconds of the resolved date.
+ * @returns The resolved instant (UTC).
  * @throws {GitError} When git cannot parse the date.
  */
-async function resolveBound(repoDir: string, date: string): Promise<number> {
+export async function resolveBoundDate(repoDir: string, date: string): Promise<Date> {
+  return new Date(await resolveBoundEpoch(repoDir, date));
+}
+
+/**
+ * Resolves a git-format date to epoch milliseconds using git's own
+ * date parser (approxidate) in UTC — the same interpretation the scan
+ * bound gets from `git log --since/--until`.
+ *
+ * @param repoDir - Directory to run git in; date parsing needs no repo.
+ * @param date - Date in any git date format.
+ * @returns The epoch milliseconds of the resolved date.
+ * @throws {GitError} When git cannot parse the date.
+ */
+async function resolveBoundEpoch(repoDir: string, date: string): Promise<number> {
   const output = await runGit(repoDir, ['rev-parse', `--since=${date}`], { env: UTC_ENV });
   // `git rev-parse --since=<date>` prints `--max-age=<epoch>` (older
   // git) or the bare `<epoch>` (newer git); either way the epoch is the
@@ -239,7 +245,7 @@ async function resolveBound(repoDir: string, date: string): Promise<number> {
       stderr: `cannot parse date: ${date}`,
     });
   }
-  return epoch;
+  return epoch * 1000;
 }
 
 /**

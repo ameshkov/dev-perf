@@ -205,6 +205,24 @@ describe('ensureClone', () => {
     }
   });
 
+  it('clones an empty repository with an empty head', async () => {
+    const fixture = await buildFixtureRepo([]);
+    const cacheDir = await tempCacheDir();
+    try {
+      const result = await ensureClone(fixture.dir, { cacheDir });
+
+      expect(result.reused).toBe(false);
+      expect(result.branch).toBe('main');
+      expect(result.head).toBe('');
+
+      const info = await readCloneInfo(cacheEntryDir(cacheDir, fixture.dir));
+      expect(info?.head).toBe('');
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
   it('rethrows when the clone fails for an unrelated reason', async () => {
     const cacheDir = await tempCacheDir();
     try {

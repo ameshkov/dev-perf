@@ -10,11 +10,7 @@ import type { Commit } from './commits.js';
 
 /**
  * One author identity: the commits grouped by a lowercased email
- * (design §5.3).
- *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
+ * (design §5.3). Consumed by the deterministic metrics layer.
  */
 export interface AuthorGroup {
   /** Lowercased email the commits are grouped by. */
@@ -50,10 +46,6 @@ interface AuthorAccumulator {
  *
  * @param commits - Commits to group, typically newest first.
  * @returns One group per distinct lowercased email.
- *
- * @internal Exported for tests only; consumed by the deterministic
- * metrics layer (step 4) once it exists. Remove the tag when a
- * production importer exists.
  */
 export function groupByAuthor(commits: Commit[]): AuthorGroup[] {
   const byEmail = new Map<string, AuthorAccumulator>();
@@ -111,9 +103,8 @@ function mostFrequentName(group: AuthorAccumulator): string {
  * @param email - Author email as written in the commit.
  * @returns Whether the author looks like a bot.
  *
- * @internal Exported for tests only; used by `groupByAuthor` and the
- * report assembler (step 5). Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; used by `groupByAuthor` within
+ * the module. Not part of the public module API.
  */
 export function isBotAuthor(name: string, email: string): boolean {
   const lowerName = name.toLowerCase();

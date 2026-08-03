@@ -120,6 +120,10 @@ export async function gitClone(
  * @param args - Arguments after `log`.
  * @returns The log output.
  * @throws {GitError} When the command fails.
+ *
+ * @internal Exported for tests only (`git.test.ts`, `commits.test.ts`);
+ * production code goes through `runGit`. Not part of the public module
+ * API.
  */
 export async function gitLog(repoDir: string, args: string[]): Promise<string> {
   return runGit(repoDir, ['log', ...args]);
@@ -132,6 +136,9 @@ export async function gitLog(repoDir: string, args: string[]): Promise<string> {
  * @param args - Arguments after `show`.
  * @returns The show output.
  * @throws {GitError} When the command fails.
+ *
+ * @internal Exported for tests only (`git.test.ts`); production code
+ * goes through `runGit`. Not part of the public module API.
  */
 export async function gitShow(repoDir: string, args: string[]): Promise<string> {
   return runGit(repoDir, ['show', ...args]);
@@ -144,6 +151,9 @@ export async function gitShow(repoDir: string, args: string[]): Promise<string> 
  * @param args - Arguments after `shortlog`.
  * @returns The shortlog output.
  * @throws {GitError} When the command fails.
+ *
+ * @internal Exported for tests only (`git.test.ts`); production code
+ * goes through `runGit`. Not part of the public module API.
  */
 export async function gitShortlog(repoDir: string, args: string[]): Promise<string> {
   return runGit(repoDir, ['shortlog', ...args]);
@@ -157,6 +167,10 @@ export async function gitShortlog(repoDir: string, args: string[]): Promise<stri
  * `['--abbrev-ref', 'HEAD']`.
  * @returns The rev-parse output.
  * @throws {GitError} When the command fails.
+ *
+ * @internal Exported for tests only (`git.test.ts`, `clone.test.ts`,
+ * and the e2e suite); production code goes through `runGit`. Not part
+ * of the public module API.
  */
 export async function gitRevParse(repoDir: string, args: string[]): Promise<string> {
   return runGit(repoDir, ['rev-parse', ...args]);

@@ -10,6 +10,34 @@ and this project adheres to
 
 ### Added
 
+- Report assembler (`src/report/assemble.ts`, design §7): builds the
+  report document — parameters, per-repository entries (repo,
+  clonePath, branch, head, analyzed range, stats), and per-user
+  entries with deterministic metrics and `llm: { status: "skipped" }`
+  — validated against the shared report schema.
+- Pipeline orchestration (`src/pipeline.ts`, plan step 5): for each
+  repository — clone/cache reuse (`ensureClone`), commit extraction,
+  author grouping, and report assembly — then writes the pretty JSON
+  report to stdout or the `--output` file. The analyzed author-date
+  range is resolved with git's own date parser (UTC) into
+  `parameters` and each repository's `range`; an unbounded side is
+  the empty string, and a missing `--until` defaults to "today".
+- The CLI action now runs the analysis pipeline instead of throwing
+  the not-implemented error: `dev-perf --no-llm <repo>` produces the
+  JSON report (milestone M2, first usable release path).
+- `resolveBoundDate` (`src/deterministic/commits.ts`): resolves a
+  git-format date to the instant git uses for scan bounds (design
+  §5.4), shared by `readCommits` and the pipeline's range reporting.
+- `ensureClone` now clones empty repositories (no commits yet): the
+  head is recorded as the empty string, and the branch comes from
+  `git branch --show-current`, which works without a HEAD.
+- End-to-end test (`test/e2e/deterministic.test.ts`, design §9): runs
+  the compiled CLI with `--no-llm` against a fixture repo as a child
+  process and checks the emitted JSON exactly (skipped when `build/`
+  is missing).
+- Pipeline and assembler unit tests (`src/pipeline.test.ts`,
+  `src/report/assemble.test.ts`), and a CLI surface test that runs
+  the pipeline against a fixture repo.
 - Deterministic metrics (`src/deterministic/metrics.ts`, design §5.2):
   per-user aggregation over parsed commits — commits, non-merge and
   merge counts, lines added/removed, net lines, files touched
@@ -95,7 +123,16 @@ and this project adheres to
 
 ### Changed
 
-- `knip.config.ts`: `ignoreFiles` for `src/repo/**` and `src/util/**`
-  (modules with no production importer until the pipeline lands in plan
-  step 5) and `ignoreDependencies` for `execa`; both stay active until
-  the pipeline wires the modules.
+- The CLI action runs the pipeline (see Added), so invoking an
+  analysis no longer fails with the not-implemented error.
+- `knip.config.ts`: removed the `ignoreFiles` entries for `src/repo/**`,
+  `src/util/**`, `src/deterministic/**` and the `ignoreDependencies`
+  entry for `execa` — every module now has a production importer
+  (the pipeline). The `@internal` tags on exports that gained
+  production importers were removed accordingly; the remaining
+  test-only exports (e.g. the git helpers, cache path builders) are
+  tagged `@internal`.
+- `src/util/json.ts`: `JsonError` and `parseJson` are no longer
+  exported — they are module-internal (the application has no
+  consumers for them; `readJsonFile`/`writeJsonFile` remain the
+  public surface).

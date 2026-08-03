@@ -1,6 +1,11 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Command } from 'commander';
+import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import { registerCommands } from './cli.js';
+import { reportSchema } from './report/schema.js';
 
 function createProgram(): Command {
   const program = new Command();
@@ -64,17 +69,20 @@ describe('cli', () => {
     expect(() => program.parse(['node', 'dev-perf'])).toThrow("missing required argument 'repo'");
   });
 
-  it('fails with a not-implemented error when the analysis pipeline is invoked', async () => {
-    const program = createProgram();
-    await expect(
-      program.parseAsync(['node', 'dev-perf', '--no-llm', 'https://github.com/org/repo.git']),
-    ).rejects.toThrow(/not implemented yet/);
-  });
-
-  it('passes validation for numeric limit options when LLM analysis is disabled', async () => {
-    const program = createProgram();
-    await expect(
-      program.parseAsync([
+  it('runs the deterministic pipeline and writes a valid report to the output file', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-cli-cache-'));
+    const outFile = path.join(cacheDir, 'report.json');
+    try {
+      const program = createProgram();
+      await program.parseAsync([
         'node',
         'dev-perf',
         '--no-llm',
@@ -82,9 +90,29 @@ describe('cli', () => {
         '65536',
         '--limit-output',
         '32768',
-        'https://github.com/org/repo.git',
-      ]),
-    ).rejects.toThrow(/not implemented yet/);
+        '--cache-dir',
+        cacheDir,
+        '--output',
+        outFile,
+        repo.url,
+      ]);
+
+      const result = reportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.parameters.repos).toEqual([repo.url]);
+        expect(result.data.parameters.llmEnabled).toBe(false);
+        expect(result.data.repositories).toHaveLength(1);
+        expect(result.data.repositories[0].users).toHaveLength(1);
+        expect(result.data.repositories[0].users[0]).toMatchObject({
+          name: 'Alice',
+          llm: { status: 'skipped' },
+        });
+      }
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
   });
 
   it('rejects non-numeric limit options with the option name in the error', async () => {

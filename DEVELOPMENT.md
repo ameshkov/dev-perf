@@ -63,16 +63,22 @@ pnpm build
 ## Running the CLI
 
 The CLI surface is implemented: argument parsing, `--help`, `--version`,
-and validation errors all work. The analysis pipeline itself is **not
-implemented yet** — running an analysis currently fails with a
-not-implemented error pointing at [docs/design.md](docs/design.md):
+and validation errors all work, and the deterministic analysis path
+(milestone M2) runs end to end:
 
 ```bash
-node build/index.js --no-llm https://github.com/org/repo.git
-# dev-perf: The analysis pipeline is not implemented yet — see docs/design.md
+node build/index.js --no-llm /path/to/some/git/repo
 ```
 
-Once the pipeline lands, the intended flow is:
+This clones the repository into the cache (`.dev-perf/cache` by
+default), analyzes git history, and prints the JSON report to stdout.
+LLM analysis (plan steps 6-8) is not implemented yet: running without
+`--no-llm` fails validation because `--model`, `--provider-url`, and
+`--api-key` are required for it. A `.env` file in the current working
+directory is auto-loaded (`DEV_PERF_API_KEY` is the only documented
+variable, see `.env.example`).
+
+Once the LLM layer lands, the intended flow is:
 
 ```bash
 node build/index.js --since 2026-01-01 --until 2026-06-30 \
@@ -83,30 +89,28 @@ node build/index.js --since 2026-01-01 --until 2026-06-30 \
   https://github.com/org/repo.git
 ```
 
-`--model`, `--provider-url`, and `--api-key` are required for LLM
-analysis; pass `--no-llm` for deterministic stats only. A `.env` file in
-the current working directory is auto-loaded (`DEV_PERF_API_KEY` is the
-only documented variable, see `.env.example`).
-
 ## Manual Testing
 
-The analysis is not implemented yet, so manual testing is limited to the
-CLI surface:
+The deterministic analysis path is the primary manual workflow: build
+a small fixture repository and run `--no-llm` against it.
 
 ```bash
 # Help and version
 node build/index.js --help
 node build/index.js --version
 
+# Deterministic analysis of a local repository (stdout)
+node build/index.js --no-llm /tmp/fixture
+
+# With an explicit author-date range and an output file
+node build/index.js --no-llm --since 2026-01-01 --until 2026-12-31 \
+  --output report.json /tmp/fixture
+
 # Argument validation (should fail with a clear error)
 node build/index.js
-
-# Running an analysis (should fail with the not-implemented error)
-node build/index.js --no-llm /path/to/some/git/repo
 ```
 
-When the deterministic layer lands, the primary manual workflow will be
-building a small fixture repository and running `--no-llm` against it:
+Building a fixture repository:
 
 ```bash
 mkdir -p /tmp/fixture && cd /tmp/fixture
@@ -116,6 +120,9 @@ printf 'console.log("hello");\n' > index.js
 git add index.js && git commit -m "Initial commit"
 cd - && node build/index.js --no-llm /tmp/fixture
 ```
+
+A second run with the same repository reuses the cached clone; pass
+`--refresh` to force a re-clone.
 
 ## Code Quality Gates
 
@@ -187,8 +194,10 @@ attached.
 
 - **`Error: Cannot find module 'build/index.js'`** — run `pnpm build`
   first.
-- **`dev-perf: The analysis pipeline is not implemented yet`** — expected:
-  only the CLI surface exists so far. See [docs/design.md](docs/design.md).
+- **E2E tests are skipped** — the e2e suite
+  (`test/e2e/deterministic.test.ts`) runs the compiled CLI and needs
+  `pnpm build` first; `pnpm test` skips it when `build/index.js` is
+  missing. Use `pnpm check`, which always builds before testing.
 - **`pnpm` complains about the `packageManager` version** — the project
   pins `pnpm@10.14.0`; run `corepack enable` (or install that exact
   version) to satisfy it.

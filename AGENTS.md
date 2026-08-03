@@ -43,10 +43,10 @@ user**:
    per repository and per user.
 
 The full design and implementation plan lives in
-[docs/design.md](./docs/design.md). The analysis pipeline is not
-implemented yet — the CLI surface (argument parsing, `--help`,
-`--version`) is in place, and running an analysis currently fails with
-a not-implemented error.
+[docs/design.md](./docs/design.md). The deterministic analysis path
+(M2) is implemented: `dev-perf --no-llm <repo>` clones the repository
+and produces the JSON report. The LLM-based analysis layer (plan steps
+6-8) is not implemented yet.
 
 ## Technical Context
 
@@ -68,8 +68,10 @@ a not-implemented error.
 dev-perf/
 ├── src/                      # Application source code
 │   ├── index.ts              # CLI entry point: .env loading, version, error handling
-│   ├── cli.ts                # Commander program definition (arguments + options) + analysis stub
+│   ├── cli.ts                # Commander program definition (arguments + options) + pipeline entry
 │   ├── cli.test.ts           # CLI surface tests
+│   ├── pipeline.ts           # Orchestration: clone → deterministic analysis → assemble → write
+│   ├── pipeline.test.ts      # Pipeline integration tests against fixture repos
 │   ├── config.ts             # zod validation of parsed CLI options (cross-field rules)
 │   ├── config.test.ts        # CLI options validation tests
 │   ├── repo/                 # Clone/cache management (design §4)
@@ -93,10 +95,14 @@ dev-perf/
 │   └── report/               # Report schema, the single source of truth (design §7)
 │       ├── index.ts          # Barrel: public API of the report module
 │       ├── schema.ts         # zod schemas + inferred types for the whole report
-│       └── schema.test.ts    # Report schema validation tests
+│       ├── assemble.ts       # Report document assembly: parameters, repo + user entries (§7)
+│       ├── schema.test.ts    # Report schema validation tests
+│       └── assemble.test.ts  # Report assembly tests
 ├── test/
-│   └── fixtures/
-│       └── repo-builder.ts   # Builds temp git repos with known files, authors, commits
+│   ├── fixtures/
+│   │   └── repo-builder.ts   # Builds temp git repos with known files, authors, commits
+│   └── e2e/
+│       └── deterministic.test.ts  # --no-llm run against a fixture repo (compiled CLI, JSON snapshot)
 ├── docs/
 │   ├── design.md             # Full design document
 │   └── plan.md               # Step-by-step implementation plan

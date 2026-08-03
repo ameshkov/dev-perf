@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { parseCliOptions } from './config.js';
+import { runPipeline } from './pipeline.js';
 import type { Report } from './report/index.js';
 
 /**
@@ -49,18 +50,19 @@ export function registerCommands(program: Command): void {
 }
 
 /**
- * Runs the full analysis pipeline: clone → deterministic analysis →
- * LLM analysis → report assembly, producing the report document
- * (docs/design.md §2, §7). Not implemented yet — the stub validates
- * the parsed options (design §3) and throws.
+ * Runs the analysis pipeline: validate the parsed options (design §3),
+ * then clone → deterministic analysis → report assembly, producing the
+ * report document (docs/design.md §2, §7). The LLM phase (plan steps
+ * 6-8) is not wired in yet; until then, `--no-llm` is the only path
+ * that reaches the pipeline.
  *
  * @param repos - Repositories to analyze, as given on the command line.
  * @param options - Raw commander options for this invocation.
- * @returns The assembled report document (not yet implemented).
- * @throws {Error} When the options fail validation, or the not-implemented
- * error while the pipeline is still a stub.
+ * @returns The assembled report document.
+ * @throws {Error} When the options fail validation; `GitError` when a
+ * clone or git log fails.
  */
 async function runAnalysis(repos: string[], options: RawCliOptions): Promise<Report> {
-  parseCliOptions({ ...options, repos });
-  throw new Error('The analysis pipeline is not implemented yet — see docs/design.md');
+  const parsed = parseCliOptions({ ...options, repos });
+  return runPipeline(parsed);
 }

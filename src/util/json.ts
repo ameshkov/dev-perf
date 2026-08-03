@@ -8,9 +8,10 @@ import path from 'node:path';
 
 /**
  * Error thrown when text cannot be parsed as JSON or a JSON file cannot
- * be read.
+ * be read. Module-private: callers catch it via `readJsonFile`/the
+ * `@throws` contract without importing the class.
  */
-export class JsonError extends Error {
+class JsonError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'JsonError';
@@ -29,13 +30,14 @@ export function prettyJson(value: unknown): string {
 }
 
 /**
- * Parses JSON text without throwing raw `SyntaxError`s.
+ * Parses JSON text without throwing raw `SyntaxError`s. Module-private:
+ * `readJsonFile` is the public entry point.
  *
  * @param text - JSON text to parse.
  * @returns The parsed value.
  * @throws {JsonError} When the text is not valid JSON.
  */
-export function parseJson(text: string): unknown {
+function parseJson(text: string): unknown {
   try {
     return JSON.parse(text) as unknown;
   } catch (error) {

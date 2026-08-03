@@ -48,9 +48,6 @@ interface DateTotals {
  *
  * @param commits - One author's commits, typically newest first.
  * @returns The per-user metrics matching `DeterministicMetrics`.
- *
- * @internal Consumed by the report assembler (plan step 5) once it
- * exists. Remove the tag when a production importer exists.
  */
 export function userMetrics(commits: Commit[]): DeterministicMetrics {
   if (commits.length === 0) {
@@ -171,9 +168,6 @@ function dateTotals(commits: Commit[]): DateTotals {
  *
  * @param groups - The author groups of the range, one per user.
  * @returns The repository statistics matching `RepositoryStats`.
- *
- * @internal Consumed by the report assembler (plan step 5) once it
- * exists. Remove the tag when a production importer exists.
  */
 export function repoStats(groups: AuthorGroup[]): RepositoryStats {
   let totalCommits = 0;

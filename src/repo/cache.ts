@@ -42,6 +42,10 @@ export function resolveCacheDir(cacheDir?: string): string {
  *
  * @param url - Repository URL or local path as given on the command line.
  * @returns The 16-character entry hash.
+ *
+ * @internal Exported for tests only (`cache.test.ts`); used by
+ * `cacheEntryDir` within the module. Not part of the public module
+ * API.
  */
 export function entryHash(url: string): string {
   return createHash('sha256').update(url).digest('hex').slice(0, ENTRY_HASH_LENGTH);
@@ -73,6 +77,10 @@ export function repoDir(entryDir: string): string {
  *
  * @param entryDir - The cache entry directory.
  * @returns The clone.json file path.
+ *
+ * @internal Exported for tests only; used by `readCloneInfo` and
+ * `writeCloneInfo` within the module. Not part of the public module
+ * API.
  */
 export function cloneJsonPath(entryDir: string): string {
   return path.join(entryDir, 'clone.json');
@@ -84,6 +92,10 @@ export function cloneJsonPath(entryDir: string): string {
  *
  * @param entryDir - The cache entry directory.
  * @returns The llm directory path.
+ *
+ * @internal Exported for tests only; consumed by the LLM layer (plan
+ * steps 6-8) once it exists. Remove the tag when a production
+ * importer exists.
  */
 export function llmDir(entryDir: string): string {
   return path.join(entryDir, 'llm');
@@ -95,6 +107,10 @@ export function llmDir(entryDir: string): string {
  *
  * @param entryDir - The cache entry directory.
  * @returns The opencode directory path.
+ *
+ * @internal Exported for tests only; consumed by the LLM layer (plan
+ * steps 6-8) once it exists. Remove the tag when a production
+ * importer exists.
  */
 export function opencodeDir(entryDir: string): string {
   return path.join(entryDir, 'opencode');
@@ -103,6 +119,10 @@ export function opencodeDir(entryDir: string): string {
 /**
  * zod schema for `clone.json`: the URL the clone was made from, when it
  * was cloned (ISO 8601), the checked-out branch, and the head sha (§4).
+ *
+ * @internal Exported for tests only (`cache.test.ts`); referenced by
+ * `readCloneInfo` within the module. Not part of the public module
+ * API.
  */
 export const cloneInfoSchema = z.object({
   /** Repository URL or local path as given on the command line. */

@@ -9,11 +9,12 @@ import { z } from 'zod';
 
 /**
  * Per-language contribution counts (design §5.2): cloc-style counting
- * applied to the contributions, not the whole tree.
+ * applied to the contributions, not the whole tree. Consumed by the
+ * deterministic layer through the `LanguageContribution` type.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) once it exists. Remove the tag when a production
- * importer exists.
+ * @internal Exported for tests only; referenced by
+ * `deterministicMetricsSchema` within the module. Not part of the
+ * public module API.
  */
 export const languageContributionSchema = z.object({
   /** Lines added in this language across the range. */
@@ -25,11 +26,8 @@ export const languageContributionSchema = z.object({
 });
 
 /**
- * Per-language contribution counts (design §5.2).
- *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) once it exists. Remove the tag when a production
- * importer exists.
+ * Per-language contribution counts (design §5.2); consumed by the
+ * deterministic layer.
  */
 export type LanguageContribution = z.infer<typeof languageContributionSchema>;
 
@@ -53,11 +51,11 @@ export type Churn = z.infer<typeof churnSchema>;
 
 /**
  * Deterministic per-user metrics counted from git history
- * (design §5.2).
+ * (design §5.2); consumed by the deterministic layer and the report
+ * assembler through the `DeterministicMetrics` type.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (steps 3-4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * @internal Exported for tests only; referenced by `userSchema`
+ * within the module. Not part of the public module API.
  */
 export const deterministicMetricsSchema = z.object({
   /** Commits authored in the range, merges included. */
@@ -91,11 +89,8 @@ export const deterministicMetricsSchema = z.object({
 });
 
 /**
- * Deterministic per-user metrics (design §5.2).
- *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (steps 3-4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * Deterministic per-user metrics (design §5.2); consumed by the
+ * deterministic layer and the report assembler.
  */
 export type DeterministicMetrics = z.infer<typeof deterministicMetricsSchema>;
 
@@ -230,8 +225,8 @@ export type TokenUsage = z.infer<typeof tokenUsageSchema>;
  * LLM section.
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * and the report assembler (steps 5-8) once they exist. Remove the tag
- * when a production importer exists.
+ * (steps 6-8) once it exists. Remove the tag when a production
+ * importer exists.
  */
 export const llmAnalysisSchema = z.object({
   /** Whether the analysis completed, was skipped, or failed. */
@@ -252,17 +247,17 @@ export const llmAnalysisSchema = z.object({
  * LLM-based analysis for one user (design §6.5, §7).
  *
  * @internal Exported for tests only; consumed by the LLM tool schema
- * and the report assembler (steps 5-8) once they exist. Remove the tag
- * when a production importer exists.
+ * (steps 6-8) once it exists. Remove the tag when a production
+ * importer exists.
  */
 export type LlmAnalysis = z.infer<typeof llmAnalysisSchema>;
 
 /**
- * One analyzed user of a repository (design §7).
+ * One analyzed user of a repository (design §7); the inferred `User`
+ * type is consumed by the report assembler.
  *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
- * exists.
+ * @internal Exported for tests only; referenced by `repositorySchema`
+ * within the module. Not part of the public module API.
  */
 export const userSchema = z.object({
   /** Display name: the most frequent author name for the email. */
@@ -278,20 +273,17 @@ export const userSchema = z.object({
 });
 
 /**
- * One analyzed user of a repository (design §7).
- *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
- * exists.
+ * One analyzed user of a repository (design §7); consumed by the
+ * report assembler.
  */
 export type User = z.infer<typeof userSchema>;
 
 /**
  * One entry in the repository's top languages list.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * @internal Exported for tests only; referenced by
+ * `repositoryStatsSchema` within the module. Remove the tag when a
+ * production importer exists.
  */
 export const topLanguageSchema = z.object({
   /** Language name (mapped from the file extension). */
@@ -303,18 +295,18 @@ export const topLanguageSchema = z.object({
 /**
  * One entry in the repository's top languages list.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * @internal Exported for tests only; referenced by
+ * `repositoryStatsSchema` within the module. Remove the tag when a
+ * production importer exists.
  */
 export type TopLanguage = z.infer<typeof topLanguageSchema>;
 
 /**
- * Repository-level statistics (design §5.2).
+ * Repository-level statistics (design §5.2); consumed by the
+ * deterministic layer through the `RepositoryStats` type.
  *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * @internal Exported for tests only; referenced by `repositorySchema`
+ * within the module. Not part of the public module API.
  */
 export const repositoryStatsSchema = z.object({
   /** Total commits in the range, merges included. */
@@ -326,19 +318,16 @@ export const repositoryStatsSchema = z.object({
 });
 
 /**
- * Repository-level statistics (design §5.2).
- *
- * @internal Exported for tests only; consumed by the deterministic
- * layer (step 4) and the report assembler (step 5) once they exist.
- * Remove the tag when a production importer exists.
+ * Repository-level statistics (design §5.2); consumed by the
+ * deterministic layer.
  */
 export type RepositoryStats = z.infer<typeof repositoryStatsSchema>;
 
 /**
  * One analyzed repository entry (design §7).
  *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
+ * @internal Exported for tests only; referenced by `reportSchema`
+ * within the module. Remove the tag when a production importer
  * exists.
  */
 export const repositorySchema = z.object({
@@ -364,19 +353,16 @@ export const repositorySchema = z.object({
 });
 
 /**
- * One analyzed repository entry (design §7).
- *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
- * exists.
+ * One analyzed repository entry (design §7); consumed by the report
+ * assembler.
  */
 export type Repository = z.infer<typeof repositorySchema>;
 
 /**
  * Parameters of the analysis run that produced the report (design §7).
  *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
+ * @internal Exported for tests only; referenced by `reportSchema`
+ * within the module. Remove the tag when a production importer
  * exists.
  */
 export const parametersSchema = z.object({
@@ -395,8 +381,8 @@ export const parametersSchema = z.object({
 /**
  * Parameters of the analysis run that produced the report (design §7).
  *
- * @internal Exported for tests only; consumed by the report assembler
- * (step 5) once it exists. Remove the tag when a production importer
+ * @internal Exported for tests only; referenced by `reportSchema`
+ * within the module. Remove the tag when a production importer
  * exists.
  */
 export type Parameters = z.infer<typeof parametersSchema>;
@@ -405,10 +391,6 @@ export type Parameters = z.infer<typeof parametersSchema>;
  * The full dev-perf report document (design §7): parameters,
  * repository entries, and per-user analysis. Exported through the
  * module barrel as the report module's public API.
- *
- * @internal Exported for tests only (`schema.test.ts`); consumed by
- * the report assembler (step 5) once it exists. Remove the tag when a
- * production importer exists.
  */
 export const reportSchema = z.object({
   /** Schema version; 1 for the v1 report shape. */
