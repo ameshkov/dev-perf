@@ -70,7 +70,7 @@ class StubSessions implements SessionService {
   /** Session creations, in order. */
   created: Array<{ directory: string; title: string }> = [];
   /** Prompt calls, in order. */
-  prompts: Array<{ sessionID: string; text: string; noReply: boolean }> = [];
+  prompts: Array<{ sessionID: string; text: string; noReply: boolean; label: string }> = [];
   private counter = 0;
 
   constructor(
@@ -94,9 +94,10 @@ class StubSessions implements SessionService {
   async promptSession(
     handle: SessionHandle,
     text: string,
+    label: string,
     options?: PromptOptions,
   ): Promise<string> {
-    this.prompts.push({ sessionID: handle.id, text, noReply: options?.noReply === true });
+    this.prompts.push({ sessionID: handle.id, text, noReply: options?.noReply === true, label });
     return this.state.replyText;
   }
 
@@ -104,8 +105,9 @@ class StubSessions implements SessionService {
     handle: SessionHandle,
     text: string,
     llmDir: string,
+    label: string,
   ): Promise<LlmToolPayload | undefined> {
-    this.prompts.push({ sessionID: handle.id, text, noReply: false });
+    this.prompts.push({ sessionID: handle.id, text, noReply: false, label });
     if (this.state.failWith !== undefined) {
       throw this.state.failWith;
     }
@@ -214,6 +216,12 @@ describe('analyzeRepositoryLLM', () => {
       'ses_3',
       'ses_3',
     ]);
+    // The progress-line label names the operation: the repo for the
+    // orientation, the user for their context injection and analysis.
+    expect(service.prompts[0]?.label).toBe('https://example.com/repo.git');
+    expect(service.prompts[1]?.label).toBe('Alice');
+    expect(service.prompts[2]?.label).toBe('Alice');
+    expect(service.prompts[4]?.label).toBe('Bob');
   });
 
   it('injects the orientation context into every user session with noReply', async () => {

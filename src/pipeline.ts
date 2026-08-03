@@ -155,6 +155,7 @@ async function analyzeLlm(
       service,
       refresh: options.refresh === true,
     });
+    logInfo(`LLM: ${repo}: analyzed ${pluralize(results.length, 'user')}`);
     return new Map(results.map((result) => [result.email, result.llm]));
   } finally {
     try {
@@ -222,7 +223,9 @@ function pluralize(count: number, unit: string): string {
  * Resolves the analyzed author-date range to UTC instants with git's
  * own date parser — the same interpretation the scan bounds get.
  * A missing `--since` leaves the start unbounded (`''`); a
- * missing `--until` defaults to `today`.
+ * missing `--until` defaults to `today`. A date-only bound resolves
+ * to a fixed time of day instead of the run moment: midnight for
+ * `since`, end of day for `until`.
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param since - Start bound as given on the command line, if any.
@@ -235,10 +238,11 @@ async function resolveRange(
   until: string | undefined,
 ): Promise<AnalyzedRange> {
   return {
-    since: since === undefined ? '' : (await resolveBoundDate(repoDir, since)).toISOString(),
+    since:
+      since === undefined ? '' : (await resolveBoundDate(repoDir, since, 'since')).toISOString(),
     until:
       until === undefined
-        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL)).toISOString()
-        : (await resolveBoundDate(repoDir, until)).toISOString(),
+        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL, 'until')).toISOString()
+        : (await resolveBoundDate(repoDir, until, 'until')).toISOString(),
   };
 }

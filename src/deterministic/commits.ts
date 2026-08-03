@@ -8,7 +8,11 @@
  * applied on the parsed `%aI` field so the returned commits honor
  * author dates. Both the scan bound and the in-code filter resolve
  * dates with git's own date parser (any git date format) under
- * `TZ=UTC`, so naive dates are interpreted in UTC.
+ * `TZ=UTC`, so naive dates are interpreted in UTC. Date-only bounds
+ * (`2026-01-01`) get a fixed default time appended (midnight for the
+ * `since` side, end of day for `until`) — git would otherwise resolve
+ * them to the current time of day, making the analyzed range depend
+ * on the run moment.
  */
 import { GitError, runGit } from '../repo/git.js';
 
@@ -63,13 +67,62 @@ export interface Commit {
 }
 
 /**
- * Date range the scan is bounded by and filtered to.
+ * Date range the scan is bounded by and filtered to. Date-only bounds
+ * are normalized to a fixed time of day (`normalizeBoundDate`).
  */
 export interface CommitRange {
   /** Start bound, any git date format; both ends of the range inclusive. */
   since?: string;
   /** End bound, any git date format; both ends of the range inclusive. */
   until?: string;
+}
+
+/**
+ * One side of a date range; the default time appended to a date-only
+ * bound depends on which side it is (`normalizeBoundDate`).
+ */
+export type DateBound = 'since' | 'until';
+
+/**
+ * Matches a date-only bound: `YYYY-MM-DD`, also with `/` or `.`
+ * separators and 1-2 digit month/day. Git's own parser resolves such
+ * strings to the *current time of day*, which would make the analyzed
+ * range depend on the run moment; they are normalized to a fixed time
+ * instead (see `normalizeBoundDate`).
+ */
+const DATE_ONLY_PATTERN = /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/;
+
+/**
+ * Normalizes a date-only bound (e.g. `2026-01-01`) to a fixed time of
+ * day so git resolves it deterministically: midnight for the `since`
+ * side, end of day (`23:59:59`) for the `until` side — git's parser
+ * truncates fractional seconds. Bounds that already carry a time, and
+ * other git date formats (e.g. `yesterday`), pass through unchanged.
+ *
+ * @param date - The bound as given on the command line.
+ * @param bound - Which side of the range the bound belongs to.
+ * @returns The bound, with a default time appended when date-only.
+ */
+function normalizeBoundDate(date: string, bound: DateBound): string {
+  if (!DATE_ONLY_PATTERN.test(date)) {
+    return date;
+  }
+  return bound === 'since' ? `${date} 00:00` : `${date} 23:59:59`;
+}
+
+/**
+ * Applies the date-only default-time normalization to both sides of a
+ * range, so the scan bound and the in-code filter agree with the
+ * resolved range reported in the output.
+ *
+ * @param range - The range as given on the command line.
+ * @returns The range with date-only bounds normalized.
+ */
+function normalizeRange(range: CommitRange): CommitRange {
+  return {
+    since: range.since === undefined ? undefined : normalizeBoundDate(range.since, 'since'),
+    until: range.until === undefined ? undefined : normalizeBoundDate(range.until, 'until'),
+  };
 }
 
 /**
@@ -144,8 +197,11 @@ function parseNumstatRow(line: string): CommitFile {
  * --no-renames` pass. `--since`/`--until` bound the scan
  * by *commit* date; the author-date range is then applied in code on
  * the parsed `%aI` field, so the returned list honors author
- * dates. Bounds are resolved by git's own date parser under `TZ=UTC`.
- * An empty repository yields an empty list.
+ * dates. Bounds are resolved by git's own date parser under `TZ=UTC`;
+ * a date-only bound is normalized to a fixed time of day
+ * (`normalizeBoundDate`), so the range covers whole boundary days
+ * regardless of when the analysis runs. An empty repository yields an
+ * empty list.
  *
  * @param repoDir - The repository working tree.
  * @param range - Author-date range, both ends inclusive.
@@ -154,12 +210,13 @@ function parseNumstatRow(line: string): CommitFile {
  * empty repository, or when a bound date cannot be parsed.
  */
 export async function readCommits(repoDir: string, range: CommitRange = {}): Promise<Commit[]> {
-  const output = await gitLogBounded(repoDir, range);
+  const bounds = normalizeRange(range);
+  const output = await gitLogBounded(repoDir, bounds);
   const commits = parseCommitLog(output);
   const since =
-    range.since === undefined ? undefined : await resolveBoundEpoch(repoDir, range.since);
+    bounds.since === undefined ? undefined : await resolveBoundEpoch(repoDir, bounds.since);
   const until =
-    range.until === undefined ? undefined : await resolveBoundEpoch(repoDir, range.until);
+    bounds.until === undefined ? undefined : await resolveBoundEpoch(repoDir, bounds.until);
   return commits.filter((commit) => inAuthorRange(commit, since, until));
 }
 
@@ -208,16 +265,24 @@ function isEmptyRepoError(error: unknown): boolean {
 /**
  * Resolves a git-format date to the instant git itself uses for the
  * scan bounds (`--since`/`--until`): the same
- * approxidate interpretation the scan gets, under `TZ=UTC`. The
- * pipeline uses it to record the analyzed range in the report.
+ * approxidate interpretation the scan gets, under `TZ=UTC`, with a
+ * date-only bound normalized to a fixed time of day
+ * (`normalizeBoundDate`). The pipeline uses it to record the analyzed
+ * range in the report.
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param date - Date in any git date format.
+ * @param bound - Which side of the range the date bounds; picks the
+ * default time for a date-only value.
  * @returns The resolved instant (UTC).
  * @throws {GitError} When git cannot parse the date.
  */
-export async function resolveBoundDate(repoDir: string, date: string): Promise<Date> {
-  return new Date(await resolveBoundEpoch(repoDir, date));
+export async function resolveBoundDate(
+  repoDir: string,
+  date: string,
+  bound: DateBound,
+): Promise<Date> {
+  return new Date(await resolveBoundEpoch(repoDir, normalizeBoundDate(date, bound)));
 }
 
 /**

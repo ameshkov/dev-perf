@@ -8,7 +8,10 @@
  * Analysis prompts run through `promptSessionUntilReport`, which polls
  * the report file mid-turn and aborts the session as soon as the tool
  * output exists, so the orchestration never waits for an agent that
- * keeps working after reporting. The real implementation talks to the
+ * keeps working after reporting. Long-running operations log a
+ * periodic "still waiting" progress line (heartbeat), so a stuck model
+ * call is visible in verbose output instead of an endless silent
+ * wait. The real implementation talks to the
  * opencode server via the `@opencode-ai/sdk` client (the v1 client the
  * server handle exposes: `{ query, body, path }` option style); tests
  * stub the interface.
@@ -18,7 +21,7 @@ import { llmToolPayloadSchema } from '../report/index.js';
 import type { LlmToolPayload, TokenUsage } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile } from '../util/json.js';
-import { logWarn } from '../util/log.js';
+import { logInfo, logWarn } from '../util/log.js';
 import { ANALYST_AGENT_ID } from './server.js';
 
 /** One session on the server, scoped to the clone directory. */
@@ -31,6 +34,12 @@ export interface SessionHandle {
 
 /** How often the `devperf_report` output file is polled mid-turn. */
 const REPORT_POLL_INTERVAL_MS = 500;
+
+/**
+ * How often a pending LLM operation logs its "still waiting" progress
+ * line — the heartbeat that makes a stuck model call visible.
+ */
+const STILL_WAITING_INTERVAL_MS = 30_000;
 
 /** Options for a single prompt.
  *
@@ -71,18 +80,28 @@ export interface UsageCollector {
 export interface SessionService {
   /** Creates a session in the given directory. */
   createSession(directory: string, title: string): Promise<SessionHandle>;
-  /** Sends a text prompt and returns the final assistant text. */
-  promptSession(handle: SessionHandle, text: string, options?: PromptOptions): Promise<string>;
+  /**
+   * Sends a text prompt and returns the final assistant text. The
+   * label names the operation for the "still waiting" progress lines.
+   */
+  promptSession(
+    handle: SessionHandle,
+    text: string,
+    label: string,
+    options?: PromptOptions,
+  ): Promise<string>;
   /**
    * Sends a text prompt and resolves as soon as the session's
    * `devperf_report` output exists — aborting the running session so
    * the orchestration does not wait for the agent to finish its turn —
-   * or when the turn ends without calling the tool.
+   * or when the turn ends without calling the tool. The label names
+   * the operation for the "still waiting" progress lines.
    */
   promptSessionUntilReport(
     handle: SessionHandle,
     text: string,
     llmDir: string,
+    label: string,
   ): Promise<LlmToolPayload | undefined>;
   /** Starts collecting per-session usage from the event stream. */
   collectUsage(directory: string): Promise<UsageCollector>;
@@ -97,9 +116,10 @@ export interface SessionService {
 export function createSessionService(client: OpencodeClient): SessionService {
   return {
     createSession: (directory, title) => createSessionWith(client, directory, title),
-    promptSession: (handle, text, options) => promptSessionWith(client, handle, text, options),
-    promptSessionUntilReport: (handle, text, llmDir) =>
-      promptSessionUntilReportWith(client, handle, text, llmDir),
+    promptSession: (handle, text, label, options) =>
+      promptSessionWith(client, handle, text, label, options),
+    promptSessionUntilReport: (handle, text, llmDir, label) =>
+      promptSessionUntilReportWith(client, handle, text, llmDir, label),
     collectUsage: (directory) => collectSessionUsage(client, directory),
   };
 }
@@ -133,12 +153,15 @@ async function createSessionWith(
  * is recorded without triggering a reply (context injection). Every
  * prompt runs with the `devperf-analyst` agent (`ANALYST_AGENT_ID`),
  * whose prompt and restricted tool surface come from the generated
- * server config. On any failure the session is aborted and the error
- * rethrown.
+ * server config. While the reply is pending, a progress line is
+ * logged every `STILL_WAITING_INTERVAL_MS` so a stuck model call is
+ * visible in verbose output. On any failure the session is aborted and
+ * the error rethrown.
  *
  * @param client - The opencode client.
  * @param handle - The session to prompt.
  * @param text - The prompt text.
+ * @param label - Name of the operation for the progress lines.
  * @param options - Prompt options.
  * @returns The final assistant text (empty for `noReply` prompts).
  * @throws {Error} When the prompt fails; the session is aborted first.
@@ -147,8 +170,10 @@ async function promptSessionWith(
   client: OpencodeClient,
   handle: SessionHandle,
   text: string,
+  label: string,
   options: PromptOptions = {},
 ): Promise<string> {
+  const stopHeartbeat = startHeartbeat(label, 'the LLM reply');
   try {
     const result = await client.session.prompt({
       path: { id: handle.id },
@@ -171,6 +196,8 @@ async function promptSessionWith(
   } catch (error) {
     await abortSession(client, handle);
     throw error;
+  } finally {
+    stopHeartbeat();
   }
 }
 
@@ -196,11 +223,15 @@ async function abortSession(client: OpencodeClient, handle: SessionHandle): Prom
  * polled while the prompt is still running, and the first valid payload
  * aborts the session and is returned. When the turn ends without a
  * report, `undefined` is returned so the caller can send a reminder.
+ * While the turn is running, a progress line is logged every
+ * `STILL_WAITING_INTERVAL_MS` so a stuck model call is visible in
+ * verbose output.
  *
  * @param client - The opencode client.
  * @param handle - The session to prompt.
  * @param text - The prompt text.
  * @param llmDir - The entry's `llm/` directory holding the report files.
+ * @param label - Name of the operation for the progress lines.
  * @returns The validated analysis payload, or `undefined` when the turn
  * ended without calling the tool.
  * @throws {Error} When the prompt fails; the session is aborted first.
@@ -210,15 +241,71 @@ async function promptSessionUntilReportWith(
   handle: SessionHandle,
   text: string,
   llmDir: string,
+  label: string,
 ): Promise<LlmToolPayload | undefined> {
+  let done = false;
+  const report = pollForReport(handle, llmDir, () => done);
+  const stopHeartbeat = startHeartbeat(label, 'devperf_report');
+  let outcome: PromptOutcome;
+  try {
+    outcome = await settlePromptRace(client, handle, text, report);
+  } finally {
+    stopHeartbeat();
+  }
+
+  if (outcome.kind === 'report' && outcome.payload !== undefined) {
+    // The tool wrote the report while the turn was still running: stop
+    // the session and move on — the agent may never finish otherwise.
+    done = true;
+    await abortSession(client, handle);
+    return outcome.payload;
+  }
+  done = true;
+  // The report may have been written in the same tick the turn ended.
+  const payload = await readSessionReport(llmDir, handle.id);
+  if (payload !== undefined) {
+    return payload;
+  }
+  if (outcome.kind === 'error') {
+    await abortSession(client, handle);
+    throw outcome.error;
+  }
+  return undefined;
+}
+
+/** The settled state of a prompt race: turn finished, failed, or report found. */
+type PromptOutcome =
+  | { kind: 'finished' }
+  | { kind: 'error'; error: Error }
+  | { kind: 'report'; payload: LlmToolPayload | undefined };
+
+/**
+ * Sends the analysis prompt and races it against the report poll:
+ * whichever settles first wins, with prompt failures mapped to a
+ * readable outcome (the opencode SDK rejects on transport errors, so
+ * both shapes are handled). A rejection of an abandoned prompt is
+ * swallowed so it cannot become an unhandled rejection.
+ *
+ * @param client - The opencode client.
+ * @param handle - The session to prompt.
+ * @param text - The prompt text.
+ * @param report - The report poll promise (resolves on the first
+ * valid payload, or `undefined` when the poll was stopped).
+ * @returns The first settled outcome.
+ */
+async function settlePromptRace(
+  client: OpencodeClient,
+  handle: SessionHandle,
+  text: string,
+  report: Promise<LlmToolPayload | undefined>,
+): Promise<PromptOutcome> {
   const prompt = client.session.prompt({
     path: { id: handle.id },
     query: { directory: handle.directory },
     body: { agent: ANALYST_AGENT_ID, parts: [{ type: 'text', text }] },
   });
-  let done = false;
-  const report = pollForReport(handle, llmDir, () => done);
-  const outcome = await Promise.race([
+  void prompt.catch(() => {});
+  return Promise.race([
     prompt.then(
       (result) =>
         result.error === undefined
@@ -236,27 +323,6 @@ async function promptSessionUntilReportWith(
     ),
     report.then((payload) => ({ kind: 'report' as const, payload })),
   ]);
-
-  if (outcome.kind === 'report' && outcome.payload !== undefined) {
-    // The tool wrote the report while the turn was still running: stop
-    // the session and move on — the agent may never finish otherwise.
-    done = true;
-    await abortSession(client, handle);
-    void prompt.catch(() => {});
-    return outcome.payload;
-  }
-  done = true;
-  // The report may have been written in the same tick the turn ended.
-  const payload = await readSessionReport(llmDir, handle.id);
-  if (payload !== undefined) {
-    void prompt.catch(() => {});
-    return payload;
-  }
-  if (outcome.kind === 'error') {
-    await abortSession(client, handle);
-    throw outcome.error;
-  }
-  return undefined;
 }
 
 /**
@@ -298,6 +364,28 @@ function sleep(ms: number): Promise<void> {
     const timer = setTimeout(resolve, ms);
     timer.unref();
   });
+}
+
+/**
+ * Starts the "still waiting" heartbeat for a long-running LLM
+ * operation: every `STILL_WAITING_INTERVAL_MS` a progress line is
+ * logged with the elapsed time, so a stuck model call shows up as
+ * repeated progress lines instead of an endless silent wait. The
+ * interval is unref'd so it cannot keep the process alive on its own.
+ *
+ * @param label - Who or what is being waited on (e.g. the user name).
+ * @param what - What is being waited for, e.g. `devperf_report`.
+ * @returns A function that stops the heartbeat.
+ */
+function startHeartbeat(label: string, what: string): () => void {
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    logInfo(
+      `LLM: ${label}: still waiting for ${what} (${Math.floor((Date.now() - startedAt) / 1000)}s elapsed)`,
+    );
+  }, STILL_WAITING_INTERVAL_MS);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /**

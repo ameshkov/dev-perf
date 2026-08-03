@@ -32,3 +32,15 @@ and this project adheres to
 - Every CLI option has a `DEV_PERF_*` environment-variable equivalent;
   a `.env` file in the working directory is loaded automatically (the
   flag wins when both are set).
+- Verbose (`--verbose`) progress logging for the LLM phase: each
+  waiting stage logs its start (orientation prompt, context injection,
+  analysis prompt) and long-running operations log a periodic "still
+  waiting" line with elapsed time, so a slow or stuck model call is
+  visible instead of an endless silent wait.
+
+### Fixed
+
+- Date-only `--since`/`--until` values (e.g. `2026-01-01`) are now
+  resolved to midnight / end of day (UTC) instead of the run's time of
+  day, so the analyzed range — and the LLM result cache keyed on it —
+  stays stable across reruns and the whole boundary day is included.

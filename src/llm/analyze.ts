@@ -11,7 +11,10 @@
  * entry's `llm/` directory keyed by (repo, user, since, until, model,
  * context/output limits) and reused on reruns unless `--refresh`
  * invalidates the cache; per-session token usage and cost come
- * from the event stream and are logged when verbose.
+ * from the event stream and are logged when verbose. Every long
+ * waiting phase logs its start and a periodic "still waiting"
+ * progress line (verbose), so a stuck session is visible instead of
+ * an endless silent wait.
  */
 import { createHash } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -173,11 +176,14 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   try {
     const session = await input.service.createSession(input.cloneDir, ORIENTATION_TITLE);
     logInfo(`LLM: orientation session ${session.id} for ${input.repo}`);
+    logInfo(`LLM: orientation prompt sent to session ${session.id}, waiting for the repo context`);
     const context = await input.service.promptSession(
       session,
       await buildOrientationPrompt(input.repo),
+      input.repo,
     );
     await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
+    logInfo(`LLM: repo context established for ${input.repo}`);
     logDebug(`LLM: repo context: ${context}`);
     return { context, collector };
   } catch (error) {
@@ -212,7 +218,10 @@ async function analyzeUser(
   const session = await input.service.createSession(input.cloneDir, `dev-perf: ${group.name}`);
   logInfo(`LLM: analyzing ${group.name} <${group.email}> (session ${session.id})`);
   try {
-    await input.service.promptSession(session, orientation.context, { noReply: true });
+    await input.service.promptSession(session, orientation.context, group.name, {
+      noReply: true,
+    });
+    logInfo(`LLM: ${group.name}: repo context injected`);
     const analysisPrompt = await buildUserPrompt({
       repo: input.repo,
       name: group.name,
@@ -271,13 +280,17 @@ async function enforceReport(
       logWarn(
         `LLM: ${group.name}: devperf_report not called, reminding (${attempt}/${MAX_REMINDERS})`,
       );
+    } else {
+      logInfo(`LLM: ${group.name}: analysis prompt sent, waiting for devperf_report`);
     }
     const payload = await input.service.promptSessionUntilReport(
       session,
       attempt === 0 ? analysisPrompt : reminder,
       llmDir(input.entryDir),
+      group.name,
     );
     if (payload !== undefined) {
+      logInfo(`LLM: ${group.name}: devperf_report received`);
       return payload;
     }
   }

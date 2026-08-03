@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
 import { gitLog, runGit } from '../repo/git.js';
-import { parseCommitLog, readCommits } from './commits.js';
+import { parseCommitLog, readCommits, resolveBoundDate } from './commits.js';
 
 /** Known shas used in the golden parse tests (any 40-hex values). */
 const SHA1 = '1111111111111111111111111111111111111111';
@@ -187,6 +187,48 @@ describe('readCommits', () => {
     }
   });
 
+  it('treats a date-only bound as the whole day, independent of the run time', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T00:30:00Z',
+        message: 'early jan 1',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-31T23:30:00Z',
+        message: 'late jan 31',
+        files: [{ path: 'b.txt', content: 'b\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-02-01T00:00:00Z',
+        message: 'feb 1 midnight',
+        files: [{ path: 'c.txt', content: 'c\n' }],
+      },
+    ]);
+    try {
+      const subjects = (commits: { subject: string }[]) => commits.map((commit) => commit.subject);
+      // A commit at 00:30 on Jan 1 stays in: the bare date means the
+      // whole day, not "from the run moment on" (git's own resolution
+      // would use the current time of day, dropping it on any run
+      // after 00:30 UTC).
+      expect(subjects(await readCommits(repo.dir, { since: '2026-01-01' }))).toEqual([
+        'feb 1 midnight',
+        'late jan 31',
+        'early jan 1',
+      ]);
+      // The `until` side covers its whole day too, and stays exclusive
+      // of the next day.
+      expect(
+        subjects(await readCommits(repo.dir, { since: '2026-01-01', until: '2026-01-31' })),
+      ).toEqual(['late jan 31', 'early jan 1']);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
   it('compares author dates as instants, not strings', async () => {
     // 2026-01-15T10:30:00+05:00 is 05:30Z — the raw string compares
     // after the Z form, but the instant does not.
@@ -344,6 +386,36 @@ describe('readCommits', () => {
     try {
       expect(await readCommits(repo.dir)).toEqual([]);
       expect(await readCommits(repo.dir, { since: '2026-01-01T00:00:00Z' })).toEqual([]);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+});
+
+describe('resolveBoundDate', () => {
+  it('resolves a date-only bound to a fixed time of day, not the run moment', async () => {
+    const repo = await buildFixtureRepo([]);
+    try {
+      expect((await resolveBoundDate(repo.dir, '2026-01-01', 'since')).toISOString()).toBe(
+        '2026-01-01T00:00:00.000Z',
+      );
+      expect((await resolveBoundDate(repo.dir, '2026-02-01', 'until')).toISOString()).toBe(
+        '2026-02-01T23:59:59.000Z',
+      );
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('leaves bounds with an explicit time or a non-date format unchanged', async () => {
+    const repo = await buildFixtureRepo([]);
+    try {
+      expect((await resolveBoundDate(repo.dir, '2026-01-01 12:30', 'since')).toISOString()).toBe(
+        '2026-01-01T12:30:00.000Z',
+      );
+      expect(
+        (await resolveBoundDate(repo.dir, '2026-01-31T23:59:59Z', 'until')).toISOString(),
+      ).toBe('2026-01-31T23:59:59.000Z');
     } finally {
       await removeFixtureRepo(repo);
     }

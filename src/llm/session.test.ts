@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Event, OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LlmToolPayload } from '../report/index.js';
+import { logInfo } from '../util/log.js';
 import { ANALYST_AGENT_ID } from './server.js';
 import {
   collectSessionUsage,
@@ -11,6 +12,16 @@ import {
   readSessionReport,
   sessionReportPath,
 } from './session.js';
+
+// The heartbeat progress lines are asserted via the mocked logger; the
+// other log levels are stubbed so nothing reaches stderr in tests.
+vi.mock('../util/log.js', () => ({
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logInfo: vi.fn(),
+  logDebug: vi.fn(),
+  setVerbose: vi.fn(),
+}));
 
 const DIRECTORY = '/clone/repo';
 
@@ -170,7 +181,11 @@ describe('createSessionService', () => {
     const client = stubClient();
     const service = createSessionService(client);
 
-    const text = await service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze');
+    const text = await service.promptSession(
+      { id: 'ses_1', directory: DIRECTORY },
+      'analyze',
+      'Alice',
+    );
 
     expect(text).toBe('assistant reply');
     expect(client.session.prompt).toHaveBeenCalledWith({
@@ -188,7 +203,7 @@ describe('createSessionService', () => {
     const client = stubClient();
     const service = createSessionService(client);
 
-    await service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'context', {
+    await service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'context', 'Alice', {
       noReply: true,
     });
 
@@ -204,7 +219,7 @@ describe('createSessionService', () => {
     const service = createSessionService(client);
 
     await expect(
-      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze'),
+      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze', 'Alice'),
     ).rejects.toThrow(/LLM session prompt failed in \/clone\/repo: rate limited/);
     expect(client.session.abort).toHaveBeenCalledWith({
       path: { id: 'ses_1' },
@@ -217,9 +232,46 @@ describe('createSessionService', () => {
     const service = createSessionService(client);
 
     await expect(
-      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze'),
+      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze', 'Alice'),
     ).rejects.toThrow('prompt rejected');
     expect(client.session.abort).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a still-waiting progress line while the reply is pending', async () => {
+    vi.useFakeTimers();
+    try {
+      // The model never answers; the heartbeat must make the wait
+      // visible instead of an endless silent prompt.
+      let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
+      const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
+        settlePrompt = resolve;
+      });
+      const client = stubClient({ prompt: () => pendingPrompt });
+      const service = createSessionService(client);
+
+      const resultPromise = service.promptSession(
+        { id: 'ses_1', directory: DIRECTORY },
+        'analyze',
+        'Alice',
+      );
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      expect(logInfo).toHaveBeenCalledWith(
+        expect.stringContaining('LLM: Alice: still waiting for the LLM reply'),
+      );
+      expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
+
+      settlePrompt({
+        data: {
+          info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
+          parts: [{ type: 'text', text: 'assistant reply' }],
+        },
+        error: undefined,
+      });
+      await expect(resultPromise).resolves.toBe('assistant reply');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -248,6 +300,7 @@ describe('promptSessionUntilReport', () => {
       { id: 'ses_1', directory: DIRECTORY },
       'analyze',
       llmDir,
+      'Alice',
     );
     // The simulated tool writes its output while the turn is running.
     await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
@@ -267,6 +320,50 @@ describe('promptSessionUntilReport', () => {
     });
   });
 
+  it('logs a still-waiting progress line every 30 s while the turn runs', async () => {
+    vi.useFakeTimers();
+    try {
+      // The model never finishes; the heartbeat must make the wait
+      // visible instead of an endless silent prompt.
+      let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
+      const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
+        settlePrompt = resolve;
+      });
+      const client = stubClient({ prompt: () => pendingPrompt });
+      const service = createSessionService(client);
+
+      const resultPromise = service.promptSessionUntilReport(
+        { id: 'ses_1', directory: DIRECTORY },
+        'analyze',
+        llmDir,
+        'Alice',
+      );
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      expect(logInfo).toHaveBeenCalledWith(
+        expect.stringContaining('LLM: Alice: still waiting for devperf_report'),
+      );
+      expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
+
+      // The simulated tool writes its output while the turn is running.
+      await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(resultPromise).resolves.toEqual(PAYLOAD);
+      expect(client.session.abort).toHaveBeenCalled();
+      // Settle the abandoned prompt so the test ends cleanly.
+      settlePrompt({
+        data: {
+          info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
+          parts: [{ type: 'text', text: 'assistant reply' }],
+        },
+        error: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns the payload written before the turn ended, without aborting', async () => {
     const client = stubClient({
       prompt: async () => {
@@ -283,7 +380,12 @@ describe('promptSessionUntilReport', () => {
     const service = createSessionService(client);
 
     await expect(
-      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+      service.promptSessionUntilReport(
+        { id: 'ses_1', directory: DIRECTORY },
+        'analyze',
+        llmDir,
+        'Alice',
+      ),
     ).resolves.toEqual(PAYLOAD);
     expect(client.session.abort).not.toHaveBeenCalled();
   });
@@ -293,7 +395,12 @@ describe('promptSessionUntilReport', () => {
     const service = createSessionService(client);
 
     await expect(
-      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+      service.promptSessionUntilReport(
+        { id: 'ses_1', directory: DIRECTORY },
+        'analyze',
+        llmDir,
+        'Alice',
+      ),
     ).resolves.toBeUndefined();
     expect(client.session.abort).not.toHaveBeenCalled();
   });
@@ -303,7 +410,12 @@ describe('promptSessionUntilReport', () => {
     const service = createSessionService(client);
 
     await expect(
-      service.promptSessionUntilReport({ id: 'ses_1', directory: DIRECTORY }, 'analyze', llmDir),
+      service.promptSessionUntilReport(
+        { id: 'ses_1', directory: DIRECTORY },
+        'analyze',
+        llmDir,
+        'Alice',
+      ),
     ).rejects.toThrow(/LLM session prompt failed in \/clone\/repo: rate limited/);
     expect(client.session.abort).toHaveBeenCalledWith({
       path: { id: 'ses_1' },
