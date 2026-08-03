@@ -1,0 +1,23 @@
+# Incremental specs
+.sdd
+
+# Dependencies
+node_modules/
+
+# VSCode config
+.vscode
+
+# Build output
+build/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Local environment (secrets)
+.env
+
+# dev-perf clone cache
+.dev-perf/
