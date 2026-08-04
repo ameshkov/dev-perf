@@ -87,7 +87,7 @@ dev-perf/
 │   ├── util/                  # Shared helpers
 │   └── report/                # Report schema, the single source of truth
 ├── test/                      # Fixture repos, report builders, and compiled-CLI e2e tests
-├── scripts/                   # Build-time asset copying (prompt/agent templates into build/)
+├── scripts/                   # Build-time asset copying and the knip exclude bootstrap
 ├── docs/
 │   └── design.md              # Full design document
 └── Root config: package.json, tsconfig*.json, vitest.config.ts,

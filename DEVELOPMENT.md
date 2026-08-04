@@ -292,3 +292,10 @@ attached.
   version) to satisfy it.
 - **Husky hook does not run** — re-run `pnpm install`; the `prepare`
   script installs the hook.
+- **Knip crashes with "JavaScript heap out of memory"** — knip's file
+  walker can traverse the `.dev-perf` clone cache before it applies
+  the repo's own `.gitignore` (the root `.gitignore` is discovered
+  only during the walk). The `knip` script automatically appends
+  `.dev-perf/` to `.git/info/exclude`, which knip preloads before the
+  walk, so the cache is pruned from the first step. If the crash
+  still happens, verify `.git/info/exclude` contains `.dev-perf/`.

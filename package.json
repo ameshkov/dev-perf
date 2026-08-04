@@ -34,7 +34,7 @@
     "format:fix": "prettier --write --no-error-on-unmatched-pattern --cache . && markdownlint-cli2 --fix \"**/*.{md,markdown}\"",
     "lint": "oxlint src && pnpm knip",
     "lint:fix": "oxlint src --fix",
-    "knip": "knip --production",
+    "knip": "node scripts/ensure-knip-excludes.mjs && knip --production",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test",
     "prepare": "husky || true"
   },
