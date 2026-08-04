@@ -42,6 +42,27 @@ describe('languageForPath', () => {
     expect(languageForPath('Cargo.toml')).toBe('TOML');
   });
 
+  it('maps .NET project, resource, and binary files', () => {
+    expect(languageForPath('src/App.csproj')).toBe('C#');
+    expect(languageForPath('native/App.vcxproj')).toBe('C++');
+    expect(languageForPath('Resources.resx')).toBe('XML');
+    expect(languageForPath('Installer/Bundle.wxs')).toBe('XML');
+    expect(languageForPath('packages.config')).toBe('Text');
+    expect(languageForPath('project.pbxproj')).toBe('Text');
+    expect(languageForPath('assets/firmware.bin')).toBe('Binary');
+  });
+
+  it('maps C-family variants, Objective-C, and module formats', () => {
+    expect(languageForPath('App.m')).toBe('Objective-C');
+    expect(languageForPath('App.mm')).toBe('Objective-C++');
+    expect(languageForPath('impl.c++')).toBe('C++');
+    expect(languageForPath('impl.h++')).toBe('C++');
+    expect(languageForPath('impl.ipp')).toBe('C++');
+    expect(languageForPath('impl.inl')).toBe('C/C++ Header');
+    expect(languageForPath('lib.mts')).toBe('TypeScript');
+    expect(languageForPath('lib.cts')).toBe('TypeScript');
+  });
+
   it('takes the extension after the last dot of the basename', () => {
     expect(languageForPath('src/deep/dir/app.test.ts')).toBe('TypeScript');
     expect(languageForPath('a.b.c.py')).toBe('Python');
@@ -58,12 +79,15 @@ describe('languageForPath', () => {
     expect(languageForPath('build/Dockerfile')).toBe('Dockerfile');
     expect(languageForPath('Makefile')).toBe('Makefile');
     expect(languageForPath('cmake/CMakeLists.txt')).toBe('CMake');
+    expect(languageForPath('go.mod')).toBe('Go');
+    expect(languageForPath('go.sum')).toBe('Go');
+    expect(languageForPath('go.work')).toBe('Go');
   });
 
   it('falls back to Unknown for unrecognized paths', () => {
     expect(languageForPath('noextension')).toBe('Unknown');
     expect(languageForPath('.gitignore')).toBe('Unknown');
-    expect(languageForPath('assets/logo.bin')).toBe('Unknown');
+    expect(languageForPath('assets/font.woff2')).toBe('Unknown');
     expect(languageForPath('image.png')).toBe('Unknown');
   });
 });
@@ -90,7 +114,7 @@ describe('countLanguageContributions', () => {
   it('counts binary files as touched with zero lines', () => {
     const commits = [commit([{ path: 'assets/logo.bin', added: undefined, deleted: undefined }])];
     expect(countLanguageContributions(commits)).toStrictEqual({
-      Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
+      Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
     });
   });
 

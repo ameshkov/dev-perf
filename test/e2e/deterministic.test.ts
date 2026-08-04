@@ -122,7 +122,7 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
               topLanguages: [
                 { language: 'Markdown', linesAdded: 2 },
                 { language: 'TypeScript', linesAdded: 2 },
-                { language: 'Unknown', linesAdded: 0 },
+                { language: 'Binary', linesAdded: 0 },
               ],
             },
             users: [
@@ -146,7 +146,7 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
                   languages: {
                     TypeScript: { linesAdded: 2, linesRemoved: 0, filesTouched: 1 },
                     Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
-                    Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
+                    Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
                   },
                 },
                 llm: { status: 'skipped', contributions: [] },

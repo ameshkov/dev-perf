@@ -132,7 +132,7 @@ describe('userMetrics', () => {
     expect(metrics.filesTouched).toBe(1);
     expect(metrics.uniqueFilesTouched).toBe(1);
     expect(metrics.languages).toStrictEqual({
-      Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
+      Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
     });
   });
 });
@@ -312,7 +312,7 @@ describe('fixture integration', () => {
         languages: {
           TypeScript: { linesAdded: 8, linesRemoved: 0, filesTouched: 3 },
           Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
-          Unknown: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
+          Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
         },
       });
 
@@ -342,7 +342,7 @@ describe('fixture integration', () => {
         topLanguages: [
           { language: 'TypeScript', linesAdded: 11 },
           { language: 'Markdown', linesAdded: 1 },
-          { language: 'Unknown', linesAdded: 0 },
+          { language: 'Binary', linesAdded: 0 },
         ],
       });
     } finally {

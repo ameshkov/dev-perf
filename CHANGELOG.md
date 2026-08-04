@@ -60,6 +60,13 @@ and this project adheres to
   max), concatenate LLM contributions, and repository stats are
   recomputed after filtering; every compile option has a
   `DEV_PERF_COMPILE_*` environment-variable equivalent.
+- Language detection now recognizes more file types: .NET project
+  and resource files (`.csproj`, `.vcxproj`, `.resx`, `.wxs`,
+  `.config`), Objective-C (`.m`/`.mm`), TypeScript module formats
+  (`.mts`/`.cts`), C++ variants (`.c++`, `.h++`, `.ipp`, `.inl`),
+  Xcode project files (`.pbxproj`), binary blobs (`.bin`), and Go
+  module files (`go.mod`, `go.sum`, `go.work`), so fewer files fall
+  under `Unknown` in per-language statistics.
 
 ### Changed
 
