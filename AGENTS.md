@@ -41,16 +41,19 @@ user**:
    opencode configuration is never read.
 4. **Assembly** — the two layers are merged into a single JSON report,
    per repository and per user.
+5. **Compile** (optional) — `dev-perf compile <report>` turns the JSON
+   report into a markdown report with Vega-Lite SVG charts: team and
+   individual dynamics, LLM distribution pies, tables, and an appendix,
+   with repo/user selection and email mapping.
 
-The full design and implementation plan lives in
-[docs/design.md](./docs/design.md). Both layers are implemented: the
-deterministic analysis path (M2) — `dev-perf report --no-llm <repo>`
-clones the repository and produces the JSON report — and the LLM
-agentic layer (M3, plan steps 7-9): the opencode server lifecycle and
-the `devperf_report` tool generation (step 7), the sessions, prompts,
-orchestration, and LLM result cache (step 8), and the pipeline wiring
-that runs the LLM phase between deterministic analysis and assembly
-(step 9).
+Both analysis layers are implemented: the deterministic path —
+`dev-perf report --no-llm <repo>` clones the repository and produces
+the JSON report — and the LLM agentic layer, which starts an opencode
+server per repository, generates the `devperf_report` tool, drives
+per-user sessions and prompts, enforces the report tool call, and
+caches LLM results. The `compile` command renders the JSON report into
+a markdown report with charts. The full design lives in
+[docs/design.md](./docs/design.md).
 
 ## Technical Context
 
@@ -70,94 +73,29 @@ that runs the LLM phase between deterministic analysis and assembly
 
 ```text
 dev-perf/
-├── src/                      # Application source code
-│   ├── index.ts              # CLI entry point: .env loading, version, error handling
-│   ├── cli.ts                # Command registry: registers every dev-perf command (report today)
-│   ├── cli.test.ts           # CLI surface tests
-│   ├── commands/             # One file per CLI command (the future `compile` command goes here)
-│   │   ├── report.ts         # `report` command: builds the JSON report (arguments, options, action)
-│   │   └── report.test.ts    # (covered by cli.test.ts — the command is exercised through the program)
-│   ├── pipeline.ts           # Orchestration: clone → deterministic analysis → LLM phase → assemble → write
-│   ├── pipeline.test.ts      # Pipeline integration tests against fixture repos
-│   ├── pipeline-llm.test.ts  # Pipeline LLM-phase tests (stubbed server, real session service)
-│   ├── config.ts             # zod validation of parsed CLI options (cross-field rules)
-│   ├── config.test.ts        # CLI options validation tests
-│   ├── repo/                 # Clone/cache management (design §4)
-│   │   ├── git.ts            # execa-based git wrapper + helpers (clone, log, show, shortlog, rev-parse)
-│   │   ├── git.test.ts       # Wrapper integration tests against fixture repos
-│   │   ├── cache.ts          # Cache root, entry hash, layout paths, clone.json (zod)
-│   │   ├── cache.test.ts     # Cache layout and clone.json tests
-│   │   ├── clone.ts          # ensureClone: cache reuse, --refresh, partial-clone fallback
-│   │   └── clone.test.ts     # Clone/cache reuse integration tests
-│   ├── deterministic/        # Deterministic analysis (design §5)
-│   │   ├── commits.ts        # Single-pass git log --numstat parsing + author-date filtering (§5.1, §5.4)
-│   │   ├── commits.test.ts   # Parsing golden tests against fixture repos
-│   │   ├── identity.ts       # Email grouping, display name, bot flag (§5.3)
-│   │   ├── identity.test.ts  # Identity grouping tests
-│   │   ├── metrics.ts        # Per-user and repo-level metrics aggregation (§5.2)
-│   │   ├── metrics.test.ts   # Exact-value metrics tests against fixture repos
-│   │   ├── languages.ts      # Built-in extension→language map + per-language counting (§5.2)
-│   │   └── languages.test.ts # Language mapping and counting tests
-│   ├── llm/                  # LLM agentic layer (design §6; server, tools, prompts, sessions, orchestration, pipeline wiring)
-│   │   ├── server.ts         # createOpencode lifecycle: generated opencode.json (provider, permissions), devperf-analyst agent file, env isolation, auth.set
-│   │   ├── server.test.ts    # Golden config + generated-files layout tests; manual smoke test (DEV_PERF_SMOKE)
-│   │   ├── shutdown.ts       # Server teardown: waits (bounded) for `opencode serve` to exit after SIGTERM, then force-kills the listener and its process tree
-│   │   ├── shutdown.test.ts  # Port liveness probe + process-tree kill escalation tests (real TCP listeners, mocked lsof/pgrep)
-│   │   ├── tools.ts          # devperf_report tool source generation (schema-derived, session-scoped output)
-│   │   ├── tools.test.ts     # Generated tool content + execution tests
-│   │   ├── prompts.ts        # Prompt rendering: loads the markdown templates from prompts/ and substitutes values (§6.3, §6.5)
-│   │   ├── prompts.test.ts   # Prompt content and tool-call instruction tests
-│   │   ├── prompts/          # LLM prompt templates as markdown files (orientation, user, reminder)
-│   │   ├── agents/           # The devperf-analyst opencode agent definition (markdown + YAML frontmatter)
-│   │   ├── session.ts        # SessionService: create/prompt (noReply, devperf-analyst agent), abort-on-error, report detection, usage stream
-│   │   ├── session.test.ts   # Session wrapper, report-file, and usage-collector tests with a stubbed client
-│   │   ├── analyze.ts        # Orchestration: orientation, per-user sessions, enforcement loop, LLM result cache (§6.6)
-│   │   └── analyze.test.ts   # Enforcement, cache idempotency/refresh, and session scoping with stub sessions
-│   ├── trend/                 # Time-based period splitting (`--unit`): UTC-aligned periods + per-period commit filtering
-│   │   ├── periods.ts         # splitPeriods (day/week/month/quarter/year boundaries, trimming, inclusive until) + filterGroupsForPeriod
-│   │   └── periods.test.ts    # Boundary anchoring, trimming, empty-period inclusion, and filtering tests
-│   ├── util/                 # Shared helpers, no business logic
-│   │   ├── error.ts          # Error detail rendering: cause-chain aware (fetch failures surface their real reason)
-│   │   ├── exit.ts           # Flush-aware forced process exit (the CLI must not hang on lingering child processes)
-│   │   ├── exit.test.ts      # Exit-helper tests (immediate, drain, and safety-timeout paths)
-│   │   ├── json.ts           # Pretty-print, read/write, safe JSON parse
-│   │   ├── log.ts            # Stderr logger: errors/warnings always, info/debug on --verbose
-│   └── report/               # Report schema, the single source of truth (design §7)
-│       ├── index.ts          # Barrel: public API of the report module
-│       ├── schema.ts         # zod schemas + inferred types for the whole report
-│       ├── assemble.ts       # Report document assembly: parameters, repo + user entries (§7)
-│       ├── schema.test.ts    # Report schema validation tests
-│       └── assemble.test.ts  # Report assembly tests
-├── test/
-│   ├── fixtures/
-│   │   └── repo-builder.ts   # Builds temp git repos with known files, authors, commits
-│   └── e2e/
-│       └── deterministic.test.ts  # --no-llm run against a fixture repo (compiled CLI, JSON snapshot)
-├── scripts/
-│   └── copy-assets.mjs     # Copies src/llm/prompts/*.md and src/llm/agents/*.md into build/ for runtime reads
+├── src/                       # Application source code
+│   ├── index.ts               # CLI entry point
+│   ├── cli.ts                 # Command registry (report, compile)
+│   ├── commands/              # One file per CLI command
+│   ├── pipeline.ts            # Orchestration: clone → analysis → LLM → assemble → write
+│   ├── config.ts              # zod validation of parsed CLI options
+│   ├── repo/                  # Clone/cache management
+│   ├── deterministic/         # Deterministic analysis (commits, identity, metrics, languages)
+│   ├── llm/                   # LLM agentic layer (server, tools, prompts, sessions, orchestration)
+│   ├── compile/               # Compile layer: JSON report → markdown report with charts
+│   ├── trend/                 # Time-based period splitting
+│   ├── util/                  # Shared helpers
+│   └── report/                # Report schema, the single source of truth
+├── test/                      # Fixture repos, report builders, and compiled-CLI e2e tests
+├── scripts/                   # Build-time asset copying (prompt/agent templates into build/)
 ├── docs/
-│   ├── design.md             # Full design document
-│   └── plan.md               # Step-by-step implementation plan
-├── .env.example              # Environment variables template (all DEV_PERF_* vars)
-├── .github/                  # GitHub Actions workflows
-│   └── workflows/
-        └── ci.yml            # Quality gate + npm publish on version tags
-├── .vscode/                  # VS Code launch configuration (loads .env)
-├── AGENTS.md                 # This file
-├── DEVELOPMENT.md            # Local setup & manual testing guide
-├── CHANGELOG.md              # Project changelog (Keep a Changelog)
-├── oxlint.config.ts          # oxlint category-based config
-├── knip.config.ts            # Knip unused-export analysis config
-├── tsconfig.json             # TypeScript solution config (references app + test)
-├── tsconfig.app.json         # TypeScript configuration (production build)
-├── tsconfig.test.json        # TypeScript configuration (tests, noEmit)
-├── vitest.config.ts          # Vitest configuration
-└── package.json              # Project dependencies and scripts
+│   └── design.md              # Full design document
+└── Root config: package.json, tsconfig*.json, vitest.config.ts,
+    oxlint.config.ts, knip.config.ts, .env.example
 ```
 
-The target structure after the pipeline is implemented (repo clone
-management, deterministic analysis, LLM layer, report assembly) is
-described in [docs/design.md](./docs/design.md), section 8. When the
+Each `src/` module is self-contained and exposes its public API through
+a barrel `index.ts`; tests are co-located as `*.test.ts`. When the
 structure changes, update this section and keep it valid.
 
 ## Build and Test Commands
@@ -261,14 +199,15 @@ This project's layers, from top to bottom:
 - **Entry point** (`src/index.ts`) — loads `.env`, wires the commander
   program, and handles fatal errors. No business logic.
 - **CLI** (`src/cli.ts`) — the command registry: every dev-perf command
-  (`report` today, e.g. a future `compile`) registers itself through
+  (`report`, `compile`) registers itself through
   `registerCommands`; each command lives in `src/commands/<command>.ts`
   with its arguments, options, and the action that drives the pipeline.
 - **Services** — own all business logic: clone/cache management,
-  deterministic analysis, LLM orchestration, report assembly.
+  deterministic analysis, LLM orchestration, report assembly, compile
+  (JSON report → markdown with charts).
   Directories: `src/repo/` (implemented), `src/deterministic/`
   (implemented), `src/llm/` (implemented, wired into the pipeline),
-  `src/report/`.
+  `src/report/`, `src/compile/`.
 - **Utilities** — shared helpers, logging, and type definitions. No
   business logic.
 
@@ -455,9 +394,12 @@ Configuration and documentation MUST stay synchronized with code:
 - **Environment variables**: A `.env` file in the current working
   directory is auto-loaded at startup (`dotenv`). Every command-line
   option of the `report` command has a `DEV_PERF_*` environment
-  variable equivalent (see `.env.example` and the README); the flag
-  wins when both are set. `src/config.ts` resolves the environment
-  (`resolveRawOptions`) before validating the options. The user's
+  variable equivalent, and every `compile` option has a
+  `DEV_PERF_COMPILE_*` one (see `.env.example` and the README); the
+  flag wins when both are set. `src/config.ts` resolves the report
+  environment (`resolveRawOptions`) and `src/compile/options.ts` the
+  compile environment (`resolveCompileOptions`) before validating the
+  options. The user's
   global opencode configuration is NEVER read — provider, model, and
   API key are always passed explicitly via
   `--provider-url`/`DEV_PERF_PROVIDER_URL`,

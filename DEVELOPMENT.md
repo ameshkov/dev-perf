@@ -67,7 +67,7 @@ pnpm build
 
 The CLI surface is implemented: the `report` command with argument
 parsing, `--help`, `--version`, and validation errors all work, and the
-deterministic analysis path (milestone M2) runs end to end:
+deterministic analysis path runs end to end:
 
 ```bash
 node build/index.js report --no-llm /path/to/some/git/repo
@@ -75,7 +75,7 @@ node build/index.js report --no-llm /path/to/some/git/repo
 
 This clones the repository into the cache (`.dev-perf/cache` by
 default), analyzes git history, and prints the JSON report to stdout.
-LLM analysis (milestone M3) is wired in: a run without `--no-llm`
+LLM analysis is wired in: a run without `--no-llm`
 requires `--model`, `--provider-url`, and `--api-key`, and the
 `opencode` CLI on `PATH`. Provider settings can come from the
 environment instead of flags (see below).
@@ -119,13 +119,15 @@ DEV_PERF_OUTPUT=report.json
 
 ### Running from VS Code
 
-The repository ships `.vscode/launch.json` with two launch
+The repository ships `.vscode/launch.json` with three launch
 configurations that load `.env` via `envFile`:
 
 - *dev-perf: run (deterministic)* — `report --no-llm` against the
   repository root, no provider configuration needed.
 - *dev-perf: run (with LLM)* — full pipeline; set `DEV_PERF_MODEL`,
   `DEV_PERF_PROVIDER_URL`, and `DEV_PERF_API_KEY` in `.env` first.
+- *dev-perf: compile* — prompts for the JSON report file, then runs
+  `compile <report> --output dev-perf-report` in the workspace root.
 
 Create `.env` (from `.env.example`) before launching, then press F5 in
 the Run and Debug view. The configurations run the TypeScript sources

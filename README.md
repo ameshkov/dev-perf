@@ -23,8 +23,7 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 ## Usage
 
 `dev-perf` is command-based: `report` builds the JSON report, and
-further commands (e.g. a `compile` that renders a report into a
-markdown document with charts) will be added alongside it. Running
+`compile` renders it into a markdown report with charts. Running
 `dev-perf` without a command prints the command list.
 
 ```text
@@ -174,6 +173,74 @@ Example output (abridged):
 }
 ```
 
+## Compiling a markdown report with charts
+
+```text
+dev-perf compile [options] <report>
+
+Compile a JSON report into a markdown report with charts.
+
+Arguments:
+  report                 JSON report file (schema v2, as written by `report`;
+                         default: DEV_PERF_COMPILE_REPORT)
+
+Options:
+  --output <dir>         Output directory for report.md and the assets/
+                         charts (default: dev-perf-report)
+  --map <email=name>     Map an author email to a display name, merging
+                         identities (repeatable)
+  --maps-file <path>     JSON file with email-to-name mappings
+                         ({ "email": "Name" })
+  --include-user <n|e>   Keep only matching users (repeatable; matches
+                         display name or any email)
+  --exclude-user <n|e>   Drop matching users (repeatable; cannot be
+                         combined with --include-user)
+  --repo <repo>          Keep only these repositories (repeatable; as
+                         given on the command line)
+  --exclude-repo <repo>  Drop these repositories (repeatable; cannot be
+                         combined with --repo)
+  --verbose              Verbose logging
+  --help                 Show help
+```
+
+`compile` reads the JSON report produced by `report`, filters and
+merges it, renders every chart as an SVG with Vega-Lite (pure Node,
+no browser), and writes `report.md` plus the `assets/` directory into
+the output directory. The report covers the team dynamics — stacked
+contributions by size, contributions vs weighted points, commits with
+a cumulative line, lines added vs removed, active users, top
+languages — the per-repository comparison (with multiple
+repositories), per-user dynamics (contribution sizes and per-period
+contributions, or commits and lines without LLM analysis), and the
+LLM summary (work-type/size/complexity pies, quality and risk
+tallies, per-user cost). Tables carry the totals, per-repository and
+per-contributor rankings, contributions, and the appendix documents
+parameters, applied filters, email mappings, and size weights
+(`xs=1, s=2, m=3, l=5, xl=8` for the weighted points). Time-based
+dynamics require a report generated with `--unit`; the compiled
+report notes it when the input has a single period.
+
+`--map`/`--maps-file` merge author emails into one identity:
+deterministic metrics are summed (active days take the max — the
+report carries no per-day data), LLM contributions are concatenated,
+and repository stats are recomputed after filtering.
+
+Example — compile a monthly report for two repos, merging an email
+alias and excluding one user:
+
+```console
+dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
+  --unit month --output report.json https://github.com/org/repo-a.git
+dev-perf compile report.json --output ./team-report \
+  --map "alice+work@example.com=Alice" \
+  --exclude-user "ci-bot@example.com"
+```
+
+The markdown report references the charts by relative path
+(`![...](assets/team-commits-per-period.svg)`), so the output
+directory is portable as a unit — open `report.md` in GitHub, VS
+Code, or any markdown viewer that renders local images.
+
 ## Configuration
 
 Every `report` command-line option has a `DEV_PERF_*` environment
@@ -200,6 +267,20 @@ exported in the shell are never overridden by `.env`.
 | `--limit-output <n>` | `DEV_PERF_LIMIT_OUTPUT` | Default: 65536 |
 | `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
 
+Every `compile` option has a `DEV_PERF_COMPILE_*` variable:
+
+| CLI option | Environment variable | Notes |
+| --- | --- | --- |
+| `<report>` | `DEV_PERF_COMPILE_REPORT` | JSON report file (schema v2) |
+| `--output <dir>` | `DEV_PERF_COMPILE_OUTPUT` | Default: dev-perf-report |
+| `--map <email=name>` | `DEV_PERF_COMPILE_MAP` | Comma-separated list |
+| `--maps-file <path>` | `DEV_PERF_COMPILE_MAPS_FILE` | JSON `{ "email": "Name" }` |
+| `--include-user <n\|e>` | `DEV_PERF_COMPILE_INCLUDE_USER` | Comma-separated list |
+| `--exclude-user <n\|e>` | `DEV_PERF_COMPILE_EXCLUDE_USER` | Comma-separated list |
+| `--repo <repo>` | `DEV_PERF_COMPILE_REPO` | Comma-separated list |
+| `--exclude-repo <repo>` | `DEV_PERF_COMPILE_EXCLUDE_REPO` | Comma-separated list |
+| `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
+
 Boolean environment variables accept `1`/`true`/`yes`/`on` and
 `0`/`false`/`no`/`off`.
 
@@ -214,8 +295,8 @@ dev-perf report
 
 ## Status
 
-Both analysis layers are implemented: the deterministic path (milestone
-M2) and the LLM agentic layer (milestone M3). `dev-perf report --no-llm
+Both analysis layers are implemented: the deterministic path and the
+LLM agentic layer. `dev-perf report --no-llm
 <repo>` clones the repository (into the cache, reusing it on later
 runs) and produces the JSON report — commits, lines, files, active
 days, and per-language contributions, per user and per repository. A
@@ -225,8 +306,9 @@ with the assessed work types, complexity, areas, quality signals and
 risk flags, plus token usage and estimated cost. LLM failures (e.g. a
 provider rejecting the key, or a session that never calls the report
 tool) fail the run fast with a clear message and no report is written.
-See [docs/design.md](docs/design.md) for the full design and
-implementation plan.
+`dev-perf compile <report>` renders the JSON report into a markdown
+report with Vega-Lite SVG charts, with repo/user selection and email
+mapping. See [docs/design.md](docs/design.md) for the full design.
 
 ## Development
 

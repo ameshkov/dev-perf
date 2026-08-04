@@ -43,6 +43,23 @@ and this project adheres to
   periods with zeroed metrics; the user list is the same in every
   period, and the LLM analysis runs per period for the users active in
   it. `--since` is required when `--unit` is set.
+- The `compile` command: turns a JSON report into a markdown report
+  with charts (`dev-perf compile <report> --output <dir>` writes
+  `report.md` plus SVG chart assets into the output directory).
+  Charts are rendered server-side with Vega-Lite and cover the team
+  dynamics (contributions by size and weighted points, commits with a
+  cumulative line, lines, active users, top languages) and the
+  individual dynamics (per-user contribution sizes and per-period
+  contributions or commits/lines), plus LLM distribution pies (work
+  types, sizes, complexity) when the report has LLM analysis.
+- Compile-time report shaping: `--repo`/`--exclude-repo` narrow the
+  repositories, `--include-user`/`--exclude-user` narrow the users
+  (by display name or any email), and `--map <email=name>` /
+  `--maps-file <path>` merge author emails into a single identity.
+  Merged identities sum deterministic metrics (active days take the
+  max), concatenate LLM contributions, and repository stats are
+  recomputed after filtering; every compile option has a
+  `DEV_PERF_COMPILE_*` environment-variable equivalent.
 
 ### Changed
 
@@ -51,14 +68,19 @@ and this project adheres to
   bare `dev-perf` invocation prints the command list. **Breaking
   change** for existing invocations — the report options, positional
   repository arguments, and `DEV_PERF_*` environment variables are
-  unchanged, only the `report` command word is added. Future commands
-  (e.g. a `compile` that renders a JSON report into markdown with
-  charts) will be registered alongside `report`.
+  unchanged, only the `report` command word is added. The `compile`
+  command (renders a JSON report into markdown with charts) is
+  registered alongside `report`.
 - The report document is now schema v2: repository entries are always
   wrapped in a `periods` array (a single period covers the whole range
   without `--unit`). **Breaking change** for consumers of the previous
   flat `repositories` shape — the repository entries move one level
   deeper under `periods[0]`, and the `parameters` may carry a `unit`.
+- The VS Code launch configurations now write every dev-perf run's
+  result into a gitignored `output/` directory: the report runs write
+  `output/deterministic-report.json` and `output/llm-report.json`, and
+  the compile run writes `report.md` plus its chart assets under
+  `output/`.
 
 ### Fixed
 

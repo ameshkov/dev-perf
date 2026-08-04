@@ -1,0 +1,127 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseCompileOptions, resolveCompileOptions } from './options.js';
+import type { RawCompileOptions } from './options.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe('resolveCompileOptions', () => {
+  it('fills options from DEV_PERF_COMPILE_* environment variables', () => {
+    vi.stubEnv('DEV_PERF_COMPILE_OUTPUT', 'out/');
+    vi.stubEnv('DEV_PERF_COMPILE_MAP', 'alice@example.com=Alice Smith, bob@example.com=Bob');
+    vi.stubEnv('DEV_PERF_COMPILE_INCLUDE_USER', 'Alice, bob@example.com');
+    vi.stubEnv('DEV_PERF_COMPILE_REPO', 'repo-a, repo-b');
+    vi.stubEnv('DEV_PERF_COMPILE_REPORT', 'report.json');
+    vi.stubEnv('DEV_PERF_VERBOSE', 'true');
+
+    const resolved = resolveCompileOptions(undefined, {});
+
+    expect(resolved).toEqual({
+      output: 'out/',
+      map: ['alice@example.com=Alice Smith', 'bob@example.com=Bob'],
+      includeUser: ['Alice', 'bob@example.com'],
+      repo: ['repo-a', 'repo-b'],
+      verbose: true,
+      report: 'report.json',
+    });
+  });
+
+  it('gives the flag precedence over the environment', () => {
+    vi.stubEnv('DEV_PERF_COMPILE_OUTPUT', 'env-out/');
+    vi.stubEnv('DEV_PERF_COMPILE_MAP', 'alice@example.com=Alice');
+
+    const resolved = resolveCompileOptions('flag-report.json', {
+      output: 'flag-out/',
+      map: ['bob@example.com=Bob'],
+    });
+
+    expect(resolved.output).toBe('flag-out/');
+    expect(resolved.map).toEqual(['bob@example.com=Bob']);
+    expect(resolved.report).toBe('flag-report.json');
+  });
+
+  it('keeps the positional report over DEV_PERF_COMPILE_REPORT', () => {
+    vi.stubEnv('DEV_PERF_COMPILE_REPORT', 'env.json');
+    expect(resolveCompileOptions('flag.json', {}).report).toBe('flag.json');
+  });
+
+  it('rejects an unrecognized boolean environment value', () => {
+    vi.stubEnv('DEV_PERF_VERBOSE', 'maybe');
+    expect(() => resolveCompileOptions(undefined, {})).toThrow(/DEV_PERF_VERBOSE/);
+  });
+
+  it('ignores empty environment values', () => {
+    vi.stubEnv('DEV_PERF_COMPILE_OUTPUT', '');
+    const resolved = resolveCompileOptions(undefined, {});
+    expect(resolved.output).toBeUndefined();
+  });
+});
+
+describe('parseCompileOptions', () => {
+  it('applies defaults and parses map entries', () => {
+    const parsed = parseCompileOptions({
+      report: 'report.json',
+      map: ['Alice@Example.com=Alice Smith'],
+    });
+
+    expect(parsed.output).toBe('dev-perf-report');
+    expect(parsed.maps).toEqual([{ email: 'alice@example.com', name: 'Alice Smith' }]);
+    expect(parsed.includeUsers).toEqual([]);
+    expect(parsed.excludeUsers).toEqual([]);
+    expect(parsed.repos).toEqual([]);
+    expect(parsed.excludeRepos).toEqual([]);
+    expect(parsed.mapsFile).toBeUndefined();
+  });
+
+  it('requires the report file', () => {
+    expect(() => parseCompileOptions({})).toThrow(/report: the report file is required/);
+  });
+
+  it('rejects a malformed map entry with the option name in the error', () => {
+    expect(() => parseCompileOptions({ report: 'r.json', map: ['no-equals-sign'] })).toThrow(
+      /--map: expected 'email=name'/,
+    );
+  });
+
+  it('rejects duplicate mapped emails', () => {
+    expect(() =>
+      parseCompileOptions({
+        report: 'r.json',
+        map: ['a@example.com=One', 'a@example.com=Two'],
+      }),
+    ).toThrow(/a@example\.com' is mapped more than once/);
+  });
+
+  it('rejects combining --include-user with --exclude-user', () => {
+    expect(() =>
+      parseCompileOptions({
+        report: 'r.json',
+        includeUser: ['Alice'],
+        excludeUser: ['Bob'],
+      }),
+    ).toThrow(/--exclude-user: cannot be combined with --include-user/);
+  });
+
+  it('rejects combining --repo with --exclude-repo', () => {
+    expect(() =>
+      parseCompileOptions({ report: 'r.json', repo: ['a'], excludeRepo: ['b'] }),
+    ).toThrow(/--exclude-repo: cannot be combined with --repo/);
+  });
+
+  it('accepts lists of users and repos', () => {
+    const parsed = parseCompileOptions({
+      report: 'r.json',
+      includeUser: ['Alice', 'bob@example.com'],
+      repo: ['repo-a'],
+    });
+    expect(parsed.includeUsers).toEqual(['Alice', 'bob@example.com']);
+    expect(parsed.repos).toEqual(['repo-a']);
+  });
+
+  it('reports the raw shape as the validated shape without list options', () => {
+    const raw: RawCompileOptions = { output: 'out/' };
+    const parsed = parseCompileOptions({ report: 'r.json', ...raw });
+    expect(parsed.output).toBe('out/');
+  });
+});

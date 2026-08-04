@@ -22,3 +22,6 @@ build/
 
 # dev-perf clone cache
 .dev-perf/
+
+# output for locally launched commands
+output

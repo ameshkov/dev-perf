@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
+import { trendReportJson } from '../test/fixtures/trend-report-builder.js';
 import { registerCommands } from './cli.js';
 import { trendReportSchema } from './report/schema.js';
 
@@ -61,9 +62,35 @@ describe('cli', () => {
     expect(reportHelp).toContain('DEV_PERF_');
   });
 
+  it('documents the compile command in the top-level help', () => {
+    const program = createProgram();
+    const help = program.helpInformation();
+
+    expect(help).toContain('compile [options] <report>');
+    // Commander wraps the description to fit the help column, so match
+    // across the wrap instead of the exact padded line.
+    expect(help).toMatch(/Compile a JSON report into a markdown report with\s+charts/);
+  });
+
+  it('documents the report argument and all options in the compile help', () => {
+    const program = createProgram();
+    const compileHelp =
+      program.commands.find((command) => command.name() === 'compile')?.helpInformation() ?? '';
+
+    expect(compileHelp).toContain('<report>');
+    expect(compileHelp).toContain('--output <dir>');
+    expect(compileHelp).toContain('--map <email=name>');
+    expect(compileHelp).toContain('--maps-file <path>');
+    expect(compileHelp).toContain('--include-user <name|email>');
+    expect(compileHelp).toContain('--exclude-user <name|email>');
+    expect(compileHelp).toContain('--repo <repo>');
+    expect(compileHelp).toContain('--exclude-repo <repo>');
+    expect(compileHelp).toContain('DEV_PERF_COMPILE_');
+  });
+
   it('rejects unknown commands', async () => {
     const program = createProgram();
-    await expect(program.parseAsync(['node', 'dev-perf', 'compile'])).rejects.toThrow(
+    await expect(program.parseAsync(['node', 'dev-perf', 'frobnicate'])).rejects.toThrow(
       /unknown command/,
     );
   });
@@ -230,6 +257,55 @@ describe('cli', () => {
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
+    }
+  });
+
+  it('runs the compile command and writes the markdown report and assets', async () => {
+    const reportFile = path.join(
+      await mkdtemp(path.join(os.tmpdir(), 'dev-perf-cli-report-')),
+      'report.json',
+    );
+    await mkdir(path.dirname(reportFile), { recursive: true });
+    await writeFile(
+      reportFile,
+      trendReportJson({
+        llmEnabled: false,
+        periods: [
+          {
+            since: '2026-01-01T00:00:00.000Z',
+            until: '2026-01-31T23:59:59.999Z',
+            repositories: [
+              {
+                repo: 'repo-a',
+                users: [{ name: 'Alice', emails: ['alice@example.com'] }],
+              },
+            ],
+          },
+          {
+            since: '2026-02-01T00:00:00.000Z',
+            until: '2026-02-28T23:59:59.999Z',
+            repositories: [
+              {
+                repo: 'repo-a',
+                users: [{ name: 'Alice', emails: ['alice@example.com'] }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const outDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-cli-compile-'));
+    try {
+      const program = createProgram();
+      await program.parseAsync(['node', 'dev-perf', 'compile', reportFile, '--output', outDir]);
+
+      const md = await readFile(path.join(outDir, 'report.md'), 'utf8');
+      expect(md).toContain('# Dev Performance Report');
+      const assets = await readdir(path.join(outDir, 'assets'));
+      expect(assets).toContain('alice-commits-per-period.svg');
+    } finally {
+      await rm(path.dirname(reportFile), { recursive: true, force: true });
+      await rm(outDir, { recursive: true, force: true });
     }
   });
 

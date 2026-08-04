@@ -7,7 +7,12 @@
       "request": "launch",
       "runtimeArgs": ["--import", "tsx"],
       "program": "${workspaceFolder}/src/index.ts",
-      "args": ["report", "--no-llm"],
+      "args": [
+        "report",
+        "--no-llm",
+        "--output",
+        "${workspaceFolder}/output/deterministic-report.json"
+      ],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
@@ -18,10 +23,29 @@
       "request": "launch",
       "runtimeArgs": ["--import", "tsx"],
       "program": "${workspaceFolder}/src/index.ts",
-      "args": ["report"],
+      "args": ["report", "--output", "${workspaceFolder}/output/llm-report.json"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
+    },
+    {
+      "name": "dev-perf: compile",
+      "type": "node",
+      "request": "launch",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/index.ts",
+      "args": ["compile", "${input:compileReport}", "--output", "${workspaceFolder}/output"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "compileReport",
+      "type": "promptString",
+      "description": "Path to the JSON report file to compile",
+      "default": "output/llm-report.json"
     }
   ]
 }

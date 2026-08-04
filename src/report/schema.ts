@@ -233,16 +233,14 @@ export type Complexity = z.infer<typeof complexitySchema>;
 /**
  * Size level of a contribution (t-shirt sizing).
  *
- * @internal Exported for tests only; referenced by `contributionSchema`
- * within the module. Not part of the public module API.
+ * @internal Exported for tests only; the compile layer consumes the
+ * `ContributionSize` type, not the schema. Not part of the public
+ * module API.
  */
 export const contributionSizeSchema = z.enum(['xs', 's', 'm', 'l', 'xl']);
 
 /**
  * Size level of a contribution (t-shirt sizing).
- *
- * @internal Exported for tests only; referenced by `contributionSchema`
- * within the module. Not part of the public module API.
  */
 export type ContributionSize = z.infer<typeof contributionSizeSchema>;
 
@@ -251,7 +249,8 @@ export type ContributionSize = z.infer<typeof contributionSizeSchema>;
  * Field descriptions double as the model-facing
  * documentation: `llmToolPayloadSchema` serializes them into the
  * `devperf_report` tool's JSON schema, so the LLM sees
- * exactly what the report schema requires.
+ * exactly what the report schema requires. The compile layer consumes
+ * the `Contribution` type, not the schema.
  *
  * @internal Exported for tests only; referenced by `llmToolPayloadSchema`
  * within the module. Not part of the public module API.
@@ -304,11 +303,8 @@ export const contributionSchema = z.object({
 });
 
 /**
- * One distinct contribution from a user's work in the range.
- *
- * @internal Exported for tests only; no production importer (the
- * model-facing shapes are serialized from `llmToolPayloadSchema` in
- * `src/llm/tools.ts`). Not part of the public module API.
+ * One distinct contribution from a user's work in the range; consumed
+ * by the compile layer through the `Contribution` type.
  */
 export type Contribution = z.infer<typeof contributionSchema>;
 
