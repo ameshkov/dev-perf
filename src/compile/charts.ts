@@ -1,55 +1,98 @@
 /**
  * The chart inventory of the `compile` command: turns the extracted
  * chart data into the concrete chart list of the report — file name,
- * caption, and Vega-Lite spec. The team dynamics charts, the
- * per-repository comparison, and the LLM distribution pies live here;
- * the per-user charts live in `charts-user.ts`. LLM-based charts are
- * included only when the report has LLM analysis; per-period charts
- * are skipped for single-period reports (no `--unit`); the per-repo
- * comparison chart appears only with multiple repositories.
+ * caption, and Vega-Lite spec. The team dynamics charts and the
+ * per-repository comparison live here; the per-user charts live in
+ * `charts-user.ts` and the LLM distribution pies in `charts-pies.ts`.
+ * LLM-based charts are included only when the report has LLM
+ * analysis; per-period charts are skipped for single-period reports
+ * (no `--unit`); the per-repo comparison chart appears only with
+ * multiple repositories.
  */
 import type { ContributionSize } from '../report/index.js';
+import { llmPieCharts } from './charts-pies.js';
 import { userCharts } from './charts-user.js';
-import type { ChartData, CountRow } from './chart-data.js';
+import type { ChartData } from './chart-data.js';
 import { COMPLEXITY_ORDER, SIZE_ORDER } from './chart-data.js';
-import { barLineRows, lineRows, stackedRows, topWithOther } from './chart-util.js';
+import {
+  barLineRows,
+  flagsPerContribution,
+  lineRows,
+  signalShareRows,
+  stackedRows,
+  topWithOther,
+} from './chart-util.js';
 import type { ChartAsset } from './chart-util.js';
-import { barLineSpec, groupedBarSpec, lineSeriesSpec, pieSpec, stackedBarSpec } from './vega.js';
+import { repoName } from './repo-label.js';
+import { barLineSpec, barSpec, groupedBarSpec, lineSeriesSpec, stackedBarSpec } from './vega.js';
 
 /** The number of top signals kept in the signal charts, rest as `other`. */
-const TOP_SIGNALS = 9;
+const TOP_SIGNALS = 5;
 
 /**
- * The count of one category within a period's tallies.
+ * The points chart of the team: the size-weighted contribution points
+ * per period, the lead chart of the team dynamics.
  *
- * @param rows - The period's counted rows.
- * @param key - The category.
- * @returns The count, zeroed when absent.
+ * @param data - The chart data.
+ * @param labels - The period labels.
+ * @returns The chart asset.
  */
-function periodCount(rows: CountRow[], key: string): number {
-  return rows.find((row) => row.key === key)?.value ?? 0;
+function teamPointsChart(data: ChartData, labels: string[]): ChartAsset {
+  return {
+    file: 'team-points-per-period.svg',
+    caption: 'Points per period (size-weighted).',
+    spec: barSpec(
+      'Team points per period',
+      labels,
+      labels.map((label, index) => ({
+        x: label,
+        key: label,
+        value: data.team[index].weightedPoints,
+      })),
+      'Points',
+    ),
+  };
 }
 
 /**
- * The total of a period's tallies.
+ * The stacked work-type chart of the team: contributions per period
+ * divided into one segment per work type, in the whole-report work
+ * type order. Multi-type contributions count in each of their types,
+ * so the segments do not sum to the period's contributions.
  *
- * @param rows - The period's counted rows.
- * @returns The total count.
+ * @param data - The chart data.
+ * @param labels - The period labels.
+ * @returns The chart asset.
  */
-function periodTotal(rows: CountRow[]): number {
-  return rows.reduce((sum, row) => sum + row.value, 0);
+function teamWorkTypesChart(data: ChartData, labels: string[]): ChartAsset {
+  const keys = data.pies.workTypes.map((row) => row.key);
+  return {
+    file: 'team-work-types-per-period.svg',
+    caption: 'Contributions per period, stacked by work type (a contribution may mix types).',
+    spec: stackedBarSpec(
+      'Team work types per period',
+      labels,
+      keys,
+      stackedRows(labels, keys, (key, index) => data.team[index].workTypes[key] ?? 0),
+      'Contributions',
+      'Work type',
+    ),
+  };
 }
 
 /**
- * The LLM-based team dynamics charts: contributions by size and
- * complexity, and the risk flags and quality signals per period
- * (normalized to the share of contributions).
+ * The LLM-based team dynamics charts: points per period, contributions
+ * per period stacked by size, complexity and work type, contributions
+ * with the cumulative line, the risk flags and quality signals per
+ * period (normalized to the share of contributions), and the average
+ * flags per contribution per period.
  *
  * @param data - The chart data.
  * @param charts - The chart list to append to.
  * @param labels - The period labels.
  */
 function llmTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[]): void {
+  charts.push(teamPointsChart(data, labels));
   charts.push({
     file: 'team-contributions-by-size.svg',
     caption: 'Contributions per period, stacked by size (xs–xl).',
@@ -79,7 +122,23 @@ function llmTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[]):
       'Complexity',
     ),
   });
+  charts.push(teamWorkTypesChart(data, labels));
+  charts.push({
+    file: 'team-contributions-per-period.svg',
+    caption: 'Contributions per period (bars) and cumulative contributions (line).',
+    spec: barLineSpec(
+      'Team contributions per period',
+      labels,
+      barLineRows(
+        labels,
+        data.team.map((point) => point.contributions),
+        data.team.map((point) => point.cumulativeContributions),
+      ),
+      'Contributions',
+    ),
+  });
   signalTeamCharts(data, charts, labels);
+  signalRateCharts(data, charts, labels);
 }
 
 /**
@@ -97,22 +156,13 @@ function llmTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[]):
  */
 function signalTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[]): void {
   for (const kind of ['risk', 'quality'] as const) {
-    const top = data.tallies[kind].slice(0, TOP_SIGNALS);
-    const hasOther = data.tallies[kind].length > TOP_SIGNALS;
-    const keys = [...top.map((row) => row.key), ...(hasOther ? ['other'] : [])];
-    const rows = stackedRows(labels, keys, (key, index) => {
-      const periodRows = data.signals[kind][index];
-      const contributions = data.team[index].contributions;
-      if (contributions === 0) {
-        return 0;
-      }
-      const count =
-        key === 'other'
-          ? periodTotal(periodRows) -
-            top.reduce((sum, row) => sum + periodCount(periodRows, row.key), 0)
-          : periodCount(periodRows, key);
-      return (count / contributions) * 100;
-    });
+    const keys = topWithOther(data.tallies[kind], TOP_SIGNALS).map((row) => row.key);
+    const rows = signalShareRows(
+      labels,
+      keys,
+      data.signals[kind],
+      data.team.map((point) => point.contributions),
+    );
     const file = kind === 'risk' ? 'team-risk-per-period.svg' : 'team-quality-per-period.svg';
     const noun = kind === 'risk' ? 'flags' : 'signals';
     charts.push({
@@ -125,6 +175,44 @@ function signalTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[
         rows,
         '% of contributions',
         kind === 'risk' ? 'Risk flag' : 'Quality signal',
+      ),
+    });
+  }
+}
+
+/**
+ * The per-period signal-rate charts (risk flags and quality signals):
+ * the average number of flags per contribution of each period, so the
+ * flag density of the team's work is visible period by period.
+ *
+ * @param data - The chart data.
+ * @param charts - The chart list to append to.
+ * @param labels - The period labels.
+ */
+function signalRateCharts(data: ChartData, charts: ChartAsset[], labels: string[]): void {
+  for (const kind of ['risk', 'quality'] as const) {
+    const noun = kind === 'risk' ? 'flags' : 'signals';
+    const name = kind === 'risk' ? 'risk flags' : 'quality signals';
+    charts.push({
+      file:
+        kind === 'risk'
+          ? 'team-risk-flags-per-contribution.svg'
+          : 'team-quality-signals-per-contribution.svg',
+      caption: `Average ${name} per contribution per period.`,
+      spec: lineSeriesSpec(
+        `Team ${name} per contribution`,
+        labels,
+        [noun],
+        lineRows(labels, [
+          {
+            key: noun,
+            values: data.team.map((point, index) =>
+              flagsPerContribution(data.signals[kind][index], point.contributions),
+            ),
+          },
+        ]),
+        'Per contribution',
+        noun,
       ),
     });
   }
@@ -223,7 +311,8 @@ function teamCharts(data: ChartData, charts: ChartAsset[], labels: string[]): vo
 
 /**
  * The repository comparison chart: commits per period, one line per
- * repository.
+ * repository. The legend uses just the repository name, since the
+ * full `host/org/repo` label would not be visible anyway.
  *
  * @param data - The chart data.
  * @param charts - The chart list to append to.
@@ -236,92 +325,15 @@ function repoCharts(data: ChartData, charts: ChartAsset[], labels: string[]): vo
     spec: lineSeriesSpec(
       'Commits per repository per period',
       labels,
-      data.repos.map((repo) => repo.repo),
+      data.repos.map((repo) => repoName(repo.repo)),
       lineRows(
         labels,
-        data.repos.map((repo) => ({ key: repo.repo, values: repo.perPeriodCommits })),
+        data.repos.map((repo) => ({ key: repoName(repo.repo), values: repo.perPeriodCommits })),
       ),
       'Commits',
       'Repository',
     ),
   });
-}
-
-/**
- * The risk-flag and quality-signal distribution pies: the top
- * `TOP_SIGNALS` categories plus an `other` slice.
- *
- * @param data - The chart data.
- * @param charts - The chart list to append to.
- */
-function signalPieCharts(data: ChartData, charts: ChartAsset[]): void {
-  charts.push({
-    file: 'risk-distribution.svg',
-    caption: `Share of contributions by risk flag (top ${TOP_SIGNALS} flags plus other).`,
-    spec: pieSpec(
-      'Risk distribution',
-      topWithOther(data.tallies.risk, TOP_SIGNALS).map((row) => ({
-        x: row.key,
-        key: row.key,
-        value: row.value,
-      })),
-      'Risk flag',
-    ),
-  });
-  charts.push({
-    file: 'quality-distribution.svg',
-    caption: `Share of contributions by quality signal (top ${TOP_SIGNALS} signals plus other).`,
-    spec: pieSpec(
-      'Quality distribution',
-      topWithOther(data.tallies.quality, TOP_SIGNALS).map((row) => ({
-        x: row.key,
-        key: row.key,
-        value: row.value,
-      })),
-      'Quality signal',
-    ),
-  });
-}
-
-/**
- * The LLM distribution pies: work types, sizes, complexity, and the
- * risk flags and quality signals (top `TOP_SIGNALS` plus `other`).
- * Size and complexity legends follow the natural category order.
- *
- * @param data - The chart data.
- * @param charts - The chart list to append to.
- */
-function llmPieCharts(data: ChartData, charts: ChartAsset[]): void {
-  charts.push({
-    file: 'work-types.svg',
-    caption: 'Share of contributions by work type (a contribution may mix types).',
-    spec: pieSpec(
-      'Work types',
-      data.pies.workTypes.map((row) => ({ x: row.key, key: row.key, value: row.value })),
-      'Type',
-    ),
-  });
-  charts.push({
-    file: 'size-distribution.svg',
-    caption: 'Share of contributions by size.',
-    spec: pieSpec(
-      'Size distribution',
-      data.pies.sizes.map((row) => ({ x: row.key, key: row.key, value: row.value })),
-      'Size',
-      SIZE_ORDER,
-    ),
-  });
-  charts.push({
-    file: 'complexity-distribution.svg',
-    caption: 'Share of contributions by complexity.',
-    spec: pieSpec(
-      'Complexity distribution',
-      data.pies.complexity.map((row) => ({ x: row.key, key: row.key, value: row.value })),
-      'Complexity',
-      COMPLEXITY_ORDER,
-    ),
-  });
-  signalPieCharts(data, charts);
 }
 
 /**

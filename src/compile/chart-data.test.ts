@@ -106,6 +106,7 @@ describe('buildChartData', () => {
     expect(data.team.map((point) => point.linesAdded)).toEqual([60, 20]);
     // Alice: 3 contributions in January, 1 in February.
     expect(data.team.map((point) => point.contributions)).toEqual([3, 1]);
+    expect(data.team.map((point) => point.cumulativeContributions)).toEqual([3, 4]);
     // l=5, xs=1, m=3 → 9; xl=8 → 8.
     expect(data.team.map((point) => point.weightedPoints)).toEqual([9, 8]);
   });
@@ -146,6 +147,20 @@ describe('buildChartData', () => {
     ]);
   });
 
+  it('counts work types per period, multi-type contributions in each', () => {
+    const data = fixtureData();
+    // January: A1 feature, A2 bugfix, A3 feature+test; February: A4 docs.
+    expect(data.team.map((point) => point.workTypes)).toEqual([
+      { feature: 2, bugfix: 1, test: 1 },
+      { docs: 1 },
+    ]);
+    const alice = data.users.find((series) => series.user.name === 'Alice');
+    expect(alice?.points.map((point) => point.workTypes)).toEqual([
+      { feature: 2, bugfix: 1, test: 1 },
+      { docs: 1 },
+    ]);
+  });
+
   it('tallies quality signals and risk flags per period', () => {
     const data = fixtureData();
     // A3 carries `tests-added` (January), A2 carries `no-tests` (January).
@@ -170,11 +185,27 @@ describe('buildChartData', () => {
     expect(alice?.points.map((point) => point.commits)).toEqual([4, 1]);
     expect(alice?.points.map((point) => point.cumulativeCommits)).toEqual([4, 5]);
     expect(alice?.points.map((point) => point.contributions)).toEqual([3, 1]);
+    expect(alice?.points.map((point) => point.cumulativeContributions)).toEqual([3, 4]);
     expect(alice?.points[0].sizes).toMatchObject({ l: 1, xs: 1, m: 1, s: 0, xl: 0 });
     expect(alice?.points[0].complexity).toMatchObject({ high: 1, low: 1, medium: 1 });
     expect(alice?.points[1].complexity).toMatchObject({ medium: 1 });
-    // Bob's cumulative line runs independently of Alice.
+    // Bob's cumulative lines run independently of Alice.
     expect(bob?.points.map((point) => point.cumulativeCommits)).toEqual([2, 5]);
+    expect(bob?.points.map((point) => point.cumulativeContributions)).toEqual([0, 0]);
+  });
+
+  it('tallies per-user quality signals and risk flags per period', () => {
+    const data = fixtureData();
+    const alice = data.users.find((series) => series.user.name === 'Alice');
+    const bob = data.users.find((series) => series.user.name === 'Bob');
+
+    // A2 carries `no-tests` (January); A3 carries `tests-added` twice,
+    // but a contribution counts once (January). February has A4 only.
+    expect(alice?.signals.quality).toEqual([[{ key: 'tests-added', value: 1 }], []]);
+    expect(alice?.signals.risk).toEqual([[{ key: 'no-tests', value: 1 }], []]);
+    // Bob has no LLM contributions in either period.
+    expect(bob?.signals.quality).toEqual([[], []]);
+    expect(bob?.signals.risk).toEqual([[], []]);
   });
 
   it('counts the per-repository commits of each user', () => {
@@ -219,5 +250,52 @@ describe('buildChartData', () => {
     expect(data.repos[0]).toMatchObject({ repo: 'repo-a', commits: 10, users: 2 });
     expect(data.repos[0].perPeriodCommits).toEqual([6, 4]);
     expect(data.repos[0].topLanguages[0]).toEqual({ language: 'TypeScript', linesAdded: 70 });
+  });
+
+  it('sorts repositories by contributions, not commits', () => {
+    const report = buildTrendReport({
+      periods: [
+        {
+          since: '2026-01-01T00:00:00.000Z',
+          until: '2026-01-31T23:59:59.999Z',
+          repositories: [
+            {
+              repo: 'repo-a',
+              users: [
+                {
+                  name: 'Alice',
+                  emails: ['alice@example.com'],
+                  deterministic: { commits: 10, linesAdded: 100 },
+                },
+              ],
+            },
+            {
+              repo: 'repo-b',
+              users: [
+                {
+                  name: 'Bob',
+                  emails: ['bob@example.com'],
+                  deterministic: { commits: 1, linesAdded: 10 },
+                  llm: {
+                    contributions: [
+                      fixtureContribution({ title: 'B1' }),
+                      fixtureContribution({ title: 'B2' }),
+                      fixtureContribution({ title: 'B3' }),
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const data = buildChartData(filterReport(report, { emailMap: {} }));
+
+    // repo-b has fewer commits but more contributions, so it leads.
+    expect(data.repos.map((repo) => [repo.repo, repo.commits, repo.contributions])).toEqual([
+      ['repo-b', 1, 3],
+      ['repo-a', 10, 1],
+    ]);
   });
 });

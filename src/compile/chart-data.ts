@@ -9,6 +9,7 @@
 import type { ContributionSize, PeriodUnit, User } from '../report/index.js';
 import type { FilteredReport } from './filter.js';
 import { combinePeriodUsers } from './filter.js';
+import { periodLabel } from './period-label.js';
 import {
   allContributions,
   computeBusFactor,
@@ -58,12 +59,17 @@ export interface TeamPoint {
   activeUsers: number;
   /** LLM-assessed contributions in the period. */
   contributions: number;
+  /** Cumulative contributions up to and including the period. */
+  cumulativeContributions: number;
   /** Size-weighted contribution points in the period. */
   weightedPoints: number;
   /** Contributions per size in the period. */
   sizes: Record<ContributionSize, number>;
   /** Contributions per complexity level in the period. */
   complexity: Record<string, number>;
+  /** Contributions per work type in the period (multi-type
+   * contributions count in each of their types). */
+  workTypes: Record<string, number>;
   /** Lines added per language in the period. */
   languages: Record<string, number>;
 }
@@ -82,6 +88,15 @@ export interface UserSeries {
   user: User;
   /** Per-period points, aligned with the periods of the report. */
   points: TeamPoint[];
+  /** Per-period LLM quality-signal and risk-flag tallies, aligned with
+   * `points`; each entry counts the contributions carrying each value
+   * (once per contribution). */
+  signals: {
+    /** Quality signals per period, most frequent first. */
+    quality: CountRow[][];
+    /** Risk flags per period, most frequent first. */
+    risk: CountRow[][];
+  };
   /** Commit counts per analyzed repository, most commits first. */
   repos: UserRepoCount[];
 }
@@ -167,7 +182,7 @@ export interface ChartData {
   periods: PeriodInfo[];
   /** Team-level points, one per period. */
   team: TeamPoint[];
-  /** Per-repository summaries, sorted by commits descending. */
+  /** Per-repository summaries, sorted by contributions descending. */
   repos: RepoSummary[];
   /** Per-user series, one per master user. */
   users: UserSeries[];
@@ -207,47 +222,6 @@ export interface ChartData {
   busFactor?: BusFactor;
 }
 
-/** Short month names for axis labels. */
-const MONTH_NAMES = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/**
- * Formats a period start as a short axis label for the unit: day and
- * week become `Jan 5`, month `2026-01`, quarter `Q1 2026`, year `2026`.
- *
- * @param since - Period start (ISO 8601, UTC).
- * @param unit - The period unit.
- * @returns The label.
- */
-function periodLabel(since: string, unit: PeriodUnit | undefined): string {
-  const date = new Date(since);
-  const year = date.getUTCFullYear();
-  const month = MONTH_NAMES[date.getUTCMonth()];
-  const day = date.getUTCDate();
-  if (unit === 'month') {
-    return `${year}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-  }
-  if (unit === 'quarter') {
-    return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${year}`;
-  }
-  if (unit === 'year') {
-    return String(year);
-  }
-  return `${month} ${day}`;
-}
-
 /**
  * The merged per-period view of the report: for each period, the
  * master users merged across the period's repositories (zeroed when
@@ -261,17 +235,23 @@ function periodUserViews(filtered: FilteredReport): User[][] {
 }
 
 /**
- * The team points of all periods, with the cumulative commit line.
+ * The team points of all periods, with the cumulative commit and
+ * contribution lines.
  *
  * @param views - The per-period user views.
  * @returns One team point per period.
  */
 function teamPoints(views: User[][]): TeamPoint[] {
   const team: TeamPoint[] = [];
-  let cumulative = 0;
+  let cumulativeCommits = 0;
+  let cumulativeContributions = 0;
   for (const users of views) {
-    const point = teamPoint(users, cumulative);
-    cumulative = point.cumulativeCommits;
+    const point = teamPoint(users, {
+      commits: cumulativeCommits,
+      contributions: cumulativeContributions,
+    });
+    cumulativeCommits = point.cumulativeCommits;
+    cumulativeContributions = point.cumulativeContributions;
     team.push(point);
   }
   return team;
@@ -310,8 +290,9 @@ function userRepoCommits(
 
 /**
  * The per-user series, one per master user, aligned with the periods.
- * Each point's cumulative commit count runs across the periods, and
- * each series carries the user's per-repository commit counts.
+ * Each point's cumulative commit and contribution counts run across
+ * the periods, each series carries the user's per-period signal
+ * tallies and per-repository commit counts.
  *
  * @param views - The per-period user views.
  * @param masterUsers - The master user list.
@@ -321,14 +302,29 @@ function userRepoCommits(
 function userSeries(views: User[][], masterUsers: User[], filtered: FilteredReport): UserSeries[] {
   return masterUsers.map((user) => {
     const points: TeamPoint[] = [];
-    let cumulative = 0;
+    const signals: UserSeries['signals'] = { quality: [], risk: [] };
+    let cumulativeCommits = 0;
+    let cumulativeContributions = 0;
     for (const periodUsers of views) {
       const entry = periodUsers.find((candidate) => candidate.name === user.name) ?? user;
-      const point = teamPoint([entry], cumulative);
-      cumulative = point.cumulativeCommits;
+      const point = teamPoint([entry], {
+        commits: cumulativeCommits,
+        contributions: cumulativeContributions,
+      });
+      cumulativeCommits = point.cumulativeCommits;
+      cumulativeContributions = point.cumulativeContributions;
       points.push(point);
+      signals.quality.push(
+        countContributionsByKey(
+          (contribution) => contribution.qualitySignals,
+          entry.llm.contributions,
+        ),
+      );
+      signals.risk.push(
+        countContributionsByKey((contribution) => contribution.riskFlags, entry.llm.contributions),
+      );
     }
-    return { user, points, repos: userRepoCommits(filtered, user) };
+    return { user, points, signals, repos: userRepoCommits(filtered, user) };
   });
 }
 

@@ -103,6 +103,39 @@ describe('parseCompileOptions', () => {
     expect(() => parseCompileOptions({})).toThrow(/report: the report file is required/);
   });
 
+  it('ignores empty and whitespace-only list occurrences', () => {
+    const parsed = parseCompileOptions({
+      report: 'r.json',
+      map: ['', ' '],
+      includeUser: [''],
+      excludeUser: [' '],
+      repo: [''],
+      excludeRepo: [''],
+    });
+
+    expect(parsed.maps).toEqual([]);
+    expect(parsed.includeUsers).toEqual([]);
+    expect(parsed.excludeUsers).toEqual([]);
+    expect(parsed.repos).toEqual([]);
+    expect(parsed.excludeRepos).toEqual([]);
+  });
+
+  it('splits comma-separated occurrences like the environment lists', () => {
+    const parsed = parseCompileOptions({
+      report: 'r.json',
+      excludeUser: ['Bamboo, ci-bot@example.com', ''],
+      repo: ['repo-a, repo-b'],
+    });
+
+    expect(parsed.excludeUsers).toEqual(['Bamboo', 'ci-bot@example.com']);
+    expect(parsed.repos).toEqual(['repo-a', 'repo-b']);
+  });
+
+  it('falls back to the default output when --output is empty', () => {
+    expect(parseCompileOptions({ report: 'r.json', output: '' }).output).toBe('dev-perf-report');
+    expect(parseCompileOptions({ report: 'r.json', output: '  ' }).output).toBe('dev-perf-report');
+  });
+
   it('rejects a malformed map entry with the option name in the error', () => {
     expect(() => parseCompileOptions({ report: 'r.json', map: ['no-equals-sign'] })).toThrow(
       /--map: expected 'email=name'/,

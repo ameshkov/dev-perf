@@ -16,17 +16,23 @@ import {
   table,
 } from './markdown-util.js';
 import { topLanguageOf } from './markdown-user.js';
+import { repoLabel } from './repo-label.js';
 
 /** Chart files embedded in the team dynamics section. */
 const TEAM_CHARTS = [
+  'team-points-per-period.svg',
   'team-contributions-by-size.svg',
   'team-complexity-per-period.svg',
+  'team-work-types-per-period.svg',
+  'team-contributions-per-period.svg',
   'team-commits-per-period.svg',
   'team-lines-per-period.svg',
   'team-active-users.svg',
   'team-languages-per-period.svg',
   'team-risk-per-period.svg',
   'team-quality-per-period.svg',
+  'team-risk-flags-per-contribution.svg',
+  'team-quality-signals-per-contribution.svg',
 ];
 
 /**
@@ -66,18 +72,54 @@ function busiestPeriod(data: ChartData): string | undefined {
 }
 
 /**
- * The key-facts bullets of the executive summary: the analyzed range
- * and repositories, then the busiest period, top contributor, most
- * common risk flag and LLM cost when present.
+ * The repositories fact of the executive summary: one nested bullet
+ * per analyzed repository, displayed as `host/org/repo` by
+ * `repoLabel`.
+ *
+ * @param data - The chart data.
+ * @returns The fact text.
+ */
+function repositoriesFact(data: ChartData): string {
+  const lines = [`Repositories (${data.repos.length}):`];
+  for (const repo of data.repos) {
+    lines.push(`    - ${repoLabel(repo.repo)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The people fact of the executive summary: one nested bullet per
+ * user included in the report.
+ *
+ * @param data - The chart data.
+ * @returns The fact text, or `''` when the report has no users.
+ */
+function peopleFact(data: ChartData): string {
+  if (data.users.length === 0) {
+    return '';
+  }
+  const lines = [`People (${data.users.length}):`];
+  for (const series of data.users) {
+    lines.push(`    - ${series.user.name}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The key-facts bullets of the executive summary: the analyzed range,
+ * the repositories and the people as nested bullet lists, then the
+ * busiest period, top contributor, most common risk flag and LLM cost
+ * when present.
  *
  * @param data - The chart data.
  * @returns The bullets.
  */
 function keyFacts(data: ChartData): string[] {
-  const facts: string[] = [
+  const facts = [
     `Analysis period: ${data.parameters.since} → ${data.parameters.until}`,
-    `Repositories: ${data.repos.map((repo) => repo.repo).join(', ')} (${data.repos.length})`,
-  ];
+    repositoriesFact(data),
+    peopleFact(data),
+  ].filter((fact) => fact !== '');
   const busiest = busiestPeriod(data);
   if (busiest !== undefined) {
     facts.push(busiest);
@@ -205,7 +247,10 @@ function teamDynamics(data: ChartData, assets: ReadonlyMap<string, ChartAsset>):
 
 /**
  * The per-repository section: the summary table and the comparison
- * chart. Omitted entirely for a single repository.
+ * chart. Repositories are displayed with their short `host/org/repo`
+ * label, and the LLM contribution count and points columns appear
+ * only when the report has LLM analysis. Omitted entirely for a
+ * single repository.
  *
  * @param data - The chart data.
  * @param assets - The chart assets by file name.
@@ -215,13 +260,18 @@ function repositoriesSection(data: ChartData, assets: ReadonlyMap<string, ChartA
   if (data.repos.length < 2) {
     return '';
   }
+  const llm = data.parameters.llmEnabled;
+  const headers = llm
+    ? ['Repository', 'Commits', 'Contributions', 'Points', 'Users', 'Top languages']
+    : ['Repository', 'Commits', 'Users', 'Top languages'];
   const sections = [
     '## Repositories',
     table(
-      ['Repository', 'Commits', 'Users', 'Top languages'],
+      headers,
       data.repos.map((repo) => [
-        repo.repo,
+        repoLabel(repo.repo),
         formatInt(repo.commits),
+        ...(llm ? [formatInt(repo.contributions), formatInt(repo.points)] : []),
         formatInt(repo.users),
         repo.topLanguages
           .map((entry) => `${entry.language} (${formatInt(entry.linesAdded)})`)
@@ -293,7 +343,7 @@ function contributorsTable(data: ChartData): string {
         'Files',
         'Active days',
         'Top language',
-        'LLM',
+        'LLM analysis',
         'Repos',
         'Top repo',
       ]

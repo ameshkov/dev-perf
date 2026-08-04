@@ -21,8 +21,37 @@ import {
 const CHART_PREFIX = '../assets/';
 
 /**
- * The complete chart set of one user: the LLM charts (when the report
- * has LLM analysis) followed by the deterministic per-period charts.
+ * The chart blocks of one user for a list of chart file names, in the
+ * given order.
+ *
+ * @param assets - The chart assets by file name.
+ * @param slug - The user's file-name slug.
+ * @param names - The chart names.
+ * @returns The chart blocks.
+ */
+function chartBlocks(
+  assets: ReadonlyMap<string, ChartAsset>,
+  slug: string,
+  names: string[],
+): string[] {
+  const blocks: string[] = [];
+  for (const name of names) {
+    const asset = chartAsset(assets, `${slug}-${name}.svg`);
+    if (asset !== undefined) {
+      blocks.push(chartBlock(asset, CHART_PREFIX));
+    }
+  }
+  return blocks;
+}
+
+/**
+ * The complete chart set of one user: every team-dynamics chart as its
+ * per-user counterpart — points per period, contributions per period
+ * stacked by size, complexity and work type, contributions with the
+ * cumulative line, the whole-range size and complexity distributions
+ * and the work-type share, the deterministic per-period charts, and
+ * the per-period risk-flag and quality-signal charts. The team-level
+ * active-users chart has no per-user counterpart and is skipped.
  *
  * @param series - The user's series.
  * @param data - The chart data.
@@ -39,24 +68,41 @@ function allUserCharts(
   const multiPeriod = data.periods.length > 1;
   if (data.parameters.llmEnabled) {
     if (multiPeriod) {
-      const perPeriod = chartAsset(assets, `${slug}-contributions-per-period.svg`);
-      if (perPeriod !== undefined) {
-        blocks.push(chartBlock(perPeriod, CHART_PREFIX));
-      }
+      blocks.push(
+        ...chartBlocks(assets, slug, [
+          'points-per-period',
+          'contributions-per-period',
+          'contributions-by-complexity-per-period',
+          'work-types-per-period',
+          'contributions-and-cumulative-per-period',
+        ]),
+      );
     }
-    for (const name of ['contributions-by-size', 'contributions-by-complexity']) {
-      const asset = chartAsset(assets, `${slug}-${name}.svg`);
-      if (asset !== undefined) {
-        blocks.push(chartBlock(asset, CHART_PREFIX));
-      }
-    }
+    blocks.push(
+      ...chartBlocks(assets, slug, [
+        'contributions-by-size',
+        'contributions-by-complexity',
+        'work-types',
+      ]),
+    );
   }
   if (multiPeriod) {
-    for (const name of ['commits-per-period', 'lines-per-period', 'languages-per-period']) {
-      const asset = chartAsset(assets, `${slug}-${name}.svg`);
-      if (asset !== undefined) {
-        blocks.push(chartBlock(asset, CHART_PREFIX));
-      }
+    blocks.push(
+      ...chartBlocks(assets, slug, [
+        'commits-per-period',
+        'lines-per-period',
+        'languages-per-period',
+      ]),
+    );
+    if (data.parameters.llmEnabled) {
+      blocks.push(
+        ...chartBlocks(assets, slug, [
+          'risk-per-period',
+          'quality-per-period',
+          'risk-per-contribution',
+          'quality-per-contribution',
+        ]),
+      );
     }
   }
   return blocks;

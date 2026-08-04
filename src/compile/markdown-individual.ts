@@ -26,10 +26,11 @@ const PIE_FILES = [
 ];
 
 /**
- * The per-user charts of the individual section: contributions per
- * period and sizes with LLM analysis, commits and lines without —
- * the two most informative charts, the full set lives in the
- * per-person report.
+ * The per-user charts of the individual section: points per period,
+ * contributions per period stacked by size and complexity, and the
+ * contributions bar-plus-cumulative-line chart with LLM analysis;
+ * commits and lines without — the most informative charts, the full
+ * set lives in the per-person report.
  *
  * @param series - The user's series.
  * @param data - The chart data.
@@ -46,14 +47,17 @@ function userCharts(
   const multiPeriod = data.periods.length > 1;
   if (data.parameters.llmEnabled) {
     if (multiPeriod) {
-      const perPeriod = chartAsset(assets, `${slug}-contributions-per-period.svg`);
-      if (perPeriod !== undefined) {
-        blocks.push(chartBlock(perPeriod));
+      for (const name of [
+        'points-per-period',
+        'contributions-per-period',
+        'contributions-by-complexity-per-period',
+        'contributions-and-cumulative-per-period',
+      ]) {
+        const perPeriod = chartAsset(assets, `${slug}-${name}.svg`);
+        if (perPeriod !== undefined) {
+          blocks.push(chartBlock(perPeriod));
+        }
       }
-    }
-    const sizes = chartAsset(assets, `${slug}-contributions-by-size.svg`);
-    if (sizes !== undefined) {
-      blocks.push(chartBlock(sizes));
     }
   } else if (multiPeriod) {
     const commits = chartAsset(assets, `${slug}-commits-per-period.svg`);
@@ -71,9 +75,8 @@ function userCharts(
 /**
  * The individual dynamics section: one subsection per user, sorted by
  * the master user order, with the summary line, the statistics table,
- * the two main charts, and a link to the full per-person report
- * (which carries the LLM overview, contributions table and risk
- * callout).
+ * the main charts, and a link to the full per-person report (which
+ * carries the LLM overview, contributions table and risk callout).
  *
  * @param data - The chart data.
  * @param assets - The chart assets by file name.

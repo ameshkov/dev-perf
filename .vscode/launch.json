@@ -38,7 +38,11 @@
         "compile",
         "${input:compileReport}",
         "--output",
-        "${workspaceFolder}/output/win-demo"
+        "${input:compileOutput}",
+        "--exclude-user",
+        "${input:compileExcludeUser}",
+        "--map",
+        "${input:compileMap}"
       ],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
@@ -51,6 +55,24 @@
       "type": "promptString",
       "description": "Path to the JSON report file to compile",
       "default": "output/llm-report.json"
+    },
+    {
+      "id": "compileOutput",
+      "type": "promptString",
+      "description": "Output directory for report.md, assets/ and people/",
+      "default": "${workspaceFolder}/output/windows"
+    },
+    {
+      "id": "compileExcludeUser",
+      "type": "promptString",
+      "description": "Users to exclude, comma-separated (leave empty to exclude no one)",
+      "default": "Bamboo"
+    },
+    {
+      "id": "compileMap",
+      "type": "promptString",
+      "description": "Email-to-name mapping to merge identities, email=name (leave empty for none)",
+      "default": "d.argastsev@adguard.com=Danila Argastsev"
     }
   ]
 }

@@ -1,5 +1,9 @@
 # dev-perf
 
+[![CI](https://github.com/ameshkov/dev-perf/actions/workflows/ci.yml/badge.svg)](https://github.com/ameshkov/dev-perf/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/dev-perf)](https://www.npmjs.com/package/dev-perf)
+[![GitHub release](https://img.shields.io/github/v/release/ameshkov/dev-perf)](https://github.com/ameshkov/dev-perf/releases)
+
 `dev-perf` is a CLI tool that measures developer contributions to git repositories
 and produces a JSON report of per-user metrics.
 
@@ -213,17 +217,24 @@ Options:
   --help                 Show help
 ```
 
+List options (`--map`, `--include-user`, `--exclude-user`, `--repo`,
+`--exclude-repo`) accept comma-separated values and ignore empty
+entries, so `--exclude-user "Alice, Bob"` excludes both users and
+`--exclude-user ""` excludes no one. An empty `--output` falls back to
+the `dev-perf-report` default.
+
 `compile` reads the JSON report produced by `report`, filters and
 merges it, renders every chart as an SVG with Vega-Lite (pure Node,
 no browser), and writes `report.md` plus the `assets/` directory into
-the output directory. The report covers the team dynamics — stacked
-contributions by size, contributions vs weighted points, commits with
-a cumulative line, lines added vs removed, active users, top
-languages — the per-repository comparison (with multiple
-repositories), per-user dynamics (contribution sizes and per-period
-contributions, or commits and lines without LLM analysis), and the
-LLM summary (work-type/size/complexity pies, quality and risk
-tallies, per-user cost). Tables carry the totals, per-repository and
+the output directory. The report covers the team dynamics — points
+per period, contributions stacked by size, complexity and work type,
+contributions with a cumulative line, commits with a cumulative
+line, lines added vs removed, active users, top languages — the
+per-repository comparison (with multiple repositories), per-user
+dynamics (per-period points and contributions, or commits and lines
+without LLM analysis), and the LLM summary (work-type/size/complexity
+pies, quality and risk tallies, per-user cost). Tables carry the
+totals, per-repository and
 per-contributor rankings, contributions, and the appendix documents
 parameters, applied filters, email mappings, and size weights
 (`xs=1, s=2, m=3, l=5, xl=8` for the weighted points). Time-based

@@ -280,12 +280,29 @@ function flagName(path: PropertyKey[]): string {
 }
 
 /**
+ * Normalizes one raw list option into its entries: the option is
+ * repeatable, and each occurrence may carry a comma-separated list
+ * (mirroring the environment-variable form); entries are trimmed and
+ * empty ones are dropped, so an empty or whitespace-only occurrence
+ * contributes nothing.
+ *
+ * @param entries - The raw occurrences of the option.
+ * @returns The non-empty list entries.
+ */
+function normalizeList(entries: string[] | undefined): string[] {
+  return (entries ?? []).flatMap((entry) => splitList(entry));
+}
+
+/**
  * Validates raw compile options (as parsed by commander) against
  * `compileOptionsSchema` and returns the validated options with
  * defaults applied. The raw list options (`map`, `includeUser`,
  * `excludeUser`, `repo`, `excludeRepo`) are normalized to the schema's
- * plural field names, and `--map` entries are parsed into email-name
- * pairs, so the schema sees the parsed shape.
+ * plural field names — each occurrence is split on commas, trimmed,
+ * and emptied entries are dropped, so `--exclude-user ""` or `--map
+ * ""` select nothing — and `--map` entries are parsed into email-name
+ * pairs, so the schema sees the parsed shape. An empty `--output`
+ * falls back to the `dev-perf-report` default.
  *
  * @param input - Raw options, including the `report` file.
  * @returns The validated options.
@@ -297,14 +314,15 @@ export function parseCompileOptions(input: unknown): CompileOptions {
   if (raw.report === undefined || raw.report === '') {
     throw new Error('Invalid options:\nreport: the report file is required');
   }
-  const maps = (raw.map ?? []).map((entry) => parseEmailMapEntry(entry, '--map'));
+  const maps = normalizeList(raw.map).map((entry) => parseEmailMapEntry(entry, '--map'));
   const normalized = {
     ...raw,
     maps,
-    includeUsers: raw.includeUser ?? [],
-    excludeUsers: raw.excludeUser ?? [],
-    repos: raw.repo ?? [],
-    excludeRepos: raw.excludeRepo ?? [],
+    output: raw.output === undefined || raw.output.trim() === '' ? undefined : raw.output,
+    includeUsers: normalizeList(raw.includeUser),
+    excludeUsers: normalizeList(raw.excludeUser),
+    repos: normalizeList(raw.repo),
+    excludeRepos: normalizeList(raw.excludeRepo),
   };
   const result = compileOptionsSchema.safeParse(normalized);
   if (!result.success) {

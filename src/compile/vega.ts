@@ -225,11 +225,8 @@ export function barLineSpec(
 }
 
 /**
- * A single-series bar chart: one bar per category. Superseded in the
- * chart inventory by the stacked and bar-plus-line variants.
- *
- * @internal Exported for tests only (`vega.test.ts`); not part of the
- * public module API.
+ * A single-series bar chart: one bar per category. Used for the
+ * per-period points charts.
  *
  * @param title - The chart title.
  * @param categories - The category order.

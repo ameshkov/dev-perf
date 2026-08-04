@@ -12,32 +12,48 @@ import { SIZE_WEIGHTS } from './chart-data.js';
  * Extracts the contribution counts of one user entry.
  *
  * @param user - The user entry.
- * @returns The counts per size and complexity, and the weighted total.
+ * @returns The counts per size, complexity and work type, and the
+ * weighted total.
  */
 function contributionCounts(user: User): {
   sizes: Record<ContributionSize, number>;
   complexity: Record<string, number>;
+  workTypes: Record<string, number>;
   weightedPoints: number;
 } {
   const sizes: Record<ContributionSize, number> = { xs: 0, s: 0, m: 0, l: 0, xl: 0 };
   const complexity: Record<string, number> = {};
+  const workTypes: Record<string, number> = {};
   let weightedPoints = 0;
   for (const contribution of user.llm.contributions) {
     sizes[contribution.size] += 1;
     complexity[contribution.complexity] = (complexity[contribution.complexity] ?? 0) + 1;
     weightedPoints += SIZE_WEIGHTS[contribution.size];
+    for (const type of contribution.types) {
+      workTypes[type] = (workTypes[type] ?? 0) + 1;
+    }
   }
-  return { sizes, complexity, weightedPoints };
+  return { sizes, complexity, workTypes, weightedPoints };
+}
+
+/**
+ * The cumulative counters carried over from the previous period.
+ */
+interface Cumulative {
+  /** Cumulative commits up to the previous period. */
+  commits: number;
+  /** Cumulative contributions up to the previous period. */
+  contributions: number;
 }
 
 /**
  * Builds one team point from the merged users of a period.
  *
  * @param users - The period's merged users (master order).
- * @param previous - The previous period's cumulative commits.
+ * @param previous - The previous period's cumulative counters.
  * @returns The team point.
  */
-export function teamPoint(users: User[], previous: number): TeamPoint {
+export function teamPoint(users: User[], previous: Cumulative): TeamPoint {
   let commits = 0;
   let linesAdded = 0;
   let linesRemoved = 0;
@@ -46,6 +62,7 @@ export function teamPoint(users: User[], previous: number): TeamPoint {
   let weightedPoints = 0;
   const sizes: Record<ContributionSize, number> = { xs: 0, s: 0, m: 0, l: 0, xl: 0 };
   const complexity: Record<string, number> = {};
+  const workTypes: Record<string, number> = {};
   const languages: Record<string, number> = {};
   for (const user of users) {
     commits += user.deterministic.commits;
@@ -63,20 +80,25 @@ export function teamPoint(users: User[], previous: number): TeamPoint {
     for (const [level, count] of Object.entries(counts.complexity)) {
       complexity[level] = (complexity[level] ?? 0) + count;
     }
+    for (const [type, count] of Object.entries(counts.workTypes)) {
+      workTypes[type] = (workTypes[type] ?? 0) + count;
+    }
     for (const [language, contribution] of Object.entries(user.deterministic.languages)) {
       languages[language] = (languages[language] ?? 0) + contribution.linesAdded;
     }
   }
   return {
     commits,
-    cumulativeCommits: previous + commits,
+    cumulativeCommits: previous.commits + commits,
     linesAdded,
     linesRemoved,
     activeUsers,
     contributions,
+    cumulativeContributions: previous.contributions + contributions,
     weightedPoints,
     sizes,
     complexity,
+    workTypes,
     languages,
   };
 }
@@ -145,6 +167,17 @@ export function countContributionsByKey(
  */
 export function allContributions(users: User[]): Contribution[] {
   return users.flatMap((user) => user.llm.contributions);
+}
+
+/**
+ * The size-weighted points of LLM contributions: the sum of each
+ * contribution's size weight (xs=1, s=2, m=3, l=5, xl=8).
+ *
+ * @param contributions - The contributions.
+ * @returns The weighted points.
+ */
+export function weightedPointsOf(contributions: Contribution[]): number {
+  return contributions.reduce((sum, contribution) => sum + SIZE_WEIGHTS[contribution.size], 0);
 }
 
 /**

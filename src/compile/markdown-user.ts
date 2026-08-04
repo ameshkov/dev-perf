@@ -73,7 +73,7 @@ export function statisticsTable(series: UserSeries, data: ChartData): string {
         'Weighted points (LLM)',
         formatInt(series.points.reduce((sum, point) => sum + point.weightedPoints, 0)),
       ],
-      ['LLM', user.llm.status],
+      ['LLM analysis', user.llm.status],
     );
   }
   return table(['Metric', 'Value'], rows);
