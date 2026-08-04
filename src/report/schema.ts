@@ -326,11 +326,18 @@ export type LlmStatus = z.infer<typeof llmStatusSchema>;
 
 /**
  * Token usage of an LLM analysis; consumed by the LLM
- * layer (`src/llm/analyze.ts`).
+ * layer (`src/llm/analyze.ts`). The opencode event stream reports
+ * non-overlapping counts: `input` excludes the tokens served from the
+ * prompt cache, which `cacheRead` carries separately (openai-compatible
+ * providers subtract the cached tokens from the reported prompt tokens;
+ * Anthropic reports them as separate fields). `cacheRead` defaults to 0
+ * so reports written before cache tracking stay valid.
  */
 export const tokenUsageSchema = z.object({
-  /** Input tokens. */
+  /** Non-cached input tokens. */
   input: z.number().int().nonnegative(),
+  /** Input tokens read from the prompt cache. */
+  cacheRead: z.number().int().nonnegative().default(0),
   /** Output tokens. */
   output: z.number().int().nonnegative(),
 });

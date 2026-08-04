@@ -33,7 +33,7 @@ function fixtureReport() {
                     fixtureContribution({ title: 'A1', size: 'l' }),
                     fixtureContribution({ title: 'A2', size: 'xs' }),
                   ],
-                  tokenUsage: { input: 50, output: 10 },
+                  tokenUsage: { input: 50, cacheRead: 20, output: 10 },
                   estimatedCostUsd: 0.005,
                 },
               },
@@ -178,7 +178,7 @@ describe('mergeUsers', () => {
       'A1',
       'A2',
     ]);
-    expect(merged.llm.tokenUsage).toEqual({ input: 200, output: 40 });
+    expect(merged.llm.tokenUsage).toEqual({ input: 200, cacheRead: 100, output: 40 });
     expect(merged.llm.estimatedCostUsd).toBeCloseTo(0.02);
     expect(merged.emails).toEqual(['alice@example.com']);
   });

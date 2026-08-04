@@ -5,6 +5,7 @@
  * (`charts-user.ts`) use.
  */
 import type { TopLevelSpec } from 'vega-lite';
+import type { CountRow } from './chart-data.js';
 import type { ChartRow } from './vega.js';
 
 /** One chart of the compiled report. */
@@ -96,4 +97,24 @@ export function lineRows(
     }
   }
   return rows;
+}
+
+/**
+ * The top rows of a counted-value list, collapsed into an `other`
+ * bucket: the first `n` rows keep their counts, every remaining row is
+ * summed into one `{ key: 'other' }` row. With at most `n` rows, the
+ * list is returned unchanged — an empty `other` bucket is never
+ * emitted. The input must be sorted by value descending, as the
+ * tallies of `chart-data.ts` are.
+ *
+ * @param rows - The counted rows, sorted by value descending.
+ * @param n - The number of top rows to keep.
+ * @returns The collapsed rows.
+ */
+export function topWithOther(rows: CountRow[], n: number): CountRow[] {
+  if (rows.length <= n) {
+    return rows;
+  }
+  const other = rows.slice(n).reduce((sum, row) => sum + row.value, 0);
+  return [...rows.slice(0, n), { key: 'other', value: other }];
 }

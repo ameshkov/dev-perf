@@ -22,6 +22,7 @@ describe('cliOptionsSchema', () => {
       expect(result.data.llm).toBe(true);
       expect(result.data.limitContext).toBe(262144);
       expect(result.data.limitOutput).toBe(65536);
+      expect(result.data.llmRetries).toBe(2);
       expect(result.data.refresh).toBeUndefined();
     }
   });
@@ -150,6 +151,33 @@ describe('cliOptionsSchema', () => {
     }
   });
 
+  it('coerces llm-retries strings, accepts zero, and rejects invalid values', () => {
+    const coerced = cliOptionsSchema.safeParse({ ...validOptions(), llmRetries: '4' });
+    expect(coerced.success).toBe(true);
+    if (coerced.success) {
+      expect(coerced.data.llmRetries).toBe(4);
+    }
+
+    const zero = cliOptionsSchema.safeParse({ ...validOptions(), llmRetries: 0 });
+    expect(zero.success).toBe(true);
+    if (zero.success) {
+      expect(zero.data.llmRetries).toBe(0);
+    }
+
+    for (const value of [-1, 1.5, 'abc']) {
+      const options = validOptions();
+      options.llmRetries = value;
+
+      const result = cliOptionsSchema.safeParse(options);
+
+      expect(result.success, `expected llmRetries ${String(value)} to be rejected`).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('llmRetries');
+      }
+    }
+  });
+
   it('validates limit-output independently', () => {
     const options = validOptions();
     options.limitOutput = -1;
@@ -232,6 +260,7 @@ describe('resolveRawOptions', () => {
         DEV_PERF_API_KEY: 'env-secret',
         DEV_PERF_LIMIT_CONTEXT: '128',
         DEV_PERF_LIMIT_OUTPUT: '64',
+        DEV_PERF_LLM_RETRIES: '3',
       },
     );
 
@@ -246,6 +275,7 @@ describe('resolveRawOptions', () => {
       apiKey: 'env-secret',
       limitContext: '128',
       limitOutput: '64',
+      llmRetries: '3',
     });
   });
 
@@ -257,6 +287,12 @@ describe('resolveRawOptions', () => {
     );
 
     expect(merged.unit).toBe('week');
+  });
+
+  it('lets the flag win over DEV_PERF_LLM_RETRIES', () => {
+    const merged = resolveRawOptions([], { llmRetries: '1' }, { DEV_PERF_LLM_RETRIES: '3' });
+
+    expect(merged.llmRetries).toBe('1');
   });
 
   it('parses boolean environment variables, inverting DEV_PERF_NO_LLM', () => {
@@ -319,6 +355,7 @@ describe('parseCliOptions', () => {
     expect(options.llm).toBe(false);
     expect(options.limitContext).toBe(262144);
     expect(options.limitOutput).toBe(2048);
+    expect(options.llmRetries).toBe(2);
     expect(options.repos).toEqual(['https://github.com/org/repo.git']);
   });
 

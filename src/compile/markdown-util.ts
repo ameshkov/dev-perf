@@ -27,6 +27,54 @@ export function formatUsd(value: number): string {
 }
 
 /**
+ * Formats a token count in compact human-readable form: plain numbers
+ * below 1k, `1.2k` in the thousands, `5M` in the millions.
+ *
+ * @param value - The token count.
+ * @returns The formatted text, e.g. `1.2k`.
+ */
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) {
+    return `${formatCompact(value / 1_000_000)}M`;
+  }
+  if (value >= 1_000) {
+    return `${formatCompact(value / 1_000)}k`;
+  }
+  return String(value);
+}
+
+/**
+ * Renders a scaled token count without a trailing zero fraction:
+ * `5` not `5.0`.
+ *
+ * @param value - The scaled count.
+ * @returns The formatted text.
+ */
+function formatCompact(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+/**
+ * Formats the LLM usage summary line: the non-cached input, cached
+ * input and output token counts plus the estimated cost, e.g.
+ * `1.2k in / 5M cached in / 1M out / $0.0123`.
+ *
+ * @param inputTokens - Non-cached input tokens.
+ * @param cacheReadTokens - Input tokens read from the prompt cache.
+ * @param outputTokens - Output tokens.
+ * @param costUsd - Estimated cost in USD.
+ * @returns The summary text.
+ */
+export function formatLlmUsage(
+  inputTokens: number,
+  cacheReadTokens: number,
+  outputTokens: number,
+  costUsd: number,
+): string {
+  return `${formatTokens(inputTokens)} in / ${formatTokens(cacheReadTokens)} cached in / ${formatTokens(outputTokens)} out / ${formatUsd(costUsd)}`;
+}
+
+/**
  * Escapes a markdown table cell: pipes are backslash-escaped and
  * line breaks become spaces.
  *
@@ -58,10 +106,12 @@ export function table(headers: string[], rows: string[][]): string {
  * followed by the caption as an italic line.
  *
  * @param asset - The chart asset.
+ * @param prefix - The path prefix of the chart file, `assets/` by
+ * default; per-person reports pass `../assets/`.
  * @returns The markdown block.
  */
-export function chartBlock(asset: ChartAsset): string {
-  return `![${asset.caption}](assets/${asset.file})\n\n*${asset.caption}*`;
+export function chartBlock(asset: ChartAsset, prefix = 'assets/'): string {
+  return `![${asset.caption}](${prefix}${asset.file})\n\n*${asset.caption}*`;
 }
 
 /**

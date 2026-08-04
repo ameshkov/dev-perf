@@ -28,7 +28,7 @@
 
 ## 2. High-level architecture
 
-```
+```text
 ┌─────────┐   ┌──────────────────┐   ┌─────────────────────┐   ┌───────────────┐
 │  CLI    │──▶│ Repo manager     │──▶│ Deterministic       │──▶│ Report        │
 │ (comm.) │   │ clone → cache    │   │ analyzer (git data) │   │ assembler     │──▶ JSON
@@ -56,7 +56,7 @@ Pipeline phases, in order:
 
 ## 3. CLI
 
-```
+```text
 dev-perf [options] <repo...>
 
 Arguments:
@@ -110,7 +110,7 @@ layer, and the LLM structured-output schema so nothing can drift.
   `~/.cache/dev-perf`).
 - Layout:
 
-```
+```text
 .dev-perf/
 └── cache/
     └── <sha256(repoUrl).slice(0,16)>/
@@ -136,7 +136,7 @@ layer, and the LLM structured-output schema so nothing can drift.
 
 - Commit list with metadata and per-file line counts in one pass:
 
-  ```
+  ```sh
   git log --since=<since> --until=<until> \
     --pretty=format:%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e \
     --numstat --no-renames
@@ -222,13 +222,13 @@ agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sd
   `client.auth.set({ path: { id: <provider> }, body: { type: "api", key } })`
   rather than stored in any file.
 - Before starting the server, the tool writes into the clone:
-  - `opencode.json` — provider (base URL) + model, permissions (read-only for the
-    repo, deny writes), and a `limit` block;
-  - `.opencode/tools/devperf_report.ts` — the report-capture tool, registered via
-    a plugin (§6.5);
-  - `.opencode/agents/devperf-analyst.md` — the analysis agent, following
-    opencode's markdown agent spec: YAML frontmatter (description, mode,
-    permissions) and the prompt as the body (§6.4).
+    - `opencode.json` — provider (base URL) + model, permissions (read-only for
+      the repo, deny writes), and a `limit` block;
+    - `.opencode/tools/devperf_report.ts` — the report-capture tool, registered
+      via a plugin (§6.5);
+    - `.opencode/agents/devperf-analyst.md` — the analysis agent, following
+      opencode's markdown agent spec: YAML frontmatter (description, mode,
+      permissions) and the prompt as the body (§6.4).
 - **Token limits** — the generated `opencode.json` caps the model window so a
   single analysis cannot blow the context:
 
@@ -264,16 +264,23 @@ Analysis runs through a dedicated `devperf-analyst` agent defined by an
 opencode **markdown agent file** (`src/llm/agents/devperf-analyst.md`, copied
 into the clone's `.opencode/agents/` where the server discovers it — the file
 name is the agent name). The file follows opencode's agent spec: YAML
-frontmatter with the description, `mode: primary`, and the permission surface;
-the body is the prompt. Permissions are deny-all with a short allow-list: a
-leading `"*": deny` (opencode matches permission rules last-wins) followed by
-the read tools (`read`, `glob`, `grep`, `list`), `bash` restricted to read-only
-git commands (`git show`, `git log`, `git diff`, `git blame`, `git status` —
-git is a prerequisite of dev-perf, so all history inspection goes through
-bash), and the `devperf_report` capture tool. Everything else — edits, task
-delegation, todos, questions, web access, skills, LSP, doom-loop recovery,
-external directories — is denied by the wildcard. Sessions pass
-`agent: devperf-analyst` on every prompt, context injection included.
+frontmatter with the description, `mode: primary`, and the permission
+surface; the body is the prompt. Permissions are deny-all with a short
+allow-list: a leading `"*": deny` (opencode matches permission rules
+last-wins) followed by the read tools (`read`, `glob`, `grep`, `list`),
+`bash` restricted to read-only commands — git history and ref
+inspection (`git show`, `git log`, `git diff`, `git blame`,
+`git status`, `git branch`, `git tag`, `git rev-parse`,
+`git rev-list`, `git shortlog`, `git ls-tree`, `git ls-files`,
+`git grep`, `git describe`, `git merge-base`, `git cat-file`; git is a
+prerequisite of dev-perf, so all history inspection goes through
+bash), file inspection (`ls`, `cat`, `tail`, `head`, `wc`, `file`,
+`grep`, `rg`), and text processing (`sort`, `uniq`, `cut`, `diff`,
+`echo`) — and the `devperf_report` capture tool. Everything
+else — edits, task delegation, todos, questions, web access, skills,
+LSP, doom-loop recovery, external directories — is denied by the
+wildcard. Sessions pass `agent: devperf-analyst` on every prompt,
+context injection included.
 
 ### 6.5 Structured output via the report tool
 
@@ -303,18 +310,18 @@ have descriptions to guide the model):
 - `contributions` — the user's changes split into a **list of distinct
   contributions** (one feature, one bug fix, one refactor, …), instead of trying
   to fit everything into a single summary. Each entry:
-  - `title` — short name of the contribution;
-  - `summary` — what was done and how;
-  - `types` — `["feature" | "bugfix" | "refactor" | "test" | "docs" | "tooling" | "chore" | "security"]`;
-  - `complexity` — `low | medium | high` plus `complexityReasoning`;
-  - `size` — `xs | s | m | l | xl` (t-shirt sizing) plus `sizeReasoning`;
-  - `areas` — repo areas/dirs touched by this contribution;
-  - `commits` — shas grouped into this contribution;
-  - `qualitySignals` — fixed enum of observable quality signals
-    (tests-added, docs-updated, test-coverage-expanded, changelog-updated, …);
-  - `riskFlags` — fixed enum of observable risk flags (no-tests, large-diff,
-    breaking-change, …). Limited to what is observable in the repository:
-    review status, for instance, cannot be determined from git history alone.
+    - `title` — short name of the contribution;
+    - `summary` — what was done and how;
+    - `types` — `["feature" | "bugfix" | "refactor" | "test" | "docs" | "tooling" | "chore" | "security"]`;
+    - `complexity` — `low | medium | high` plus `complexityReasoning`;
+    - `size` — `xs | s | m | l | xl` (t-shirt sizing) plus `sizeReasoning`;
+    - `areas` — repo areas/dirs touched by this contribution;
+    - `commits` — shas grouped into this contribution;
+    - `qualitySignals` — fixed enum of observable quality signals
+      (tests-added, docs-updated, test-coverage-expanded, changelog-updated, …);
+    - `riskFlags` — fixed enum of observable risk flags (no-tests, large-diff,
+      breaking-change, …). Limited to what is observable in the repository:
+      review status, for instance, cannot be determined from git history alone.
 
 Changes of different complexity or size are reported as separate contributions
 rather than averaged into one description.
@@ -329,8 +336,10 @@ rather than averaged into one description.
   so each file is self-describing; the filename hash encodes the same
   components.
 - `--no-llm` produces the deterministic-only report (also the CI mode).
-- The report includes `tokenUsage` (input/output) and an estimated cost per user
-  from the SDK event stream, so runaway costs are visible.
+- The report includes `tokenUsage` (non-cached input, cached read, and output
+  tokens — opencode reports non-overlapping counts, so `input` excludes the
+  cached reads) and an estimated cost per user from the SDK event stream, so
+  runaway costs are visible.
 
 ## 7. Report format
 
@@ -340,7 +349,7 @@ schema v2: repository entries are always wrapped in a `periods` array. Without
 content, nested one level deeper. With `--unit`, each period is a full
 per-repository report over its bounds (UTC instants, `until` inclusive).
 
-```
+```json
 {
   schemaVersion: 2,
   generatedAt: ISO,
@@ -366,7 +375,7 @@ per-repository report over its bounds (UTC instants, `until` inclusive).
                 contributions: [ { title, summary, types, complexity,
                   complexityReasoning, size, sizeReasoning, areas, commits,
                   qualitySignals, riskFlags } ],
-                tokenUsage?, estimatedCostUsd?, error?
+                tokenUsage: { input, cacheRead, output }?, estimatedCostUsd?, error?
               }
             }
           ]
@@ -387,7 +396,7 @@ period for active users only (cache keyed by period bounds, §6.6).
 
 ## 8. Project layout
 
-```
+```text
 dev-perf/
 ├── package.json / tsconfig.json        # TypeScript, ESM, Node ≥ 20
 ├── README.md

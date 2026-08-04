@@ -168,7 +168,7 @@ function fixtureLlm(llmEnabled: boolean, llm: Partial<LlmAnalysis> = {}): LlmAna
     status: 'completed',
     overview: `Overview of the work in the period.`,
     contributions: [fixtureContribution()],
-    tokenUsage: { input: 100, output: 20 },
+    tokenUsage: { input: 100, cacheRead: 50, output: 20 },
     estimatedCostUsd: 0.01,
     ...llm,
   };

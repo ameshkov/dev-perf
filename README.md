@@ -51,6 +51,9 @@ Options:
   --api-key <key>        Provider API key (required for LLM; or DEV_PERF_API_KEY)
   --limit-context <n>    Max context tokens for LLM analysis (default: 262144)
   --limit-output <n>     Max output tokens for LLM analysis (default: 65536)
+  --llm-retries <n>      Retry a failed LLM analysis up to <n> more times,
+                         restarting the opencode server between attempts
+                         (default: 2)
   --verbose              Verbose logging
   --help                 Show help
 ```
@@ -71,6 +74,13 @@ LLM analysis results are cached in the cache directory
 (`.dev-perf/cache/<hash>/llm/`), keyed by repo, user, date range, model and
 limits — a rerun with the same parameters reuses them and makes no new calls.
 `--refresh` forces a re-clone and invalidates the cached LLM results.
+
+A failed LLM analysis is retried automatically instead of failing the run:
+`--llm-retries <n>` (default 2) restarts the failed repository's opencode
+server — fully stopped, and force-killed with its whole process tree when it
+ignores SIGTERM — and re-runs the analysis with a fresh server, reusing the
+already-cached per-user results so only the failed sessions run again.
+`--llm-retries 0` fails fast on the first failure.
 
 Cost visibility: the report records, per user, the `tokenUsage` (input/output
 tokens) and the `estimatedCostUsd` from the provider's event stream, so runaway
@@ -265,6 +275,7 @@ exported in the shell are never overridden by `.env`.
 | `--api-key <key>` | `DEV_PERF_API_KEY` | Required for LLM analysis |
 | `--limit-context <n>` | `DEV_PERF_LIMIT_CONTEXT` | Default: 262144 |
 | `--limit-output <n>` | `DEV_PERF_LIMIT_OUTPUT` | Default: 65536 |
+| `--llm-retries <n>` | `DEV_PERF_LLM_RETRIES` | Retries for a failed LLM analysis; default 2 |
 | `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
 
 Every `compile` option has a `DEV_PERF_COMPILE_*` variable:
@@ -305,7 +316,9 @@ repository and produces per-user `llm` entries: `status: "completed"`
 with the assessed work types, complexity, areas, quality signals and
 risk flags, plus token usage and estimated cost. LLM failures (e.g. a
 provider rejecting the key, or a session that never calls the report
-tool) fail the run fast with a clear message and no report is written.
+tool) are retried with a restarted server (`--llm-retries`, default 2)
+and fail the run fast with a clear message and no report is written
+only when every attempt fails.
 `dev-perf compile <report>` renders the JSON report into a markdown
 report with Vega-Lite SVG charts, with repo/user selection and email
 mapping. See [docs/design.md](docs/design.md) for the full design.

@@ -9,7 +9,13 @@
 import type { ContributionSize, PeriodUnit, User } from '../report/index.js';
 import type { FilteredReport } from './filter.js';
 import { combinePeriodUsers } from './filter.js';
-import { allContributions, computeBusFactor, countByKey, teamPoint } from './aggregate.js';
+import {
+  allContributions,
+  computeBusFactor,
+  countByKey,
+  countContributionsByKey,
+  teamPoint,
+} from './aggregate.js';
 import { repoSummaries } from './repos.js';
 import type { RepoSummary } from './repos.js';
 
@@ -56,8 +62,18 @@ export interface TeamPoint {
   weightedPoints: number;
   /** Contributions per size in the period. */
   sizes: Record<ContributionSize, number>;
+  /** Contributions per complexity level in the period. */
+  complexity: Record<string, number>;
   /** Lines added per language in the period. */
   languages: Record<string, number>;
+}
+
+/** One repository's commit count of a user. */
+interface UserRepoCount {
+  /** The repository as given on the command line. */
+  repo: string;
+  /** The user's commits in the repository across all periods. */
+  commits: number;
 }
 
 /** Per-user series: totals plus one point per period. */
@@ -66,6 +82,8 @@ export interface UserSeries {
   user: User;
   /** Per-period points, aligned with the periods of the report. */
   points: TeamPoint[];
+  /** Commit counts per analyzed repository, most commits first. */
+  repos: UserRepoCount[];
 }
 
 /** One counted categorical value, e.g. a pie slice. */
@@ -80,8 +98,10 @@ export interface CountRow {
 interface CostRow {
   /** The user's display name. */
   name: string;
-  /** Input tokens across all analyses of the user. */
+  /** Non-cached input tokens across all analyses of the user. */
   inputTokens: number;
+  /** Input tokens read from the prompt cache. */
+  cacheReadTokens: number;
   /** Output tokens across all analyses of the user. */
   outputTokens: number;
   /** Estimated cost in USD. */
@@ -108,6 +128,12 @@ interface TeamTotals {
   activeUsers: number;
   /** Estimated LLM cost in USD. */
   costUsd: number;
+  /** Non-cached input tokens across all LLM analyses. */
+  inputTokens: number;
+  /** Input tokens read from the prompt cache. */
+  cacheReadTokens: number;
+  /** Output tokens across all LLM analyses. */
+  outputTokens: number;
 }
 
 /** The fewest users covering half of the commits. */
@@ -156,12 +182,22 @@ export interface ChartData {
     /** Contributions per complexity level. */
     complexity: CountRow[];
   };
-  /** Aggregate LLM quality-signal and risk-flag tallies. */
+  /** Aggregate LLM quality-signal and risk-flag tallies: how many
+   * contributions carry each value (counted once per contribution). */
   tallies: {
     /** Quality signals, most frequent first. */
     quality: CountRow[];
     /** Risk flags, most frequent first. */
     risk: CountRow[];
+  };
+  /** Per-period LLM quality-signal and risk-flag tallies, aligned
+   * with `periods`; each entry counts the contributions carrying
+   * each value (once per contribution). */
+  signals: {
+    /** Quality signals per period, most frequent first. */
+    quality: CountRow[][];
+    /** Risk flags per period, most frequent first. */
+    risk: CountRow[][];
   };
   /** LLM cost per user. */
   cost: CostRow[];
@@ -242,20 +278,80 @@ function teamPoints(views: User[][]): TeamPoint[] {
 }
 
 /**
+ * The per-repository commit counts of one master user: commits across
+ * all periods, grouped by repository, most commits first (ties broken
+ * by repository name).
+ *
+ * @param filtered - The filtered report.
+ * @param user - The master user.
+ * @returns The repository counts, one entry per repository.
+ */
+function userRepoCommits(
+  filtered: FilteredReport,
+  user: User,
+): Array<{ repo: string; commits: number }> {
+  const totals = new Map<string, number>();
+  for (const period of filtered.report.periods) {
+    for (const repository of period.repositories) {
+      for (const entry of repository.users) {
+        if (entry.name === user.name) {
+          totals.set(
+            repository.repo,
+            (totals.get(repository.repo) ?? 0) + entry.deterministic.commits,
+          );
+        }
+      }
+    }
+  }
+  return [...totals.entries()]
+    .map(([repo, commits]) => ({ repo, commits }))
+    .sort((a, b) => b.commits - a.commits || a.repo.localeCompare(b.repo));
+}
+
+/**
  * The per-user series, one per master user, aligned with the periods.
+ * Each point's cumulative commit count runs across the periods, and
+ * each series carries the user's per-repository commit counts.
  *
  * @param views - The per-period user views.
  * @param masterUsers - The master user list.
+ * @param filtered - The filtered report, for the per-repository counts.
  * @returns The series.
  */
-function userSeries(views: User[][], masterUsers: User[]): UserSeries[] {
+function userSeries(views: User[][], masterUsers: User[], filtered: FilteredReport): UserSeries[] {
   return masterUsers.map((user) => {
-    const points = views.map((periodUsers) => {
+    const points: TeamPoint[] = [];
+    let cumulative = 0;
+    for (const periodUsers of views) {
       const entry = periodUsers.find((candidate) => candidate.name === user.name) ?? user;
-      return teamPoint([entry], 0);
-    });
-    return { user, points };
+      const point = teamPoint([entry], cumulative);
+      cumulative = point.cumulativeCommits;
+      points.push(point);
+    }
+    return { user, points, repos: userRepoCommits(filtered, user) };
   });
+}
+
+/**
+ * The per-period quality-signal and risk-flag tallies, aligned with
+ * the periods: each entry counts the contributions of one period's
+ * merged users that carry each value.
+ *
+ * @param views - The per-period user views.
+ * @returns The tallies, one entry per period.
+ */
+function periodSignals(views: User[][]): { quality: CountRow[][]; risk: CountRow[][] } {
+  return {
+    quality: views.map((users) =>
+      countContributionsByKey(
+        (contribution) => contribution.qualitySignals,
+        allContributions(users),
+      ),
+    ),
+    risk: views.map((users) =>
+      countContributionsByKey((contribution) => contribution.riskFlags, allContributions(users)),
+    ),
+  };
 }
 
 /**
@@ -289,6 +385,7 @@ function costRows(users: User[]): CostRow[] {
     .map((user) => ({
       name: user.name,
       inputTokens: user.llm.tokenUsage?.input ?? 0,
+      cacheReadTokens: user.llm.tokenUsage?.cacheRead ?? 0,
       outputTokens: user.llm.tokenUsage?.output ?? 0,
       costUsd: user.llm.estimatedCostUsd ?? 0,
     }))
@@ -314,6 +411,9 @@ function teamTotalsOf(team: TeamPoint[], users: User[], cost: CostRow[]): TeamTo
     filesTouched: users.reduce((sum, user) => sum + user.deterministic.filesTouched, 0),
     activeUsers: users.filter((user) => user.deterministic.commits > 0).length,
     costUsd: cost.reduce((sum, row) => sum + row.costUsd, 0),
+    inputTokens: cost.reduce((sum, row) => sum + row.inputTokens, 0),
+    cacheReadTokens: cost.reduce((sum, row) => sum + row.cacheReadTokens, 0),
+    outputTokens: cost.reduce((sum, row) => sum + row.outputTokens, 0),
   };
 }
 
@@ -334,7 +434,7 @@ export function buildChartData(filtered: FilteredReport): ChartData {
     label: periodLabel(period.since, report.parameters.unit),
   }));
   const team = teamPoints(views);
-  const users = userSeries(views, filtered.users);
+  const users = userSeries(views, filtered.users, filtered);
   const contributions = allContributions(filtered.users);
   const cost = costRows(filtered.users);
   return {
@@ -358,9 +458,13 @@ export function buildChartData(filtered: FilteredReport): ChartData {
       complexity: countByKey((contribution) => [contribution.complexity], contributions),
     },
     tallies: {
-      quality: countByKey((contribution) => contribution.qualitySignals, contributions),
-      risk: countByKey((contribution) => contribution.riskFlags, contributions),
+      quality: countContributionsByKey(
+        (contribution) => contribution.qualitySignals,
+        contributions,
+      ),
+      risk: countContributionsByKey((contribution) => contribution.riskFlags, contributions),
     },
+    signals: periodSignals(views),
     cost,
     totals: teamTotalsOf(team, filtered.users, cost),
     busFactor: computeBusFactor(filtered.users),

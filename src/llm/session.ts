@@ -57,7 +57,7 @@ export interface PromptOptions {
 
 /** Token usage and cost accumulated for one session. */
 export interface SessionUsage {
-  /** Input/output token counts. */
+  /** Input (non-cached), cached-read and output token counts. */
   tokenUsage: TokenUsage;
   /** Estimated cost in USD reported by the provider. */
   estimatedCostUsd: number;
@@ -492,7 +492,10 @@ export async function collectSessionUsage(
   }
 
   /**
-   * Adds one completed step's tokens and cost to its session.
+   * Adds one completed step's tokens and cost to its session. The
+   * step's tokens are non-overlapping as opencode reports them:
+   * `input` excludes the cached read tokens carried in
+   * `tokens.cache.read`.
    *
    * @param part - The `step-finish` part carrying usage data.
    */
@@ -501,6 +504,7 @@ export async function collectSessionUsage(
     usage.set(part.sessionID, {
       tokenUsage: {
         input: (previous?.tokenUsage.input ?? 0) + part.tokens.input,
+        cacheRead: (previous?.tokenUsage.cacheRead ?? 0) + part.tokens.cache.read,
         output: (previous?.tokenUsage.output ?? 0) + part.tokens.output,
       },
       estimatedCostUsd: (previous?.estimatedCostUsd ?? 0) + part.cost,

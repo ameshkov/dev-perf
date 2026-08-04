@@ -12,10 +12,10 @@ import { compile as vegaLiteCompile } from 'vega-lite';
 import type { TopLevelSpec } from 'vega-lite';
 
 /** Default chart width in pixels. */
-const CHART_WIDTH = 420;
+const CHART_WIDTH = 1024;
 
-/** Default chart height in pixels. */
-const CHART_HEIGHT = 280;
+/** Default chart height in pixels: keeps the 3:2 width-to-height ratio. */
+const CHART_HEIGHT = 683;
 
 /** Categorical color scheme shared by all charts. */
 const COLOR_SCHEME = 'tableau10';
@@ -50,11 +50,15 @@ interface SpecFrame {
   data: { values: ChartRow[] };
   width: number;
   height: number;
+  autosize: { type: 'fit'; contains: 'padding' };
   config: { range: { category: { scheme: string } } };
 }
 
 /**
- * Shared chart frame: title, size, and the categorical color scheme.
+ * Shared chart frame: title, size, the categorical color scheme, and
+ * `fit` autosizing so every chart renders at the full shared width —
+ * axes, legends and padding included — instead of letting the SVG
+ * root grow with the chart's margins.
  *
  * @param title - The chart title.
  * @param rows - The data rows.
@@ -67,6 +71,7 @@ function frame(title: string, rows: ChartRow[]): SpecFrame {
     data: { values: rows },
     width: CHART_WIDTH,
     height: CHART_HEIGHT,
+    autosize: { type: 'fit', contains: 'padding' },
     config: {
       range: { category: { scheme: COLOR_SCHEME } },
     },
@@ -131,6 +136,50 @@ export function stackedBarSpec(
 }
 
 /**
+ * A grouped bar chart: one bar per category per key, side by side.
+ * Used for the per-period risk flags and quality signals, where the
+ * values are shares of contributions and a contribution may carry
+ * several flags, so the segments do not sum to 100% and stacked bars
+ * would be hard to read.
+ *
+ * @param title - The chart title.
+ * @param categories - The category order.
+ * @param keys - The group order (legend order).
+ * @param rows - The data rows.
+ * @param yTitle - The y-axis title.
+ * @param keyTitle - The legend title.
+ * @returns The spec.
+ */
+export function groupedBarSpec(
+  title: string,
+  categories: string[],
+  keys: string[],
+  rows: ChartRow[],
+  yTitle: string,
+  keyTitle: string,
+): TopLevelSpec {
+  return {
+    ...frame(title, rows),
+    mark: 'bar',
+    encoding: {
+      x: { field: 'x', type: 'nominal', title: null, sort: categories },
+      xOffset: { field: 'key', type: 'nominal', sort: keys },
+      y: {
+        field: 'value',
+        type: 'quantitative',
+        title: yTitle,
+      },
+      color: {
+        field: 'key',
+        type: 'nominal',
+        title: keyTitle,
+        scale: { domain: keys },
+      },
+    },
+  };
+}
+
+/**
  * A bar series with a line series on top, sharing the category axis.
  * Used for contributions plus weighted points, and commits plus the
  * cumulative line. The two series are distinguished by color only;
@@ -176,8 +225,11 @@ export function barLineSpec(
 }
 
 /**
- * A single-series bar chart: one bar per category. Used for per-user
- * commits and contributions per period.
+ * A single-series bar chart: one bar per category. Superseded in the
+ * chart inventory by the stacked and bar-plus-line variants.
+ *
+ * @internal Exported for tests only (`vega.test.ts`); not part of the
+ * public module API.
  *
  * @param title - The chart title.
  * @param categories - The category order.

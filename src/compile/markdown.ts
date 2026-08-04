@@ -6,17 +6,27 @@
  * summary and appendix live in `markdown-individual.ts`.
  */
 import type { ChartAsset } from './chart-util.js';
-import type { ChartData } from './chart-data.js';
-import { bullets, chartAsset, chartBlock, formatInt, formatUsd, table } from './markdown-util.js';
+import type { ChartData, UserSeries } from './chart-data.js';
+import {
+  bullets,
+  chartAsset,
+  chartBlock,
+  formatInt,
+  formatLlmUsage,
+  table,
+} from './markdown-util.js';
+import { topLanguageOf } from './markdown-user.js';
 
 /** Chart files embedded in the team dynamics section. */
 const TEAM_CHARTS = [
   'team-contributions-by-size.svg',
-  'team-contributions-and-points.svg',
+  'team-complexity-per-period.svg',
   'team-commits-per-period.svg',
   'team-lines-per-period.svg',
   'team-active-users.svg',
   'team-languages-per-period.svg',
+  'team-risk-per-period.svg',
+  'team-quality-per-period.svg',
 ];
 
 /**
@@ -34,24 +44,6 @@ function contextLine(data: ChartData): string {
     ? `LLM analysis: enabled (${data.parameters.model ?? 'model unknown'})`
     : 'LLM analysis: disabled';
   return `*Generated ${data.parameters.generatedAt} · ${data.parameters.since} → ${data.parameters.until}${unit} · ${repos} · ${llm}*`;
-}
-
-/**
- * The top language of a user by lines added, or `-`.
- *
- * @param user - The user entry.
- * @returns The language name.
- */
-function topLanguageOf(user: ChartData['users'][number]['user']): string {
-  let best = '';
-  let bestLines = 0;
-  for (const [language, contribution] of Object.entries(user.deterministic.languages)) {
-    if (contribution.linesAdded > bestLines) {
-      best = language;
-      bestLines = contribution.linesAdded;
-    }
-  }
-  return best === '' ? '-' : best;
 }
 
 /**
@@ -74,13 +66,18 @@ function busiestPeriod(data: ChartData): string | undefined {
 }
 
 /**
- * The key-facts bullets of the executive summary.
+ * The key-facts bullets of the executive summary: the analyzed range
+ * and repositories, then the busiest period, top contributor, most
+ * common risk flag and LLM cost when present.
  *
  * @param data - The chart data.
  * @returns The bullets.
  */
 function keyFacts(data: ChartData): string[] {
-  const facts: string[] = [];
+  const facts: string[] = [
+    `Analysis period: ${data.parameters.since} → ${data.parameters.until}`,
+    `Repositories: ${data.repos.map((repo) => repo.repo).join(', ')} (${data.repos.length})`,
+  ];
   const busiest = busiestPeriod(data);
   if (busiest !== undefined) {
     facts.push(busiest);
@@ -98,13 +95,21 @@ function keyFacts(data: ChartData): string[] {
     );
   }
   if (data.parameters.llmEnabled && data.totals.costUsd > 0) {
-    facts.push(`LLM analysis cost: ${formatUsd(data.totals.costUsd)}`);
+    facts.push(
+      `LLM analysis cost: ${formatLlmUsage(
+        data.totals.inputTokens,
+        data.totals.cacheReadTokens,
+        data.totals.outputTokens,
+        data.totals.costUsd,
+      )}`,
+    );
   }
   return facts;
 }
 
 /**
- * The totals table of the executive summary.
+ * The totals table of the executive summary, with a one-line meaning
+ * per metric.
  *
  * @param data - The chart data.
  * @returns The markdown table.
@@ -112,26 +117,48 @@ function keyFacts(data: ChartData): string[] {
 function totalsTable(data: ChartData): string {
   const totals = data.totals;
   const rows: string[][] = [
-    ['Commits', formatInt(totals.commits)],
-    ['Lines added', formatInt(totals.linesAdded)],
-    ['Lines removed', formatInt(totals.linesRemoved)],
-    ['Net lines', formatInt(totals.netLines)],
-    ['Files touched', formatInt(totals.filesTouched)],
-    ['Active users', formatInt(totals.activeUsers)],
+    ['Commits', formatInt(totals.commits), 'Total commits in the analyzed range'],
+    ['Lines added', formatInt(totals.linesAdded), 'Lines of code added'],
+    ['Lines removed', formatInt(totals.linesRemoved), 'Lines of code removed'],
+    ['Net lines', formatInt(totals.netLines), 'Added minus removed'],
+    ['Files touched', formatInt(totals.filesTouched), 'Distinct files changed'],
+    ['Active users', formatInt(totals.activeUsers), 'Users with at least one commit'],
   ];
   if (data.parameters.llmEnabled) {
-    rows.splice(1, 0, ['Contributions (LLM)', formatInt(totals.contributions)]);
-    rows.splice(2, 0, ['Weighted points (LLM)', formatInt(totals.weightedPoints)]);
-    rows.push(['LLM cost', formatUsd(totals.costUsd)]);
+    rows.splice(1, 0, [
+      'Contributions (LLM)',
+      formatInt(totals.contributions),
+      'LLM-assessed work items',
+    ]);
+    rows.splice(2, 0, [
+      'Weighted points (LLM)',
+      formatInt(totals.weightedPoints),
+      'Contributions scaled by size weight',
+    ]);
+    rows.push([
+      'LLM cost',
+      formatLlmUsage(
+        totals.inputTokens,
+        totals.cacheReadTokens,
+        totals.outputTokens,
+        totals.costUsd,
+      ),
+      'Estimated token usage and cost of the LLM analysis',
+    ]);
   }
   rows.push([
     'Bus factor',
     data.busFactor === undefined
       ? '-'
       : `${data.busFactor.users.join(', ')} (${Math.round(data.busFactor.commitShare * 100)}%)`,
+    'Fewest users covering half of the commits',
   ]);
-  rows.push(['Languages', data.topLanguages.length > 0 ? data.topLanguages.join(', ') : '-']);
-  return table(['Metric', 'Value'], rows);
+  rows.push([
+    'Languages',
+    data.topLanguages.length > 0 ? data.topLanguages.join(', ') : '-',
+    'Top languages by lines added',
+  ]);
+  return table(['Metric', 'Value', 'Description'], rows);
 }
 
 /**
@@ -210,9 +237,45 @@ function repositoriesSection(data: ChartData, assets: ReadonlyMap<string, ChartA
 }
 
 /**
+ * One row of the contributor ranking table: the user's totals, LLM
+ * columns when present, and the per-repository counts.
+ *
+ * @param series - The user's series.
+ * @param llm - Whether the report has LLM analysis.
+ * @returns The row cells.
+ */
+function contributorRow(series: UserSeries, llm: boolean): string[] {
+  const user = series.user;
+  const base = [
+    user.name,
+    formatInt(user.deterministic.commits),
+    formatInt(user.deterministic.linesAdded),
+    formatInt(user.deterministic.linesRemoved),
+    formatInt(user.deterministic.filesTouched),
+    formatInt(user.deterministic.activeDays),
+    topLanguageOf(user),
+  ];
+  const repos = series.repos;
+  const repoCells = [formatInt(repos.length), repos[0]?.repo ?? '-'];
+  if (!llm) {
+    return [...base, ...repoCells];
+  }
+  return [
+    user.name,
+    formatInt(user.llm.contributions.length),
+    formatInt(series.points.reduce((sum, point) => sum + point.weightedPoints, 0)),
+    ...base.slice(1),
+    user.llm.status,
+    ...repoCells,
+  ];
+}
+
+/**
  * The contributor ranking table: per-user totals sorted by the master
- * user order (LLM contributions, then commits). The LLM columns are
- * included only when the report has LLM analysis.
+ * user order (LLM contributions, then commits), plus the number of
+ * repositories the user committed to and the one with the most
+ * commits. The LLM columns are included only when the report has LLM
+ * analysis.
  *
  * @param data - The chart data.
  * @returns The markdown section.
@@ -231,30 +294,21 @@ function contributorsTable(data: ChartData): string {
         'Active days',
         'Top language',
         'LLM',
+        'Repos',
+        'Top repo',
       ]
-    : ['User', 'Commits', '+Lines', '−Lines', 'Files', 'Active days', 'Top language'];
-  const rows = data.users.map((series) => {
-    const user = series.user;
-    const base = [
-      user.name,
-      formatInt(user.deterministic.commits),
-      formatInt(user.deterministic.linesAdded),
-      formatInt(user.deterministic.linesRemoved),
-      formatInt(user.deterministic.filesTouched),
-      formatInt(user.deterministic.activeDays),
-      topLanguageOf(user),
-    ];
-    if (!llm) {
-      return base;
-    }
-    return [
-      user.name,
-      formatInt(user.llm.contributions.length),
-      formatInt(series.points.reduce((sum, point) => sum + point.weightedPoints, 0)),
-      ...base.slice(1),
-      user.llm.status,
-    ];
-  });
+    : [
+        'User',
+        'Commits',
+        '+Lines',
+        '−Lines',
+        'Files',
+        'Active days',
+        'Top language',
+        'Repos',
+        'Top repo',
+      ];
+  const rows = data.users.map((series) => contributorRow(series, llm));
   return table(headers, rows);
 }
 

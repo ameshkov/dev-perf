@@ -95,15 +95,102 @@ describe('runCompile', () => {
       expect(md).toContain(
         '![Contributions per period, stacked by size (xs–xl).](assets/team-contributions-by-size.svg)',
       );
+      // Executive summary key facts: the analyzed range and repositories.
+      expect(md).toContain(
+        '- Analysis period: 2026-01-01T00:00:00.000Z → 2026-02-28T23:59:59.999Z',
+      );
+      expect(md).toContain('- Repositories: repo-a (1)');
+      // The totals table carries a one-line description per metric.
+      expect(md).toContain('| Metric | Value | Description |');
+      expect(md).toContain('| Commits | 10 | Total commits in the analyzed range |');
+      // The contributors table carries the per-user repository columns.
+      expect(md).toContain('| Repos |');
+      expect(md).toContain('| Top repo |');
+      expect(md).toContain(
+        '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 1 | TypeScript | completed | 1 | repo-a |',
+      );
+      // The individual sections link to the per-person reports.
+      expect(md).toContain('[Full individual report →](people/alice.md)');
+      // LLM cost is reported with the token usage breakdown: two users
+      // over two periods of the fixture default (100 in / 50 cached in /
+      // 20 out, $0.01 per user per period).
+      expect(md).toContain('- LLM analysis cost: 400 in / 200 cached in / 80 out / $0.0400');
+      expect(md).toContain(
+        '| LLM cost | 400 in / 200 cached in / 80 out / $0.0400 | Estimated token usage and cost of the LLM analysis |',
+      );
+      expect(md).toContain('| User | Input tokens | Cached in | Output tokens | Cost |');
+      expect(md).toContain('| Alice | 200 | 100 | 40 | $0.0200 |');
+      expect(md).toContain('| Total | 400 | 200 | 80 | $0.0400 |');
 
       const files = await readdir(result.assetsPath);
       expect(files).toContain('team-commits-per-period.svg');
+      expect(files).toContain('team-complexity-per-period.svg');
       expect(files).toContain('team-languages-per-period.svg');
+      expect(files).toContain('team-risk-per-period.svg');
+      expect(files).toContain('team-quality-per-period.svg');
+      expect(files).not.toContain('team-contributions-and-points.svg');
       expect(files).toContain('alice-contributions-by-size.svg');
+      expect(files).toContain('alice-contributions-by-complexity.svg');
       expect(files).toContain('alice-contributions-per-period.svg');
+      expect(files).toContain('alice-commits-per-period.svg');
+      expect(files).toContain('alice-lines-per-period.svg');
+      expect(files).toContain('alice-languages-per-period.svg');
       expect(files).toContain('work-types.svg');
-      expect(result.chartCount).toBeGreaterThan(10);
+      expect(files).toContain('risk-distribution.svg');
+      expect(files).toContain('quality-distribution.svg');
+      // The team and LLM summary sections embed the new charts.
+      expect(md).toContain('assets/team-complexity-per-period.svg');
+      expect(md).toContain('assets/team-risk-per-period.svg');
+      expect(md).toContain('assets/team-quality-per-period.svg');
+      expect(md).toContain('assets/risk-distribution.svg');
+      expect(md).toContain('assets/quality-distribution.svg');
+      expect(md).not.toContain('assets/team-contributions-and-points.svg');
+      // The main report stays lean: no LLM overview, no languages or
+      // complexity charts, no contributions table.
+      expect(md).not.toContain('**Overview:**');
+      expect(md).not.toContain('alice-languages-per-period.svg');
+      expect(md).not.toContain('alice-contributions-by-complexity.svg');
+      expect(md).not.toContain('| Fixture work |');
+      expect(result.chartCount).toBeGreaterThan(15);
       expect(result.userCount).toBe(2);
+    });
+  });
+
+  it('writes one full per-person report per user under people/', async () => {
+    await withTempDir(async (dir) => {
+      const reportFile = path.join(dir, 'report.json');
+      await writeFile(reportFile, llmReport());
+      const output = path.join(dir, 'out');
+
+      const result = await runCompile(
+        reportFile,
+        parseCompileOptions({ report: reportFile, output }),
+      );
+
+      expect(result.peoplePath).toBe(path.join(output, 'people'));
+      const peopleFiles = await readdir(result.peoplePath);
+      expect(peopleFiles.sort()).toEqual(['alice.md', 'bob.md']);
+
+      const alice = await readFile(path.join(result.peoplePath, 'alice.md'), 'utf8');
+      expect(alice).toContain('# Alice — Individual report');
+      expect(alice).toContain('| Commits | 5 |');
+      // The full chart set is embedded with the people/ path prefix.
+      for (const chart of [
+        'alice-contributions-per-period.svg',
+        'alice-contributions-by-size.svg',
+        'alice-contributions-by-complexity.svg',
+        'alice-commits-per-period.svg',
+        'alice-lines-per-period.svg',
+        'alice-languages-per-period.svg',
+      ]) {
+        expect(alice).toContain(`../assets/${chart}`);
+      }
+      // The LLM overview and the contributions table live here.
+      expect(alice).toContain('**Overview:** Overview of the work in the period.');
+      expect(alice).toContain('| Fixture work |');
+      expect(alice).toContain('**Repositories:**');
+      expect(alice).toContain('- repo-a: 5 commits');
+      expect(alice).toContain('[Back to report](../report.md)');
     });
   });
 

@@ -1,12 +1,14 @@
 /**
  * Analysis pipeline orchestration: for each repository — clone/cache,
  * deterministic analysis, the LLM phase when enabled (one opencode
- * server per repo, shared by all its periods), per-period report
- * assembly — then write the report to stdout or the `--output` file.
- * With `--unit`, the analyzed range is split into UTC-aligned periods
- * and the report carries one full per-repository report per period.
- * LLM failures are fatal: the error propagates and the report is not
- * written.
+ * server per repo, shared by all its periods, restarted with a fresh
+ * server when an attempt fails), per-period report assembly — then
+ * write the report to stdout or the `--output` file. With `--unit`,
+ * the analyzed range is split into UTC-aligned periods and the report
+ * carries one full per-repository report per period. LLM failures are
+ * retried (`llmRetries`, each attempt with a fully restarted server)
+ * and remain fatal when every attempt fails: the error propagates and
+ * the report is not written.
  */
 import path from 'node:path';
 import type { CliOptions } from './config.js';
@@ -136,12 +138,12 @@ async function analyzeAllRepos(options: CliOptions): Promise<RunAnalysis> {
 /**
  * Analyzes one repository across all periods of the run: ensures the
  * clone (reusing the cache when possible), reads the commits of the
- * whole range once, groups them by author, and — when LLM analysis is
- * enabled — starts one opencode server shared by all periods. Each
- * period gets the groups' commits filtered to its bounds, an LLM
- * analysis for its active users, and an assembled repository entry.
- * The range and periods are reused from the run when the first
- * repository already resolved them.
+ * whole range once, groups them by author, and runs the LLM phase
+ * when enabled (`runLlmPhase` — one opencode server per attempt,
+ * restarted between retries). Each period gets the groups' commits
+ * filtered to its bounds, an LLM analysis for its active users, and
+ * an assembled repository entry. The range and periods are reused
+ * from the run when the first repository already resolved them.
  *
  * @param repo - Repository URL or local path as given on the command line.
  * @param options - Validated CLI options.
@@ -183,13 +185,70 @@ async function analyzeRepository(
     `${repo}: ${pluralize(commits.length, 'commit')} from ${pluralize(groups.length, 'author')}`,
   );
 
-  const llm = await startLlmServer(repo, clone, groups, options);
-  try {
-    const repositories = await assemblePeriods(repo, clone, periods, groups, llm, options);
-    return { range, periods, repositories };
-  } finally {
-    await closeLlmServer(llm);
+  const repositories = await runLlmPhase(repo, clone, periods, groups, options);
+  return { range, periods, repositories };
+}
+
+/**
+ * Runs a repository's LLM phase with automatic retries: the analysis
+ * (server start plus per-period sessions) is attempted up to
+ * `1 + llmRetries` times, and every failed attempt is retried with a
+ * fully restarted opencode server — the server is stopped and its
+ * whole process tree force-killed when it does not exit, so the next
+ * attempt starts from a clean slate. Completed per-user analyses are
+ * cached and reused across attempts, so a retry only re-runs the
+ * sessions that failed. The analysis succeeds as soon as one attempt
+ * completes; when every attempt fails, the error names the repository
+ * and the attempt count. With `llmRetries: 0` the original error is
+ * rethrown unchanged (fail fast).
+ *
+ * @param repo - Repository URL or local path as given on the command line.
+ * @param clone - The clone the analysis runs in.
+ * @param periods - The run's period bounds.
+ * @param groups - The author groups of the whole range.
+ * @param options - Validated CLI options.
+ * @returns One assembled repository entry per period.
+ * @throws {Error} When every LLM attempt fails; the message names the
+ * repo — and the period when `--unit` is set — plus the underlying
+ * cause.
+ */
+async function runLlmPhase(
+  repo: string,
+  clone: CloneResult,
+  periods: AnalyzedRange[],
+  groups: AuthorGroup[],
+  options: CliOptions,
+): Promise<Repository[]> {
+  const attempts = 1 + options.llmRetries;
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (attempt > 1) {
+      logWarn(
+        `LLM: ${repo}: attempt ${attempt - 1} of ${attempts} failed; ` +
+          `restarting the opencode server and retrying: ${errorDetail(lastError)}`,
+      );
+    }
+    let llm: LlmPhase | undefined;
+    try {
+      llm = await startLlmServer(repo, clone, groups, options);
+      return await assemblePeriods(repo, clone, periods, groups, llm, options);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(errorDetail(error));
+    } finally {
+      // Fully stop the server — SIGTERM, a bounded wait, and a
+      // force-kill of its whole process tree when it ignores SIGTERM —
+      // so the next attempt starts from a clean slate.
+      await closeLlmServer(llm);
+    }
   }
+  if (attempts === 1) {
+    // No retries configured: surface the original error unchanged.
+    throw lastError ?? new Error(`LLM analysis failed for ${repo}`);
+  }
+  throw new Error(
+    `LLM analysis failed for ${repo} after ${attempts} attempts: ${errorDetail(lastError)}`,
+    { cause: lastError },
+  );
 }
 
 /**

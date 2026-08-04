@@ -116,7 +116,7 @@ describe('assembleRepository with LLM results', () => {
         riskFlags: [],
       },
     ],
-    tokenUsage: { input: 10, output: 5 },
+    tokenUsage: { input: 10, cacheRead: 0, output: 5 },
     estimatedCostUsd: 0.01,
   };
 

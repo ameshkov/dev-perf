@@ -72,7 +72,7 @@ function validReport(): unknown {
                   riskFlags: [],
                 },
               ],
-              tokenUsage: { input: 12000, output: 3400 },
+              tokenUsage: { input: 12000, cacheRead: 8000, output: 3400 },
               estimatedCostUsd: 0.05,
             },
           },
@@ -224,6 +224,12 @@ describe('reportSchema', () => {
         path: 'repositories.0.users.0.llm.estimatedCostUsd',
         mutate: (report) => {
           report.repositories[0].users[0].llm.estimatedCostUsd = -0.1;
+        },
+      },
+      {
+        path: 'repositories.0.users.0.llm.tokenUsage.cacheRead',
+        mutate: (report) => {
+          report.repositories[0].users[0].llm.tokenUsage.cacheRead = -1;
         },
       },
       {

@@ -10,6 +10,43 @@ and this project adheres to
 
 ### Added
 
+- The LLM analysis agent can now use more read-only bash commands
+  when inspecting a repository: git history and ref inspection
+  (`git branch`, `git tag`, `git rev-parse`, `git rev-list`,
+  `git shortlog`, `git ls-tree`, `git ls-files`, `git grep`,
+  `git describe`, `git merge-base`, `git cat-file`), file inspection
+  (`ls`, `cat`, `tail`, `head`, `wc`, `file`, `grep`, `rg`), and text
+  processing (`sort`, `uniq`, `cut`, `diff`, `echo`), in addition to
+  the git history commands already allowed.
+- A failed LLM analysis is now retried automatically instead of
+  failing the run: the repository's opencode server is fully stopped
+  (and force-killed when it does not exit) and a fresh one is started
+  for each retry, reusing the already-cached per-user results. The
+  number of retries is configurable with `--llm-retries <n>` /
+  `DEV_PERF_LLM_RETRIES` (default 2; `--llm-retries 0` restores the
+  fail-fast behavior).
+- The `compile` command now writes one full per-person report per user
+  under `people/<slug>.md`: title and summary line, statistics table,
+  the complete chart set (contribution sizes and complexity
+  distributions, per-period contributions stacked by size, commits
+  with the cumulative line, lines, and per-period top languages), the
+  LLM overview, the contributions table, risk flags, and the
+  per-repository commit counts, with a back-link to `report.md`. The
+  individual sections of the main report link to these reports.
+- The `compile` team dynamics now include per-period complexity,
+  risk-flag and quality-signal charts (top 9 flags plus `other`, as
+  grouped bars), and the LLM analysis summary gains risk and quality
+  distribution pies. The risk and quality series are normalized to
+  the share of contributions carrying each flag, so periods with more
+  work are not shown with more flags.
+- The `compile` executive summary now lists the analysis period and
+  the analyzed repositories, and the totals table gains a one-line
+  description column per metric.
+- The `compile` contributors table now shows each user's repository
+  count and the repository with their most commits; per-user
+  contributions per period are stacked by size, per-user commits
+  per period show the cumulative line, and a per-user top-languages
+  chart was added.
 - Initial release of `dev-perf`, a CLI tool that measures developer
   contributions to git repositories (any git URL or local path) over a
   date range and produces a JSON report of per-user metrics.
@@ -70,6 +107,22 @@ and this project adheres to
 
 ### Changed
 
+- The LLM cost reporting now tracks token usage with the cached-read
+  split: the JSON report's per-user `tokenUsage` gains `cacheRead`
+  (opencode reports `input` and cached reads as non-overlapping
+  counts), and the compiled report shows the LLM cost with the full
+  token breakdown in the executive summary and the per-user cost
+  table, e.g. `1.2k in / 5M cached in / 1M out / $0.0123`.
+- The `compile` individual dynamics of the main report are leaner:
+  each user section now shows the summary line, a statistics table,
+  the two most informative charts and a link to the full per-person
+  report; the per-user LLM overviews, contributions tables and risk
+  callouts moved into the per-person reports.
+- The `compile` team dynamics no longer render the contributions-vs-
+  weighted-points chart.
+- All `compile` charts are now rendered at a shared width of 1024
+  pixels instead of 420, with the height scaled to keep the 3:2
+  aspect ratio, so the SVGs are readable at report size.
 - The CLI is now command-based: the report run lives under the
   `report` subcommand (`dev-perf report [options] [repo...]`), and a
   bare `dev-perf` invocation prints the command list. **Breaking

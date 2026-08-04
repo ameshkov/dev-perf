@@ -30,18 +30,25 @@ function fixtureData() {
                 },
                 llm: {
                   contributions: [
-                    fixtureContribution({ title: 'A1', size: 'l', types: ['feature'] }),
+                    fixtureContribution({
+                      title: 'A1',
+                      size: 'l',
+                      types: ['feature'],
+                      complexity: 'high',
+                    }),
                     fixtureContribution({
                       title: 'A2',
                       size: 'xs',
                       types: ['bugfix'],
+                      complexity: 'low',
                       riskFlags: ['no-tests'],
                     }),
                     fixtureContribution({
                       title: 'A3',
                       size: 'm',
                       types: ['feature', 'test'],
-                      qualitySignals: ['tests-added'],
+                      // The duplicated signal counts once per contribution.
+                      qualitySignals: ['tests-added', 'tests-added'],
                     }),
                   ],
                 },
@@ -125,8 +132,25 @@ describe('buildChartData', () => {
 
   it('tallies quality signals and risk flags separately', () => {
     const data = fixtureData();
+    // A3 carries `tests-added` twice, but a contribution counts once.
     expect(data.tallies.quality).toEqual([{ key: 'tests-added', value: 1 }]);
     expect(data.tallies.risk).toEqual([{ key: 'no-tests', value: 1 }]);
+  });
+
+  it('counts complexity levels per period', () => {
+    const data = fixtureData();
+    // January: A1 high, A2 low, A3 medium; February: A4 medium.
+    expect(data.team.map((point) => point.complexity)).toEqual([
+      { high: 1, low: 1, medium: 1 },
+      { medium: 1 },
+    ]);
+  });
+
+  it('tallies quality signals and risk flags per period', () => {
+    const data = fixtureData();
+    // A3 carries `tests-added` (January), A2 carries `no-tests` (January).
+    expect(data.signals.quality).toEqual([[{ key: 'tests-added', value: 1 }], []]);
+    expect(data.signals.risk).toEqual([[{ key: 'no-tests', value: 1 }], []]);
   });
 
   it('ranks the top languages by total lines added', () => {
@@ -141,10 +165,25 @@ describe('buildChartData', () => {
   it('computes per-user series aligned with the periods', () => {
     const data = fixtureData();
     const alice = data.users.find((series) => series.user.name === 'Alice');
+    const bob = data.users.find((series) => series.user.name === 'Bob');
 
     expect(alice?.points.map((point) => point.commits)).toEqual([4, 1]);
+    expect(alice?.points.map((point) => point.cumulativeCommits)).toEqual([4, 5]);
     expect(alice?.points.map((point) => point.contributions)).toEqual([3, 1]);
     expect(alice?.points[0].sizes).toMatchObject({ l: 1, xs: 1, m: 1, s: 0, xl: 0 });
+    expect(alice?.points[0].complexity).toMatchObject({ high: 1, low: 1, medium: 1 });
+    expect(alice?.points[1].complexity).toMatchObject({ medium: 1 });
+    // Bob's cumulative line runs independently of Alice.
+    expect(bob?.points.map((point) => point.cumulativeCommits)).toEqual([2, 5]);
+  });
+
+  it('counts the per-repository commits of each user', () => {
+    const data = fixtureData();
+    const alice = data.users.find((series) => series.user.name === 'Alice');
+    const bob = data.users.find((series) => series.user.name === 'Bob');
+
+    expect(alice?.repos).toEqual([{ repo: 'repo-a', commits: 5 }]);
+    expect(bob?.repos).toEqual([{ repo: 'repo-a', commits: 5 }]);
   });
 
   it('computes totals, cost rows and the bus factor', () => {
@@ -156,10 +195,22 @@ describe('buildChartData', () => {
     expect(data.totals.netLines).toBe(70);
     expect(data.totals.activeUsers).toBe(2);
     expect(data.totals.costUsd).toBeCloseTo(0.02);
+    expect(data.totals.inputTokens).toBe(200);
+    expect(data.totals.cacheReadTokens).toBe(100);
+    expect(data.totals.outputTokens).toBe(40);
     // Alice has 5 commits of 10 → 50% bus factor, single user.
     expect(data.busFactor).toEqual({ users: ['Alice'], commitShare: 0.5 });
-    // Bob was skipped, so only Alice has LLM cost.
-    expect(data.cost.map((row) => row.name)).toEqual(['Alice']);
+    // Bob was skipped, so only Alice has LLM cost; her usage is the
+    // fixture default (100 in / 50 cached in / 20 out, $0.01) per period.
+    expect(data.cost).toEqual([
+      {
+        name: 'Alice',
+        inputTokens: 200,
+        cacheReadTokens: 100,
+        outputTokens: 40,
+        costUsd: 0.02,
+      },
+    ]);
   });
 
   it('summarizes repositories across periods', () => {

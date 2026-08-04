@@ -1,10 +1,11 @@
 /**
  * Markdown assembly of the compiled report — the individual half: the
- * per-user dynamics sections (charts, LLM overview, contributions
- * table, risk callout), the LLM analysis summary (pies, quality and
- * risk tallies, cost), and the appendix (parameters, applied filters,
- * email mapping, size weights, methodology). The team half lives in
- * `markdown.ts`.
+ * per-user dynamics sections (summary, statistics, two charts, and a
+ * link to the full per-person report), the LLM analysis summary
+ * (pies, quality and risk tallies, cost), and the appendix
+ * (parameters, applied filters, email mapping, size weights,
+ * methodology). The team half lives in `markdown.ts`; the per-person
+ * reports in `markdown-person.ts`.
  */
 import type { ChartAsset } from './chart-util.js';
 import { userSlug } from './chart-util.js';
@@ -12,104 +13,23 @@ import type { ChartData, CountRow, UserSeries } from './chart-data.js';
 import { SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
 import type { EmailMap } from './filter.js';
 import { bullets, chartAsset, chartBlock, formatInt, formatUsd, table } from './markdown-util.js';
+import { statisticsTable, userSummaryLine } from './markdown-user.js';
 import type { CompileOptions } from './options.js';
 
 /** Pie chart files of the LLM summary section, in order. */
-const PIE_FILES = ['work-types.svg', 'size-distribution.svg', 'complexity-distribution.svg'];
+const PIE_FILES = [
+  'work-types.svg',
+  'size-distribution.svg',
+  'complexity-distribution.svg',
+  'risk-distribution.svg',
+  'quality-distribution.svg',
+];
 
 /**
- * The top language of a user by lines added, or `-`.
- *
- * @param user - The user entry.
- * @returns The language name.
- */
-function topLanguageOf(user: UserSeries['user']): string {
-  let best = '';
-  let bestLines = 0;
-  for (const [language, contribution] of Object.entries(user.deterministic.languages)) {
-    if (contribution.linesAdded > bestLines) {
-      best = language;
-      bestLines = contribution.linesAdded;
-    }
-  }
-  return best === '' ? '-' : best;
-}
-
-/**
- * The one-line summary of a user: emails, commits, lines, files,
- * active days, and the top language.
- *
- * @param series - The user's series.
- * @returns The summary line.
- */
-function userSummaryLine(series: UserSeries): string {
-  const user = series.user;
-  return [
-    user.emails.join(', '),
-    `${formatInt(user.deterministic.commits)} commits`,
-    `+${formatInt(user.deterministic.linesAdded)} / −${formatInt(user.deterministic.linesRemoved)} lines`,
-    `${formatInt(user.deterministic.filesTouched)} files`,
-    `${formatInt(user.deterministic.activeDays)} active days`,
-    topLanguageOf(user),
-  ].join(' · ');
-}
-
-/**
- * The risk-flags callout of one user: aggregated counts per flag,
- * most frequent first.
- *
- * @param series - The user's series.
- * @returns The callout, or `undefined` when the user has no risk flags.
- */
-function riskCallout(series: UserSeries): string | undefined {
-  const counts = new Map<string, number>();
-  for (const contribution of series.user.llm.contributions) {
-    for (const flag of contribution.riskFlags) {
-      counts.set(flag, (counts.get(flag) ?? 0) + 1);
-    }
-  }
-  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  if (entries.length === 0) {
-    return undefined;
-  }
-  return `**Risk flags:**\n\n${bullets(
-    entries.map(
-      ([flag, count]) =>
-        `${flag} (${formatInt(count)} ${count === 1 ? 'contribution' : 'contributions'})`,
-    ),
-  )}`;
-}
-
-/**
- * The contributions table of one user: the LLM's structured
- * assessment, one row per contribution.
- *
- * @param series - The user's series.
- * @returns The markdown table, or `undefined` when the user has no
- * contributions.
- */
-function contributionsTable(series: UserSeries): string | undefined {
-  const contributions = series.user.llm.contributions;
-  if (contributions.length === 0) {
-    return undefined;
-  }
-  return table(
-    ['Title', 'Types', 'Complexity', 'Size', 'Areas', 'Quality signals', 'Risk flags'],
-    contributions.map((contribution) => [
-      contribution.title,
-      contribution.types.join(', '),
-      contribution.complexity,
-      contribution.size,
-      contribution.areas.join(', ') || '-',
-      contribution.qualitySignals.join(', ') || '-',
-      contribution.riskFlags.join(', ') || '-',
-    ]),
-  );
-}
-
-/**
- * The per-user charts of the individual section: sizes and per-period
- * contributions with LLM analysis, commits and lines without.
+ * The per-user charts of the individual section: contributions per
+ * period and sizes with LLM analysis, commits and lines without —
+ * the two most informative charts, the full set lives in the
+ * per-person report.
  *
  * @param series - The user's series.
  * @param data - The chart data.
@@ -125,15 +45,15 @@ function userCharts(
   const slug = userSlug(series.user.name);
   const multiPeriod = data.periods.length > 1;
   if (data.parameters.llmEnabled) {
-    const sizes = chartAsset(assets, `${slug}-contributions-by-size.svg`);
-    if (sizes !== undefined) {
-      blocks.push(chartBlock(sizes));
-    }
     if (multiPeriod) {
       const perPeriod = chartAsset(assets, `${slug}-contributions-per-period.svg`);
       if (perPeriod !== undefined) {
         blocks.push(chartBlock(perPeriod));
       }
+    }
+    const sizes = chartAsset(assets, `${slug}-contributions-by-size.svg`);
+    if (sizes !== undefined) {
+      blocks.push(chartBlock(sizes));
     }
   } else if (multiPeriod) {
     const commits = chartAsset(assets, `${slug}-commits-per-period.svg`);
@@ -150,8 +70,10 @@ function userCharts(
 
 /**
  * The individual dynamics section: one subsection per user, sorted by
- * the master user order, with charts, the LLM overview, the
- * contributions table and the risk-flags callout.
+ * the master user order, with the summary line, the statistics table,
+ * the two main charts, and a link to the full per-person report
+ * (which carries the LLM overview, contributions table and risk
+ * callout).
  *
  * @param data - The chart data.
  * @param assets - The chart assets by file name.
@@ -161,24 +83,14 @@ function individualSections(data: ChartData, assets: ReadonlyMap<string, ChartAs
   const sections = ['## Individual dynamics'];
   for (const series of data.users) {
     const user = series.user;
+    const slug = userSlug(series.user.name);
     const parts = [
       `### ${user.name}${user.isBot ? ' (bot)' : ''}`,
       `*${userSummaryLine(series)}*`,
+      statisticsTable(series, data),
       ...userCharts(series, data, assets),
+      `[Full individual report →](people/${slug}.md)`,
     ];
-    if (data.parameters.llmEnabled) {
-      if (user.llm.overview !== undefined) {
-        parts.push(`**Overview:** ${user.llm.overview}`);
-      }
-      const contributions = contributionsTable(series);
-      if (contributions !== undefined) {
-        parts.push(contributions);
-      }
-      const risks = riskCallout(series);
-      if (risks !== undefined) {
-        parts.push(risks);
-      }
-    }
     sections.push(parts.join('\n\n'));
   }
   return sections.join('\n\n');
@@ -233,17 +145,19 @@ function llmSummarySection(data: ChartData, assets: ReadonlyMap<string, ChartAss
     const total = data.cost.reduce((sum, row) => sum + row.costUsd, 0);
     sections.push(
       `### Cost\n\n${table(
-        ['User', 'Input tokens', 'Output tokens', 'Cost'],
+        ['User', 'Input tokens', 'Cached in', 'Output tokens', 'Cost'],
         [
           ...data.cost.map((row) => [
             row.name,
             formatInt(row.inputTokens),
+            formatInt(row.cacheReadTokens),
             formatInt(row.outputTokens),
             formatUsd(row.costUsd),
           ]),
           [
             'Total',
             formatInt(data.cost.reduce((sum, row) => sum + row.inputTokens, 0)),
+            formatInt(data.cost.reduce((sum, row) => sum + row.cacheReadTokens, 0)),
             formatInt(data.cost.reduce((sum, row) => sum + row.outputTokens, 0)),
             formatUsd(total),
           ],

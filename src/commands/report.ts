@@ -38,6 +38,10 @@ export function registerReportCommand(program: Command): void {
     .option('--api-key <key>', 'Provider API key (required for LLM analysis; or DEV_PERF_API_KEY)')
     .option('--limit-context <n>', 'Max context tokens for LLM analysis (default: 262144)')
     .option('--limit-output <n>', 'Max output tokens for LLM analysis (default: 65536)')
+    .option(
+      '--llm-retries <n>',
+      'Retry a failed LLM analysis up to <n> more times, restarting the opencode server between attempts (default: 2)',
+    )
     .option('--verbose', 'Verbose logging')
     .addHelpText(
       'after',

@@ -4,6 +4,7 @@ import type { ChartRow } from './vega.js';
 import {
   barLineSpec,
   barSpec,
+  groupedBarSpec,
   horizontalBarSpec,
   lineSeriesSpec,
   pieSpec,
@@ -24,6 +25,9 @@ describe('spec builders', () => {
     expect(() =>
       vegaLiteCompile(stackedBarSpec('Stacked', ['Jan', 'Feb'], ['a', 'b'], ROWS, 'V', 'K')),
     ).not.toThrow();
+    expect(() =>
+      vegaLiteCompile(groupedBarSpec('Grouped', ['Jan', 'Feb'], ['a', 'b'], ROWS, 'V', 'K')),
+    ).not.toThrow();
     expect(() => vegaLiteCompile(barLineSpec('BarLine', ['Jan', 'Feb'], ROWS, 'V'))).not.toThrow();
     expect(() =>
       vegaLiteCompile(lineSeriesSpec('Lines', ['Jan', 'Feb'], ['a', 'b'], ROWS, 'V', 'K')),
@@ -40,6 +44,19 @@ describe('spec builders', () => {
       encoding?: { x?: { sort?: string[] } };
     };
     expect(spec.encoding?.x?.sort).toEqual(['Feb', 'Jan']);
+  });
+
+  it('keeps the explicit category and group order of the grouped spec', () => {
+    const spec = groupedBarSpec('Grouped', ['Feb', 'Jan'], ['b', 'a'], ROWS, 'V', 'K') as {
+      encoding?: {
+        x?: { sort?: string[] };
+        xOffset?: { sort?: string[] };
+        color?: { scale?: { domain?: string[] } };
+      };
+    };
+    expect(spec.encoding?.x?.sort).toEqual(['Feb', 'Jan']);
+    expect(spec.encoding?.xOffset?.sort).toEqual(['b', 'a']);
+    expect(spec.encoding?.color?.scale?.domain).toEqual(['b', 'a']);
   });
 });
 
@@ -60,5 +77,12 @@ describe('renderSvg', () => {
     expect(svg).toContain('Rendered lines');
     expect(svg).toContain('added');
     expect(svg).toContain('removed');
+  });
+
+  it('renders every chart at the shared 1024px width and 3:2 ratio', async () => {
+    const svg = await renderSvg(groupedBarSpec('Wide', ['Jan', 'Feb'], ['a', 'b'], ROWS, 'V', 'K'));
+    expect(svg).toContain('width="1024"');
+    expect(svg).toContain('height="683"');
+    expect(svg).not.toContain('width="420"');
   });
 });

@@ -17,10 +17,13 @@ commits have no file list).
 
 {{commits}}
 
-Inspect the commits with the read tools and read-only git commands
-(git show, git log, git diff, git blame) as needed, and assess what
-cannot be counted from git history alone: work types, complexity,
-size, impacted areas, and observable quality signals or risk flags.
+Inspect the commits with the read tools and read-only commands (git
+show, git log, git diff, git blame, git status, git branch, git tag,
+git rev-parse, git rev-list, git shortlog, git ls-tree, git ls-files,
+git grep, and the file/text commands ls, cat, tail, head, wc, file,
+grep, sort, uniq, cut, diff) as needed, and assess what cannot be
+counted from git history alone: work types, complexity, size, impacted
+areas, and observable quality signals or risk flags.
 Quality signals and risk flags must be chosen from the fixed value
 lists in the devperf_report tool schema; only what is observable in
 the repository, never inferred review status.

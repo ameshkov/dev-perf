@@ -58,6 +58,7 @@ describe('cli', () => {
     expect(reportHelp).toContain('--api-key <key>');
     expect(reportHelp).toContain('--limit-context <n>');
     expect(reportHelp).toContain('--limit-output <n>');
+    expect(reportHelp).toContain('--llm-retries <n>');
     expect(reportHelp).toContain('--verbose');
     expect(reportHelp).toContain('DEV_PERF_');
   });

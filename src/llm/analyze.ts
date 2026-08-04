@@ -42,7 +42,10 @@ const MAX_REMINDERS = 3;
 const CACHE_KEY_LENGTH = 16;
 
 /** Usage reported when the event stream has no data for a session. */
-const ZERO_USAGE: SessionUsage = { tokenUsage: { input: 0, output: 0 }, estimatedCostUsd: 0 };
+const ZERO_USAGE: SessionUsage = {
+  tokenUsage: { input: 0, cacheRead: 0, output: 0 },
+  estimatedCostUsd: 0,
+};
 
 /**
  * The persisted LLM result for one user: the
@@ -233,7 +236,7 @@ async function analyzeUser(
     const payload = await enforceReport(input, group, session, analysisPrompt);
     const usage = orientation.collector.get(session.id) ?? ZERO_USAGE;
     logInfo(
-      `LLM: ${group.name}: ${usage.tokenUsage.input} in / ${usage.tokenUsage.output} out tokens, $${usage.estimatedCostUsd.toFixed(4)}`,
+      `LLM: ${group.name}: ${usage.tokenUsage.input} in / ${usage.tokenUsage.cacheRead} cached in / ${usage.tokenUsage.output} out tokens, $${usage.estimatedCostUsd.toFixed(4)}`,
     );
     const result: CachedResult = {
       payload,

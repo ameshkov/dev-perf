@@ -42,6 +42,8 @@ export interface RawCliOptions {
   limitContext?: string;
   /** Max output tokens for LLM analysis (default: 65536). */
   limitOutput?: string;
+  /** Retries for a failed LLM analysis (default: 2). */
+  llmRetries?: string;
   /** Verbose logging. */
   verbose?: boolean;
 }
@@ -64,6 +66,7 @@ const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
   apiKey: 'DEV_PERF_API_KEY',
   limitContext: 'DEV_PERF_LIMIT_CONTEXT',
   limitOutput: 'DEV_PERF_LIMIT_OUTPUT',
+  llmRetries: 'DEV_PERF_LLM_RETRIES',
   verbose: 'DEV_PERF_VERBOSE',
 };
 
@@ -119,6 +122,8 @@ export const cliOptionsSchema = z
     limitContext: z.coerce.number().int().positive().default(262144),
     /** Max output tokens for LLM analysis (default: 65536). */
     limitOutput: z.coerce.number().int().positive().default(65536),
+    /** Retries for a failed LLM analysis (default: 2). */
+    llmRetries: z.coerce.number().int().min(0).default(2),
     /** Verbose logging. */
     verbose: z.boolean().optional(),
   })

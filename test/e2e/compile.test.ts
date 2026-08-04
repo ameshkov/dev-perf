@@ -153,15 +153,27 @@ describe('e2e compile', () => {
       expect(md).toContain('# Dev Performance Report');
       expect(md).toContain('## Individual dynamics');
       expect(md).toContain('### Alice');
-      expect(md).toContain('| Feature A | feature | high | l |');
+      // The per-user contributions table lives in the per-person report.
+      expect(md).not.toContain('| Feature A | feature | high | l |');
+      const aliceReport = await readFile(path.join(output, 'people', 'alice.md'), 'utf8');
+      expect(aliceReport).toContain('| Feature A | feature | high | l |');
+      expect(aliceReport).toContain('[Back to report](../report.md)');
 
       const assets = await readdir(path.join(output, 'assets'));
       expect(assets).toContain('team-contributions-by-size.svg');
       expect(assets).toContain('alice-contributions-by-size.svg');
       expect(assets).toContain('work-types.svg');
-      // The markdown references every asset, and every asset is a non-empty SVG.
+      // Every markdown file (the report and every per-person report)
+      // references every asset, and every asset is a non-empty SVG.
+      const peopleFiles = await readdir(path.join(output, 'people'));
+      const markdown = [
+        md,
+        ...(await Promise.all(
+          peopleFiles.map((file) => readFile(path.join(output, 'people', file), 'utf8')),
+        )),
+      ];
       for (const file of assets) {
-        expect(md).toContain(`assets/${file}`);
+        expect(markdown.some((text) => text.includes(`assets/${file}`))).toBe(true);
         const svg = await readFile(path.join(output, 'assets', file), 'utf8');
         expect(svg).toContain('<svg');
       }

@@ -12,19 +12,22 @@ import { SIZE_WEIGHTS } from './chart-data.js';
  * Extracts the contribution counts of one user entry.
  *
  * @param user - The user entry.
- * @returns The counts per size and the weighted total.
+ * @returns The counts per size and complexity, and the weighted total.
  */
 function contributionCounts(user: User): {
   sizes: Record<ContributionSize, number>;
+  complexity: Record<string, number>;
   weightedPoints: number;
 } {
   const sizes: Record<ContributionSize, number> = { xs: 0, s: 0, m: 0, l: 0, xl: 0 };
+  const complexity: Record<string, number> = {};
   let weightedPoints = 0;
   for (const contribution of user.llm.contributions) {
     sizes[contribution.size] += 1;
+    complexity[contribution.complexity] = (complexity[contribution.complexity] ?? 0) + 1;
     weightedPoints += SIZE_WEIGHTS[contribution.size];
   }
-  return { sizes, weightedPoints };
+  return { sizes, complexity, weightedPoints };
 }
 
 /**
@@ -42,6 +45,7 @@ export function teamPoint(users: User[], previous: number): TeamPoint {
   let contributions = 0;
   let weightedPoints = 0;
   const sizes: Record<ContributionSize, number> = { xs: 0, s: 0, m: 0, l: 0, xl: 0 };
+  const complexity: Record<string, number> = {};
   const languages: Record<string, number> = {};
   for (const user of users) {
     commits += user.deterministic.commits;
@@ -56,6 +60,9 @@ export function teamPoint(users: User[], previous: number): TeamPoint {
     for (const size of Object.keys(sizes) as ContributionSize[]) {
       sizes[size] += counts.sizes[size];
     }
+    for (const [level, count] of Object.entries(counts.complexity)) {
+      complexity[level] = (complexity[level] ?? 0) + count;
+    }
     for (const [language, contribution] of Object.entries(user.deterministic.languages)) {
       languages[language] = (languages[language] ?? 0) + contribution.linesAdded;
     }
@@ -69,6 +76,7 @@ export function teamPoint(users: User[], previous: number): TeamPoint {
     contributions,
     weightedPoints,
     sizes,
+    complexity,
     languages,
   };
 }
@@ -91,6 +99,37 @@ export function countByKey(
   for (const contribution of contributions) {
     for (const key of extract(contribution)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([key, value]) => ({ key, value }))
+    .sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+}
+
+/**
+ * Builds one row per categorical value across contributions, counting
+ * each contribution at most once per value. Multi-valued extractors
+ * (quality signals, risk flags) count a contribution once per value it
+ * carries, so a duplicated value inside one contribution does not
+ * inflate the count — the rows express how many contributions carry
+ * each value.
+ *
+ * @param extract - The categorical values of a contribution.
+ * @param contributions - The contributions to count.
+ * @returns The counted rows.
+ */
+export function countContributionsByKey(
+  extract: (contribution: Contribution) => string[],
+  contributions: Contribution[],
+): Array<{ key: string; value: number }> {
+  const counts = new Map<string, number>();
+  for (const contribution of contributions) {
+    const seen = new Set<string>();
+    for (const key of extract(contribution)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
     }
   }
   return [...counts.entries()]

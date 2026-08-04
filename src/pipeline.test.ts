@@ -22,6 +22,7 @@ function options(overrides: Partial<CliOptions> = {}): CliOptions {
     llm: false,
     limitContext: 262144,
     limitOutput: 65536,
+    llmRetries: 2,
     ...overrides,
   };
 }

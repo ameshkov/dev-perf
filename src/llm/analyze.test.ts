@@ -120,7 +120,7 @@ class StubSessions implements SessionService {
 
   async collectUsage(_directory: string): Promise<UsageCollector> {
     return {
-      get: () => ({ tokenUsage: { input: 10, output: 5 }, estimatedCostUsd: 0.01 }),
+      get: () => ({ tokenUsage: { input: 10, cacheRead: 7, output: 5 }, estimatedCostUsd: 0.01 }),
       close: () => {},
     };
   }
@@ -205,7 +205,7 @@ describe('analyzeRepositoryLLM', () => {
       expect(result.llm.status).toBe('completed');
       expect(result.llm.overview).toBe(PAYLOAD_A.overview);
       expect(result.llm.contributions).toEqual(PAYLOAD_A.contributions);
-      expect(result.llm.tokenUsage).toEqual({ input: 10, output: 5 });
+      expect(result.llm.tokenUsage).toEqual({ input: 10, cacheRead: 7, output: 5 });
       expect(result.llm.estimatedCostUsd).toBe(0.01);
     }
     // Orientation + (context injection + analysis) per user.
@@ -316,7 +316,7 @@ describe('analyzeRepositoryLLM', () => {
     expect(second.prompts).toHaveLength(0);
     expect(second.created).toHaveLength(0);
     expect(results[0]?.llm.overview).toBe(PAYLOAD_A.overview);
-    expect(results[0]?.llm.tokenUsage).toEqual({ input: 10, output: 5 });
+    expect(results[0]?.llm.tokenUsage).toEqual({ input: 10, cacheRead: 7, output: 5 });
   });
 
   it('--refresh invalidates the cache and re-runs the analysis', async () => {

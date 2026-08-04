@@ -38,6 +38,11 @@ interface StubState {
   replyText: string;
   /** When set, the user's analysis prompt rejects with this error. */
   promptError?: Error;
+  /**
+   * How many analysis prompts reject before succeeding (tests the
+   * pipeline's retry behavior); `undefined`/0 reject never.
+   */
+  promptFailures?: number;
 }
 
 /** The payload the stub reports through `devperf_report`. */
@@ -98,12 +103,21 @@ function stubClient(state: StubState): OpencodeClient {
         }) => {
           // Reject only on the user's analysis prompt (it is the only
           // one that carries the user's email); orientation and the
-          // noReply context injection keep working.
+          // noReply context injection keep working. With
+          // `promptFailures` set, that many analysis prompts reject
+          // before succeeding (retry tests); without it, every
+          // analysis prompt with a `promptError` rejects.
           const analysisPrompt = args.body.parts?.some((part) =>
             part.text.includes('alice@example.com'),
           );
-          if (state.promptError !== undefined && analysisPrompt === true) {
-            throw state.promptError;
+          if (analysisPrompt === true && state.promptError !== undefined) {
+            const failures = state.promptFailures;
+            if (failures === undefined || failures > 0) {
+              if (failures !== undefined) {
+                state.promptFailures = failures - 1;
+              }
+              throw state.promptError;
+            }
           }
           if (args.body.noReply !== true && state.callTool) {
             const llmDir = path.join(path.dirname(args.query.directory), 'llm');
@@ -136,6 +150,7 @@ function options(overrides: Partial<CliOptions> = {}): CliOptions {
     apiKey: 'sk-test-123',
     limitContext: 262144,
     limitOutput: 65536,
+    llmRetries: 2,
     ...overrides,
   };
 }
@@ -212,7 +227,7 @@ describe('runPipeline with LLM analysis', () => {
           overview: PAYLOAD.overview,
           contributions: PAYLOAD.contributions,
           // The stub event stream carries no usage events.
-          tokenUsage: { input: 0, output: 0 },
+          tokenUsage: { input: 0, cacheRead: 0, output: 0 },
           estimatedCostUsd: 0,
         });
       }
@@ -233,7 +248,9 @@ describe('runPipeline with LLM analysis', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const { close } = stubServer({ callTool: false, payload: PAYLOAD, replyText: 'ok' });
     try {
-      await expect(runPipeline(options({ repos: [repo.url], cacheDir }))).rejects.toThrow(
+      await expect(
+        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
+      ).rejects.toThrow(
         /LLM analysis failed for .*: LLM analysis for Alice did not call devperf_report/,
       );
 
@@ -267,7 +284,9 @@ describe('runPipeline with LLM analysis', () => {
       promptError,
     });
     try {
-      await expect(runPipeline(options({ repos: [repo.url], cacheDir }))).rejects.toThrow(
+      await expect(
+        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
+      ).rejects.toThrow(
         /LLM analysis failed for .*: analysis of Alice <alice@example.com> \(session ses_\d+\) failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:50664/,
       );
 
@@ -290,9 +309,9 @@ describe('runPipeline with LLM analysis', () => {
     ]);
     vi.mocked(startServer).mockRejectedValue(new Error('opencode binary missing'));
     try {
-      await expect(runPipeline(options({ repos: [repo.url], cacheDir }))).rejects.toThrow(
-        /LLM analysis failed for .*: opencode binary missing/,
-      );
+      await expect(
+        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
+      ).rejects.toThrow(/LLM analysis failed for .*: opencode binary missing/);
     } finally {
       await removeFixtureRepo(repo);
     }
@@ -403,6 +422,96 @@ describe('runPipeline with LLM analysis', () => {
           { since: '2026-03-01T00:00:00.000Z', until: '2026-03-31T23:59:59.000Z' },
         ]),
       );
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('retries a failed analysis with a fully restarted server and succeeds', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const { close } = stubServer({
+      callTool: true,
+      payload: PAYLOAD,
+      replyText: 'ok',
+      promptError: new TypeError('fetch failed'),
+      promptFailures: 1,
+    });
+    try {
+      const report = await runPipeline(options({ repos: [repo.url], cacheDir }));
+
+      // Two attempts: the first analysis prompt fails, the retry
+      // succeeds and the report is written with the completed analysis.
+      expect(startServer).toHaveBeenCalledTimes(2);
+      expect(close).toHaveBeenCalledTimes(2);
+      // The server of the failed attempt is fully stopped before the
+      // retry starts a fresh one.
+      const startOrder = vi.mocked(startServer).mock.invocationCallOrder;
+      const closeOrder = close.mock.invocationCallOrder;
+      expect(closeOrder[0]).toBeLessThan(startOrder[1]!);
+      expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('gives up after the configured retries, closing each server', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const { close } = stubServer({
+      callTool: true,
+      payload: PAYLOAD,
+      replyText: 'ok',
+      promptError: new TypeError('fetch failed'),
+      promptFailures: 99,
+    });
+    try {
+      await expect(
+        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 1 })),
+      ).rejects.toThrow(
+        /LLM analysis failed for .* after 2 attempts: .*analysis of Alice <alice@example.com>.*failed: fetch failed/,
+      );
+
+      expect(startServer).toHaveBeenCalledTimes(2);
+      expect(close).toHaveBeenCalledTimes(2);
+      expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      stdout.mockRestore();
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('retries when the server cannot start', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    vi.mocked(startServer).mockRejectedValueOnce(new Error('opencode binary missing'));
+    const { close } = stubServer({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
+    try {
+      const report = await runPipeline(options({ repos: [repo.url], cacheDir }));
+
+      expect(startServer).toHaveBeenCalledTimes(2);
+      // Only the second (successful) server needs closing.
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
     } finally {
       await removeFixtureRepo(repo);
     }

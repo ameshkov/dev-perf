@@ -170,7 +170,7 @@ describe('writeServerFiles', () => {
     expect(agentFile).toContain('mode: primary');
     // Permissions are deny-all with a short allow-list: the wildcard deny
     // comes first (opencode matches rules last-wins), then the read tools,
-    // bash restricted to read-only git commands, and devperf_report.
+    // bash restricted to read-only commands, and devperf_report.
     expect(agentFile).toContain('"*": deny');
     expect(agentFile).toContain('read: allow');
     expect(agentFile).toContain('glob: allow');
@@ -181,6 +181,30 @@ describe('writeServerFiles', () => {
     expect(agentFile).toContain('"git diff *": allow');
     expect(agentFile).toContain('"git blame *": allow');
     expect(agentFile).toContain('"git status *": allow');
+    expect(agentFile).toContain('"git branch *": allow');
+    expect(agentFile).toContain('"git tag *": allow');
+    expect(agentFile).toContain('"git rev-parse *": allow');
+    expect(agentFile).toContain('"git rev-list *": allow');
+    expect(agentFile).toContain('"git shortlog *": allow');
+    expect(agentFile).toContain('"git ls-tree *": allow');
+    expect(agentFile).toContain('"git ls-files *": allow');
+    expect(agentFile).toContain('"git grep *": allow');
+    expect(agentFile).toContain('"git describe *": allow');
+    expect(agentFile).toContain('"git merge-base *": allow');
+    expect(agentFile).toContain('"git cat-file *": allow');
+    expect(agentFile).toContain('"cat *": allow');
+    expect(agentFile).toContain('"tail *": allow');
+    expect(agentFile).toContain('"head *": allow');
+    expect(agentFile).toContain('"ls *": allow');
+    expect(agentFile).toContain('"wc *": allow');
+    expect(agentFile).toContain('"file *": allow');
+    expect(agentFile).toContain('"grep *": allow');
+    expect(agentFile).toContain('"rg *": allow');
+    expect(agentFile).toContain('"sort *": allow');
+    expect(agentFile).toContain('"uniq *": allow');
+    expect(agentFile).toContain('"cut *": allow');
+    expect(agentFile).toContain('"diff *": allow');
+    expect(agentFile).toContain('"echo *": allow');
     expect(agentFile).toContain('devperf_report: allow');
     expect(agentFile).toContain('read-only');
     expect(agentFile).toContain('never create, modify, or delete');

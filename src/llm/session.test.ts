@@ -46,7 +46,13 @@ const PAYLOAD: LlmToolPayload = {
 };
 
 /** Builds a `message.part.updated` event carrying a `step-finish` part. */
-function stepEvent(sessionID: string, input: number, output: number, cost: number): Event {
+function stepEvent(
+  sessionID: string,
+  input: number,
+  output: number,
+  cost: number,
+  cacheRead = 0,
+): Event {
   return {
     type: 'message.part.updated',
     properties: {
@@ -57,7 +63,7 @@ function stepEvent(sessionID: string, input: number, output: number, cost: numbe
         type: 'step-finish',
         reason: 'done',
         cost,
-        tokens: { input, output, reasoning: 0, cache: { read: 0, write: 0 } },
+        tokens: { input, output, reasoning: 0, cache: { read: cacheRead, write: 0 } },
       },
     },
   } as Event;
@@ -459,10 +465,10 @@ describe('session report files', () => {
 describe('collectSessionUsage', () => {
   it('accumulates step-finish tokens and cost per session', async () => {
     const stream = (async function* () {
-      yield stepEvent('ses_1', 10, 5, 0.01);
+      yield stepEvent('ses_1', 10, 5, 0.01, 40);
       yield textEvent('ses_1', 'ignored text part');
-      yield stepEvent('ses_1', 20, 15, 0.02);
-      yield stepEvent('ses_2', 100, 50, 0.1);
+      yield stepEvent('ses_1', 20, 15, 0.02, 60);
+      yield stepEvent('ses_2', 100, 50, 0.1, 200);
     })();
     const client = stubClient({ stream });
 
@@ -470,12 +476,12 @@ describe('collectSessionUsage', () => {
 
     await vi.waitFor(() => {
       expect(collector.get('ses_1')).toEqual({
-        tokenUsage: { input: 30, output: 20 },
+        tokenUsage: { input: 30, cacheRead: 100, output: 20 },
         estimatedCostUsd: 0.03,
       });
     });
     expect(collector.get('ses_2')).toEqual({
-      tokenUsage: { input: 100, output: 50 },
+      tokenUsage: { input: 100, cacheRead: 200, output: 50 },
       estimatedCostUsd: 0.1,
     });
     expect(collector.get('ses_unknown')).toBeUndefined();
