@@ -20,6 +20,10 @@ config:
   no-bare-urls: false
   link-fragments: false
 
+# Skip gitignored files (clone cache `.dev-perf/`, compiled reports
+# under `output/`) in addition to the explicit ignores below.
+gitignore: true
+
 ignores:
   - node_modules/**
   - build/**
