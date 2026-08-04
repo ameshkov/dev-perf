@@ -41,6 +41,31 @@ describe('resolveCompileOptions', () => {
     expect(resolved.report).toBe('flag-report.json');
   });
 
+  it('fills list options from the environment when commander supplies empty-array defaults', () => {
+    // Commander passes `[]` (its repeatable-option default) for list
+    // options the user did not pass; the environment must still fill
+    // them, and an empty array must not count as flag-provided.
+    vi.stubEnv('DEV_PERF_COMPILE_MAP', 'alice@example.com=Alice');
+    vi.stubEnv('DEV_PERF_COMPILE_INCLUDE_USER', 'Bob');
+    vi.stubEnv('DEV_PERF_COMPILE_EXCLUDE_USER', 'Carol');
+    vi.stubEnv('DEV_PERF_COMPILE_REPO', 'repo-a');
+    vi.stubEnv('DEV_PERF_COMPILE_EXCLUDE_REPO', 'repo-b');
+
+    const resolved = resolveCompileOptions(undefined, {
+      map: [],
+      includeUser: [],
+      excludeUser: [],
+      repo: [],
+      excludeRepo: [],
+    });
+
+    expect(resolved.map).toEqual(['alice@example.com=Alice']);
+    expect(resolved.includeUser).toEqual(['Bob']);
+    expect(resolved.excludeUser).toEqual(['Carol']);
+    expect(resolved.repo).toEqual(['repo-a']);
+    expect(resolved.excludeRepo).toEqual(['repo-b']);
+  });
+
   it('keeps the positional report over DEV_PERF_COMPILE_REPORT', () => {
     vi.stubEnv('DEV_PERF_COMPILE_REPORT', 'env.json');
     expect(resolveCompileOptions('flag.json', {}).report).toBe('flag.json');

@@ -91,6 +91,12 @@ and this project adheres to
 
 ### Fixed
 
+- The `compile` command now honors the list-option environment
+  variables `DEV_PERF_COMPILE_MAP`, `DEV_PERF_COMPILE_INCLUDE_USER`,
+  `DEV_PERF_COMPILE_EXCLUDE_USER`, `DEV_PERF_COMPILE_REPO` and
+  `DEV_PERF_COMPILE_EXCLUDE_REPO` when the corresponding flags are not
+  passed (previously the commander empty-array defaults shadowed them,
+  so the variables were silently ignored).
 - The CLI now exits after writing the report even when the opencode
   server does not shut down: the entry point forces a clean exit once
   stdout has flushed, and a server that ignores SIGTERM is force-killed

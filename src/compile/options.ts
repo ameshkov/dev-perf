@@ -170,7 +170,13 @@ export function resolveCompileOptions(
 ): RawCompileOptions & { report: string | undefined } {
   const merged: Record<string, unknown> = { ...raw };
   for (const key of Object.keys(OPTION_ENV) as Array<keyof RawCompileOptions>) {
-    if (merged[key] !== undefined) {
+    // Repeatable options default to `[]` in commander, so an empty
+    // array means the flag was not passed; only a non-empty list (or
+    // any value for non-list options) counts as flag-provided.
+    const providedByFlag = Array.isArray(merged[key])
+      ? (merged[key] as unknown[]).length > 0
+      : merged[key] !== undefined;
+    if (providedByFlag) {
       continue;
     }
     const value = env[OPTION_ENV[key]];
