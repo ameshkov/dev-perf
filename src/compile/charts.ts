@@ -182,8 +182,9 @@ function signalTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[
 
 /**
  * The per-period signal-rate charts (risk flags and quality signals):
- * the average number of flags per contribution of each period, so the
- * flag density of the team's work is visible period by period.
+ * the average number of flags per contribution of each period, one bar
+ * per period, so the flag density of the team's work is visible period
+ * by period.
  *
  * @param data - The chart data.
  * @param charts - The chart list to append to.
@@ -191,7 +192,6 @@ function signalTeamCharts(data: ChartData, charts: ChartAsset[], labels: string[
  */
 function signalRateCharts(data: ChartData, charts: ChartAsset[], labels: string[]): void {
   for (const kind of ['risk', 'quality'] as const) {
-    const noun = kind === 'risk' ? 'flags' : 'signals';
     const name = kind === 'risk' ? 'risk flags' : 'quality signals';
     charts.push({
       file:
@@ -199,20 +199,15 @@ function signalRateCharts(data: ChartData, charts: ChartAsset[], labels: string[
           ? 'team-risk-flags-per-contribution.svg'
           : 'team-quality-signals-per-contribution.svg',
       caption: `Average ${name} per contribution per period.`,
-      spec: lineSeriesSpec(
+      spec: barSpec(
         `Team ${name} per contribution`,
         labels,
-        [noun],
-        lineRows(labels, [
-          {
-            key: noun,
-            values: data.team.map((point, index) =>
-              flagsPerContribution(data.signals[kind][index], point.contributions),
-            ),
-          },
-        ]),
+        labels.map((label, index) => ({
+          x: label,
+          key: label,
+          value: flagsPerContribution(data.signals[kind][index], data.team[index].contributions),
+        })),
         'Per contribution',
-        noun,
       ),
     });
   }

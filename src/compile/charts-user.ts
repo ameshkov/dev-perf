@@ -14,7 +14,6 @@ import { COMPLEXITY_ORDER, SIZE_ORDER } from './chart-data.js';
 import {
   barLineRows,
   flagsPerContribution,
-  lineRows,
   signalShareRows,
   stackedRows,
   topWithOther,
@@ -28,7 +27,6 @@ import {
   barSpec,
   groupedBarSpec,
   horizontalBarSpec,
-  lineSeriesSpec,
   pieSpec,
   stackedBarSpec,
 } from './vega.js';
@@ -125,8 +123,8 @@ function signalUserCharts(
 
 /**
  * The per-period signal-rate charts of one user: the average number of
- * flags per contribution of each period, so the flag density of the
- * user's work is visible period by period.
+ * flags per contribution of each period, one bar per period, so the
+ * flag density of the user's work is visible period by period.
  *
  * @param series - The user's series.
  * @param charts - The chart list to append to.
@@ -139,24 +137,22 @@ function signalRateUserCharts(
   labels: string[],
   slug: string,
 ): void {
-  for (const { kind, noun, name } of SIGNAL_KINDS) {
+  for (const { kind, name } of SIGNAL_KINDS) {
     charts.push({
       file: `${slug}-${kind}-per-contribution.svg`,
       caption: `Average ${name} per contribution per period.`,
-      spec: lineSeriesSpec(
+      spec: barSpec(
         `${series.user.name} — ${name} per contribution`,
         labels,
-        [noun],
-        lineRows(labels, [
-          {
-            key: noun,
-            values: series.points.map((point, index) =>
-              flagsPerContribution(series.signals[kind][index], point.contributions),
-            ),
-          },
-        ]),
+        labels.map((label, index) => ({
+          x: label,
+          key: label,
+          value: flagsPerContribution(
+            series.signals[kind][index],
+            series.points[index].contributions,
+          ),
+        })),
         'Per contribution',
-        noun,
       ),
     });
   }

@@ -71,6 +71,11 @@ function specRows(spec: object): Array<{ x: string; key: string; value: number }
   return data?.values ?? [];
 }
 
+/** The mark type of a chart spec, `undefined` for a missing spec. */
+function specMark(spec: object | undefined): unknown {
+  return (spec as { mark?: unknown } | undefined)?.mark;
+}
+
 describe('buildChartAssets', () => {
   it('builds the per-user contributions-per-period chart stacked by complexity', () => {
     const data = buildChartData(filterReport(llmReport(), { emailMap: {} }));
@@ -113,10 +118,38 @@ describe('buildChartAssets', () => {
 
     const rate = assets.find((chart) => chart.file === 'alice-risk-per-contribution.svg');
     expect(rate?.caption).toBe('Average risk flags per contribution per period.');
+    // The average is a single value per period, so the chart is a bar
+    // chart, not a line chart.
+    expect(specMark(rate?.spec)).toBe('bar');
     // January: 1 flag over 2 contributions; February: 2 over 1.
     expect(specRows(rate?.spec ?? {})).toEqual([
-      { x: '2026-01', key: 'flags', value: 0.5 },
-      { x: '2026-02', key: 'flags', value: 2 },
+      { x: '2026-01', key: '2026-01', value: 0.5 },
+      { x: '2026-02', key: '2026-02', value: 2 },
+    ]);
+  });
+
+  it('builds the team signal-rate charts as bar charts', () => {
+    const data = buildChartData(filterReport(llmReport(), { emailMap: {} }));
+    const assets = buildChartAssets(data);
+
+    const risk = assets.find((chart) => chart.file === 'team-risk-flags-per-contribution.svg');
+    expect(risk?.caption).toBe('Average risk flags per contribution per period.');
+    expect(specMark(risk?.spec)).toBe('bar');
+    // January: 1 flag over 2 contributions; February: 2 over 1.
+    expect(specRows(risk?.spec ?? {})).toEqual([
+      { x: '2026-01', key: '2026-01', value: 0.5 },
+      { x: '2026-02', key: '2026-02', value: 2 },
+    ]);
+
+    const quality = assets.find(
+      (chart) => chart.file === 'team-quality-signals-per-contribution.svg',
+    );
+    expect(quality?.caption).toBe('Average quality signals per contribution per period.');
+    expect(specMark(quality?.spec)).toBe('bar');
+    // January: no quality signals; February: A3 carries tests-added.
+    expect(specRows(quality?.spec ?? {})).toEqual([
+      { x: '2026-01', key: '2026-01', value: 0 },
+      { x: '2026-02', key: '2026-02', value: 1 },
     ]);
   });
 

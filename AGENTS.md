@@ -86,7 +86,8 @@ dev-perf/
 │   ├── trend/                 # Time-based period splitting
 │   ├── util/                  # Shared helpers
 │   └── report/                # Report schema, the single source of truth
-├── test/                      # Fixture repos, report builders, and compiled-CLI e2e tests
+├── test/                      # Fixture repos, report builders, shared test helpers,
+│                              # and compiled-CLI e2e tests
 ├── scripts/                   # Build-time asset copying and the knip exclude bootstrap
 ├── docs/
 │   └── design.md              # Full design document

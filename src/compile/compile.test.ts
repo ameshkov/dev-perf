@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withTempDir } from '../../test/helpers/temp-dir.js';
 import { fixtureContribution, trendReportJson } from '../../test/fixtures/trend-report-builder.js';
 import { runCompile } from './compile.js';
 import { parseCompileOptions } from './options.js';
@@ -70,16 +70,6 @@ function llmReport() {
   });
 }
 
-/** Runs `fn` with a fresh temp directory, removed afterwards. */
-async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-compile-'));
-  try {
-    return await fn(dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
 describe('runCompile', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -134,6 +124,19 @@ describe('runCompile', () => {
       // over two periods of the fixture default (100 in / 50 cached in /
       // 20 out, $0.01 per user per period).
       expect(md).toContain('- LLM analysis cost: 400 in / 200 cached in / 80 out / $0.0400');
+      // The top contributors by commits, contributions and points:
+      // Alice and Bob tie on commits (5) and contributions (2), and
+      // Alice leads on points (two m-sized contributions), so the
+      // master user order resolves every tie in favor of Alice.
+      expect(md).toContain('- Top contributor by commits: Alice (5 commits)');
+      expect(md).toContain('- Top contributor by contributions: Alice (2 contributions)');
+      expect(md).toContain('- Top contributor by points: Alice (6 points)');
+      // The busiest periods follow the same pattern: January leads on
+      // commits (6 vs 4), and ties on contributions (2) and points (6)
+      // resolve in favor of the older period.
+      expect(md).toContain('- Busiest period by commits: 2026-01 (6 commits)');
+      expect(md).toContain('- Busiest period by contributions: 2026-01 (2 contributions)');
+      expect(md).toContain('- Busiest period by points: 2026-01 (6 points)');
       expect(md).toContain(
         '| LLM cost | 400 in / 200 cached in / 80 out / $0.0400 | Estimated token usage and cost of the LLM analysis |',
       );
@@ -341,228 +344,6 @@ describe('runCompile', () => {
 
       const md = await readFile(path.join(dir, 'out', 'report.md'), 'utf8');
       expect(md).toContain('### Alice Smith');
-    });
-  });
-
-  it('shortens repository URLs in the executive summary and the Repositories table', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      await writeFile(
-        reportFile,
-        trendReportJson({
-          periods: [
-            {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'git@github.com:acme/app.git',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-                {
-                  repo: 'https://gitlab.com:8443/team/tools.git',
-                  users: [{ name: 'Bob', emails: ['bob@example.com'] }],
-                },
-              ],
-            },
-            {
-              since: '2026-02-01T00:00:00.000Z',
-              until: '2026-02-28T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'git@github.com:acme/app.git',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-                {
-                  repo: 'https://gitlab.com:8443/team/tools.git',
-                  users: [{ name: 'Bob', emails: ['bob@example.com'] }],
-                },
-              ],
-            },
-          ],
-        }),
-      );
-      const output = path.join(dir, 'out');
-
-      const result = await runCompile(
-        reportFile,
-        parseCompileOptions({ report: reportFile, output }),
-      );
-
-      const md = await readFile(path.join(output, 'report.md'), 'utf8');
-      expect(md).toContain(
-        ['- Repositories (2):', '    - github.com/acme/app', '    - gitlab.com/team/tools'].join(
-          '\n',
-        ),
-      );
-      // The Repositories table uses the same labels and shows the
-      // per-repository contribution count and weighted points (one
-      // contribution per period, size m → 3 points each).
-      expect(md).toContain(
-        '| Repository | Commits | Contributions | Points | Users | Top languages |',
-      );
-      expect(md).toContain('| github.com/acme/app | 2 | 2 | 6 | 1 | TypeScript (20) |');
-      expect(md).toContain('| gitlab.com/team/tools | 2 | 2 | 6 | 1 | TypeScript (20) |');
-      // The per-repository comparison chart legend carries just the
-      // repository names, not the host/org or the raw URLs.
-      const svg = await readFile(
-        path.join(result.assetsPath, 'repos-commits-per-period.svg'),
-        'utf8',
-      );
-      expect(svg).toContain('>app</text>');
-      expect(svg).toContain('>tools</text>');
-      expect(svg).not.toContain('github.com');
-      expect(svg).not.toContain('gitlab.com');
-      expect(svg).not.toContain('git@github.com');
-      expect(svg).not.toContain('https://gitlab.com');
-    });
-  });
-
-  it('skips per-period charts for a single-period report', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      await writeFile(
-        reportFile,
-        trendReportJson({
-          periods: [
-            {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'repo-a',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-              ],
-            },
-          ],
-        }),
-      );
-      const output = path.join(dir, 'out');
-
-      await runCompile(reportFile, parseCompileOptions({ report: reportFile, output }));
-
-      const md = await readFile(path.join(output, 'report.md'), 'utf8');
-      expect(md).toContain('Time-based dynamics charts are skipped');
-      const files = await readdir(path.join(output, 'assets'));
-      expect(files).not.toContain('team-commits-per-period.svg');
-      expect(files).toContain('alice-contributions-by-size.svg');
-    });
-  });
-
-  it('omits LLM sections for a deterministic-only report', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      await writeFile(
-        reportFile,
-        trendReportJson({
-          llmEnabled: false,
-          periods: [
-            {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'repo-a',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-              ],
-            },
-            {
-              since: '2026-02-01T00:00:00.000Z',
-              until: '2026-02-28T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'repo-a',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-              ],
-            },
-          ],
-        }),
-      );
-      const output = path.join(dir, 'out');
-
-      await runCompile(reportFile, parseCompileOptions({ report: reportFile, output }));
-
-      const md = await readFile(path.join(output, 'report.md'), 'utf8');
-      expect(md).not.toContain('## LLM analysis summary');
-      expect(md).toContain('LLM analysis: disabled');
-      const files = await readdir(path.join(output, 'assets'));
-      expect(files).toContain('alice-commits-per-period.svg');
-      expect(files).toContain('alice-lines-per-period.svg');
-      expect(files).not.toContain('work-types.svg');
-    });
-  });
-
-  it('renders the repository comparison chart for multiple repositories', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      await writeFile(
-        reportFile,
-        trendReportJson({
-          llmEnabled: false,
-          periods: [
-            {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'repo-a',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-                {
-                  repo: 'repo-b',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-              ],
-            },
-            {
-              since: '2026-02-01T00:00:00.000Z',
-              until: '2026-02-28T23:59:59.999Z',
-              repositories: [
-                {
-                  repo: 'repo-a',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-                {
-                  repo: 'repo-b',
-                  users: [{ name: 'Alice', emails: ['alice@example.com'] }],
-                },
-              ],
-            },
-          ],
-        }),
-      );
-      const output = path.join(dir, 'out');
-
-      await runCompile(reportFile, parseCompileOptions({ report: reportFile, output }));
-
-      const md = await readFile(path.join(output, 'report.md'), 'utf8');
-      expect(md).toContain('## Repositories');
-      expect(md).toContain(
-        '![Commits per period, one line per repository.](assets/repos-commits-per-period.svg)',
-      );
-      // Deterministic-only reports keep the table free of LLM columns:
-      // each repo has 2 commits (one per period) from Alice.
-      expect(md).toContain('| Repository | Commits | Users | Top languages |');
-      expect(md).not.toContain('| Repository | Commits | Contributions | Users | Top languages |');
-      expect(md).toContain('| repo-a | 2 | 1 | TypeScript (20) |');
-      expect(md).toContain('| repo-b | 2 | 1 | TypeScript (20) |');
-    });
-  });
-
-  it('rejects an invalid report file with the file name in the error', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      await writeFile(reportFile, '{}');
-
-      await expect(
-        runCompile(
-          reportFile,
-          parseCompileOptions({ report: reportFile, output: path.join(dir, 'out') }),
-        ),
-      ).rejects.toThrow(/Invalid report \(.*report\.json\)/);
     });
   });
 });

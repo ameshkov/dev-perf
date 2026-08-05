@@ -71,7 +71,7 @@ and this project adheres to
   risk flags, and per-repository commit counts, with a back-link to
   `report.md`; the individual sections of the main report link to
   these reports.
-- The `compile` team dynamics now include per-period line charts of
+- The `compile` team dynamics now include per-period bar charts of
   the average number of risk flags and quality signals per
   contribution, so the flag density of the work is visible over time.
 - The `compile` individual dynamics sections of the main report now
@@ -120,6 +120,11 @@ and this project adheres to
 
 ### Changed
 
+- The `compile` executive summary now reports three separate top
+  contributors and three separate busiest periods — by commits, by LLM
+  contributions, and by weighted points (the LLM pair only when the
+  report has LLM analysis) — instead of a single commit-based "Top
+  contributor" and "Busiest period" fact.
 - The `compile` individual dynamics sections of the main report no
   longer embed the whole-range contribution-sizes chart; it stays in
   the per-person reports under `people/`.

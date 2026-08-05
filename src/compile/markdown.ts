@@ -7,6 +7,7 @@
  */
 import type { ChartAsset } from './chart-util.js';
 import type { ChartData, UserSeries } from './chart-data.js';
+import { busiestFacts, topContributorFacts } from './markdown-facts.js';
 import {
   bullets,
   chartAsset,
@@ -53,25 +54,6 @@ function contextLine(data: ChartData): string {
 }
 
 /**
- * The busiest period by commits: its label and commit count.
- *
- * @param data - The chart data.
- * @returns The facts text, or `undefined` when there are no commits.
- */
-function busiestPeriod(data: ChartData): string | undefined {
-  let bestIndex = -1;
-  for (let index = 0; index < data.team.length; index += 1) {
-    if (bestIndex === -1 || data.team[index].commits > data.team[bestIndex].commits) {
-      bestIndex = index;
-    }
-  }
-  if (bestIndex === -1 || data.team[bestIndex].commits === 0) {
-    return undefined;
-  }
-  return `Busiest period: ${data.periods[bestIndex].label} (${formatInt(data.team[bestIndex].commits)} commits)`;
-}
-
-/**
  * The repositories fact of the executive summary: one nested bullet
  * per analyzed repository, displayed as `host/org/repo` by
  * `repoLabel`.
@@ -108,8 +90,9 @@ function peopleFact(data: ChartData): string {
 /**
  * The key-facts bullets of the executive summary: the analyzed range,
  * the repositories and the people as nested bullet lists, then the
- * busiest period, top contributor, most common risk flag and LLM cost
- * when present.
+ * busiest periods and the top contributors (by commits, and by LLM
+ * contributions and points when the report has LLM analysis), the
+ * most common risk flag and the LLM cost when present.
  *
  * @param data - The chart data.
  * @returns The bullets.
@@ -120,16 +103,8 @@ function keyFacts(data: ChartData): string[] {
     repositoriesFact(data),
     peopleFact(data),
   ].filter((fact) => fact !== '');
-  const busiest = busiestPeriod(data);
-  if (busiest !== undefined) {
-    facts.push(busiest);
-  }
-  const topContributor = data.users.find((series) => series.user.deterministic.commits > 0);
-  if (topContributor !== undefined) {
-    facts.push(
-      `Top contributor: ${topContributor.user.name} (${formatInt(topContributor.user.deterministic.commits)} commits)`,
-    );
-  }
+  busiestFacts(data, facts);
+  topContributorFacts(data, facts);
   if (data.parameters.llmEnabled && data.tallies.risk.length > 0) {
     const top = data.tallies.risk[0];
     facts.push(
