@@ -4,8 +4,15 @@
 [![npm](https://img.shields.io/npm/v/dev-perf)](https://www.npmjs.com/package/dev-perf)
 [![GitHub release](https://img.shields.io/github/v/release/ameshkov/dev-perf)](https://github.com/ameshkov/dev-perf/releases)
 
-`dev-perf` is a CLI tool that measures developer contributions to git repositories
-and produces a JSON report of per-user metrics.
+<p align="center">
+    CLI tool that measures developer contributions to git repositories and
+    produces a report of the team metrics.
+</p>
+
+<p align="center">
+    <img src="docs/assets/dev-perf.png"
+         alt="MCP Compress Router" width="600"/>
+</p>
 
 ## What it does
 
