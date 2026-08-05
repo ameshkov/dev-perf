@@ -58,6 +58,8 @@ Options:
   --llm-retries <n>      Retry a failed LLM analysis up to <n> more times,
                          restarting the opencode server between attempts
                          (default: 2)
+  --parallel <n>         Analyze up to <n> repositories in parallel
+                         (default: 1)
   --verbose              Verbose logging
   --help                 Show help
 ```
@@ -86,15 +88,27 @@ ignores SIGTERM — and re-runs the analysis with a fresh server, reusing the
 already-cached per-user results so only the failed sessions run again.
 `--llm-retries 0` fails fast on the first failure.
 
+Multiple repositories are analyzed sequentially by default.
+`--parallel <n>` analyzes up to `n` repositories at once — with LLM
+analysis enabled this runs up to `n` opencode servers concurrently
+(bounded by `--parallel`; server startup is serialized so concurrent
+servers never share the wrong clone or the user's global opencode
+configuration). The analyzed range is resolved once from the first
+clone before the parallel phase. Duplicate repository specs are
+analyzed once, with a warning; the report lists each repository once.
+
 Cost visibility: the report records, per user, the `tokenUsage` (input/output
 tokens) and the `estimatedCostUsd` from the provider's event stream, so runaway
 costs are visible in the report itself.
 
 `--verbose` prints progress to stderr — cache reuse vs a fresh clone (with
-duration), the resolved author-date range, and per-repo commit counts. stdout
-carries nothing but the report JSON, and a default run is silent apart from
-errors and warnings (e.g. when a host rejects partial clones and the full-clone
-fallback kicks in).
+duration), the resolved author-date range, and per-repo commit counts. Each
+line carries a millisecond timestamp, and per-repository lines are
+prefixed with the repository's label (`[repo]`), so the progress of a
+parallel run stays traceable. stdout carries nothing but the report
+JSON, and a default run is silent apart from errors and warnings (e.g.
+when a host rejects partial clones and the full-clone fallback kicks
+in).
 
 Time-based period reports: with `--unit day|week|month|quarter|year`, the
 `--since`/`--until` range is split into consecutive UTC-aligned periods (days
@@ -287,6 +301,7 @@ exported in the shell are never overridden by `.env`.
 | `--limit-context <n>` | `DEV_PERF_LIMIT_CONTEXT` | Default: 262144 |
 | `--limit-output <n>` | `DEV_PERF_LIMIT_OUTPUT` | Default: 65536 |
 | `--llm-retries <n>` | `DEV_PERF_LLM_RETRIES` | Retries for a failed LLM analysis; default 2 |
+| `--parallel <n>` | `DEV_PERF_PARALLEL` | Repositories analyzed concurrently; default 1 |
 | `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
 
 Every `compile` option has a `DEV_PERF_COMPILE_*` variable:

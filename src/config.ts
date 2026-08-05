@@ -44,6 +44,8 @@ export interface RawCliOptions {
   limitOutput?: string;
   /** Retries for a failed LLM analysis (default: 2). */
   llmRetries?: string;
+  /** Analyze up to this many repositories in parallel (default: 1). */
+  parallel?: string;
   /** Verbose logging. */
   verbose?: boolean;
 }
@@ -67,6 +69,7 @@ const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
   limitContext: 'DEV_PERF_LIMIT_CONTEXT',
   limitOutput: 'DEV_PERF_LIMIT_OUTPUT',
   llmRetries: 'DEV_PERF_LLM_RETRIES',
+  parallel: 'DEV_PERF_PARALLEL',
   verbose: 'DEV_PERF_VERBOSE',
 };
 
@@ -124,6 +127,8 @@ export const cliOptionsSchema = z
     limitOutput: z.coerce.number().int().positive().default(65536),
     /** Retries for a failed LLM analysis (default: 2). */
     llmRetries: z.coerce.number().int().min(0).default(2),
+    /** Analyze up to this many repositories in parallel (default: 1). */
+    parallel: z.coerce.number().int().min(1).default(1),
     /** Verbose logging. */
     verbose: z.boolean().optional(),
   })

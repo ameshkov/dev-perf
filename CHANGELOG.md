@@ -117,6 +117,16 @@ and this project adheres to
   stdout and shuts the opencode server down, force-killing it with its
   whole process tree when it ignores SIGTERM, so a stuck server can
   neither hang the run nor leak a process.
+- Parallel multi-repository analysis with `--parallel <n>` (default 1;
+  `DEV_PERF_PARALLEL`): repositories are analyzed concurrently, bounded
+  by `<n>` — with LLM analysis enabled this runs up to `<n>` opencode
+  servers at once, with server startup serialized so the servers never
+  share the wrong clone or the user's global opencode configuration.
+  Duplicate repository specs are analyzed once, with a warning.
+- Verbose (`--verbose`) progress lines now carry a millisecond
+  timestamp, and per-repository lines are prefixed with the
+  repository's label (`[repo]`), so the progress of a parallel run
+  stays traceable.
 
 ### Changed
 

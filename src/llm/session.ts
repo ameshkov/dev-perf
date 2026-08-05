@@ -21,7 +21,8 @@ import { llmToolPayloadSchema } from '../report/index.js';
 import type { LlmToolPayload, TokenUsage } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile } from '../util/json.js';
-import { logInfo, logWarn } from '../util/log.js';
+import { createScopedLog } from '../util/log.js';
+import type { ScopedLog } from '../util/log.js';
 import { ANALYST_AGENT_ID } from './server.js';
 
 /** One session on the server, scoped to the clone directory. */
@@ -111,16 +112,21 @@ export interface SessionService {
  * Binds the session wrappers to an opencode client.
  *
  * @param client - Type-safe client of a running opencode server.
+ * @param log - The repository's scoped logger for the heartbeat
+ * progress lines and usage warnings (defaults to the global logger).
  * @returns The session service for that server.
  */
-export function createSessionService(client: OpencodeClient): SessionService {
+export function createSessionService(
+  client: OpencodeClient,
+  log: ScopedLog = createScopedLog(),
+): SessionService {
   return {
     createSession: (directory, title) => createSessionWith(client, directory, title),
     promptSession: (handle, text, label, options) =>
-      promptSessionWith(client, handle, text, label, options),
+      promptSessionWith(client, handle, text, label, options, log),
     promptSessionUntilReport: (handle, text, llmDir, label) =>
-      promptSessionUntilReportWith(client, handle, text, llmDir, label),
-    collectUsage: (directory) => collectSessionUsage(client, directory),
+      promptSessionUntilReportWith(client, handle, text, llmDir, label, log),
+    collectUsage: (directory) => collectSessionUsage(client, directory, log),
   };
 }
 
@@ -163,6 +169,7 @@ async function createSessionWith(
  * @param text - The prompt text.
  * @param label - Name of the operation for the progress lines.
  * @param options - Prompt options.
+ * @param log - The repository's scoped logger for progress lines.
  * @returns The final assistant text (empty for `noReply` prompts).
  * @throws {Error} When the prompt fails; the session is aborted first.
  */
@@ -172,8 +179,9 @@ async function promptSessionWith(
   text: string,
   label: string,
   options: PromptOptions = {},
+  log: ScopedLog,
 ): Promise<string> {
-  const stopHeartbeat = startHeartbeat(label, 'the LLM reply');
+  const stopHeartbeat = startHeartbeat(log, label, 'the LLM reply');
   try {
     const result = await client.session.prompt({
       path: { id: handle.id },
@@ -232,6 +240,7 @@ async function abortSession(client: OpencodeClient, handle: SessionHandle): Prom
  * @param text - The prompt text.
  * @param llmDir - The entry's `llm/` directory holding the report files.
  * @param label - Name of the operation for the progress lines.
+ * @param log - The repository's scoped logger for progress lines.
  * @returns The validated analysis payload, or `undefined` when the turn
  * ended without calling the tool.
  * @throws {Error} When the prompt fails; the session is aborted first.
@@ -242,10 +251,11 @@ async function promptSessionUntilReportWith(
   text: string,
   llmDir: string,
   label: string,
+  log: ScopedLog,
 ): Promise<LlmToolPayload | undefined> {
   let done = false;
   const report = pollForReport(handle, llmDir, () => done);
-  const stopHeartbeat = startHeartbeat(label, 'devperf_report');
+  const stopHeartbeat = startHeartbeat(log, label, 'devperf_report');
   let outcome: PromptOutcome;
   try {
     outcome = await settlePromptRace(client, handle, text, report);
@@ -373,14 +383,15 @@ function sleep(ms: number): Promise<void> {
  * repeated progress lines instead of an endless silent wait. The
  * interval is unref'd so it cannot keep the process alive on its own.
  *
+ * @param log - The scoped logger the progress lines go to.
  * @param label - Who or what is being waited on (e.g. the user name).
  * @param what - What is being waited for, e.g. `devperf_report`.
  * @returns A function that stops the heartbeat.
  */
-function startHeartbeat(label: string, what: string): () => void {
+function startHeartbeat(log: ScopedLog, label: string, what: string): () => void {
   const startedAt = Date.now();
   const timer = setInterval(() => {
-    logInfo(
+    log.info(
       `LLM: ${label}: still waiting for ${what} (${Math.floor((Date.now() - startedAt) / 1000)}s elapsed)`,
     );
   }, STILL_WAITING_INTERVAL_MS);
@@ -439,6 +450,7 @@ export async function readSessionReport(
  *
  * @param client - The opencode client.
  * @param directory - The clone directory to scope the subscription to.
+ * @param log - The repository's scoped logger for usage warnings.
  * @returns The usage collector; call `close()` when analysis is done.
  *
  * @internal Exported for tests only (`session.test.ts`); also used by
@@ -448,8 +460,9 @@ export async function readSessionReport(
 export async function collectSessionUsage(
   client: OpencodeClient,
   directory: string,
+  log: ScopedLog = createScopedLog(),
 ): Promise<UsageCollector> {
-  const stream = await subscribeToEvents(client, directory);
+  const stream = await subscribeToEvents(client, directory, log);
   if (stream === undefined) {
     return noopCollector();
   }
@@ -487,7 +500,7 @@ export async function collectSessionUsage(
       }
     } catch (error) {
       // Best effort: a broken usage stream does not fail the analysis.
-      logWarn(`LLM usage tracking stopped: ${errorDetail(error)}`);
+      log.warn(`LLM usage tracking stopped: ${errorDetail(error)}`);
     }
   }
 
@@ -519,17 +532,19 @@ export async function collectSessionUsage(
  *
  * @param client - The opencode client.
  * @param directory - The clone directory to scope the subscription to.
+ * @param log - The repository's scoped logger for usage warnings.
  * @returns The event stream, or `undefined`.
  */
 async function subscribeToEvents(
   client: OpencodeClient,
   directory: string,
+  log: ScopedLog,
 ): Promise<AsyncGenerator<Event> | undefined> {
   try {
     const subscription = await client.event.subscribe({ query: { directory } });
     return subscription.stream;
   } catch (error) {
-    logWarn(`LLM usage tracking unavailable (token usage will be zero): ${errorDetail(error)}`);
+    log.warn(`LLM usage tracking unavailable (token usage will be zero): ${errorDetail(error)}`);
     return undefined;
   }
 }

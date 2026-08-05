@@ -33,7 +33,8 @@ import { llmDir, opencodeDir } from '../repo/cache.js';
 import { waitForServerExit } from './shutdown.js';
 import { buildReportToolSource } from './tools.js';
 import { errorDetail } from '../util/error.js';
-import { logInfo } from '../util/log.js';
+import { createScopedLog } from '../util/log.js';
+import type { ScopedLog } from '../util/log.js';
 
 /** Provider id under which the `--provider-url`/`--model` pair is registered. */
 const PROVIDER_ID = 'devperf';
@@ -101,6 +102,34 @@ export interface LlmServerHandle {
    * SDK sends SIGTERM; a server that does not exit is force-killed.
    */
   close(): Promise<void>;
+}
+
+/**
+ * Serializes server startups: `startServer` mutates process-global
+ * state — `process.cwd()` and `HOME`/`XDG_CONFIG_HOME` (the isolation
+ * environment) — for the duration of the spawn. Two concurrent starts
+ * would interleave those mutations: a server could spawn with another
+ * clone as its project directory, and an early environment restore
+ * could let it inherit the user's real home directory (leaking global
+ * opencode configuration). Server startup takes seconds while the
+ * analysis takes minutes, so serializing it costs nothing.
+ */
+let startupTail: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs `operation` after every previously queued startup settled,
+ * regardless of their outcome.
+ *
+ * @param operation - The startup operation to serialize.
+ * @returns The operation's result.
+ */
+function serialized<T>(operation: () => Promise<T>): Promise<T> {
+  const run = startupTail.then(operation, operation);
+  startupTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 /**
@@ -189,10 +218,14 @@ export async function writeServerFiles(cloneDir: string, generated: OpencodeConf
  * clone, injects the API key, and returns a handle. The server is the
  * caller's to close (`handle.close()`); on startup failure the temp
  * isolation state is removed and the error is rethrown with a hint
- * about the `opencode` binary.
+ * about the `opencode` binary. Startup is serialized across concurrent
+ * callers: the spawn mutates process-global state (cwd and the
+ * isolation environment), which parallel starts would race on.
  *
  * @param cloneDir - The clone's working tree (`<cache>/<hash>/repo`).
  * @param config - LLM server configuration.
+ * @param log - The repository's scoped logger (defaults to the global
+ * logger).
  * @returns The running server handle.
  * @throws {Error} When the server cannot be started (e.g. the `opencode`
  * binary is missing, or startup times out).
@@ -200,6 +233,32 @@ export async function writeServerFiles(cloneDir: string, generated: OpencodeConf
 export async function startServer(
   cloneDir: string,
   config: LlmServerConfig,
+  log: ScopedLog = createScopedLog(''),
+): Promise<LlmServerHandle> {
+  return serialized(() => spawnServer(cloneDir, config, log));
+}
+
+/**
+ * Spawns the opencode server for one clone: writes the generated files,
+ * spawns `opencode serve` with the isolated environment and cwd = the
+ * clone, injects the API key, and returns a handle. The server is the
+ * caller's to close (`handle.close()`); on startup failure the temp
+ * isolation state is removed and the error is rethrown with a hint
+ * about the `opencode` binary. Only called through `startServer`'s
+ * serialization, because the spawn mutates process-global state (cwd
+ * and the isolation environment).
+ *
+ * @param cloneDir - The clone's working tree (`<cache>/<hash>/repo`).
+ * @param config - LLM server configuration.
+ * @param log - The repository's scoped logger.
+ * @returns The running server handle.
+ * @throws {Error} When the server cannot be started (e.g. the `opencode`
+ * binary is missing, or startup times out).
+ */
+async function spawnServer(
+  cloneDir: string,
+  config: LlmServerConfig,
+  log: ScopedLog,
 ): Promise<LlmServerHandle> {
   const generated = generateOpencodeConfig(config);
   await writeServerFiles(cloneDir, generated);
@@ -224,7 +283,7 @@ export async function startServer(
       path: { id: PROVIDER_ID },
       body: { type: 'api', key: config.apiKey },
     });
-    logInfo(`LLM server: ${server.url} (model ${config.model})`);
+    log.info(`LLM server: ${server.url} (model ${config.model})`);
     return {
       client,
       url: server.url,
@@ -234,7 +293,7 @@ export async function startServer(
         // Wait (bounded) for the process to actually exit and
         // force-kill it when it does not — a stuck server would
         // otherwise keep this process alive through its stdio pipes.
-        await waitForServerExit(server.url);
+        await waitForServerExit(server.url, { log });
         await rm(tempHome, { recursive: true, force: true });
       },
     };

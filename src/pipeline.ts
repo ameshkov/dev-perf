@@ -1,46 +1,35 @@
 /**
  * Analysis pipeline orchestration: for each repository — clone/cache,
- * deterministic analysis, the LLM phase when enabled (one opencode
- * server per repo, shared by all its periods, restarted with a fresh
- * server when an attempt fails), per-period report assembly — then
- * write the report to stdout or the `--output` file. With `--unit`,
- * the analyzed range is split into UTC-aligned periods and the report
- * carries one full per-repository report per period. LLM failures are
- * retried (`llmRetries`, each attempt with a fully restarted server)
- * and remain fatal when every attempt fails: the error propagates and
- * the report is not written.
+ * deterministic analysis, the LLM phase when enabled — then assemble
+ * the report and write it to stdout or the `--output` file. The run's
+ * range is resolved once from the first clone (git date parsing is
+ * repo-independent) before the repositories are analyzed — in parallel
+ * up to `--parallel`; each repository's progress lines carry a scoped
+ * label. With `--unit`, the analyzed range is split into UTC-aligned
+ * periods and the report carries one full per-repository report per
+ * period. LLM failures are retried (`llmRetries`, each attempt with a
+ * fully restarted server) and remain fatal when every attempt fails:
+ * the error propagates and the report is not written. A failing
+ * repository does not abort its siblings — every repository runs to
+ * completion (each shuts its opencode server down in `finally`), the
+ * first failure is rethrown, and any additional failures are logged.
  */
-import path from 'node:path';
 import type { CliOptions } from './config.js';
-import { readCommits, resolveBoundDate } from './deterministic/commits.js';
-import type { AuthorGroup } from './deterministic/identity.js';
-import { groupByAuthor } from './deterministic/identity.js';
-import { analyzeRepositoryLLM } from './llm/analyze.js';
-import { createSessionService } from './llm/session.js';
-import type { SessionService } from './llm/session.js';
-import { startServer } from './llm/server.js';
-import type { LlmServerConfig, LlmServerHandle } from './llm/server.js';
-import { assembleRepository, assembleTrendReport } from './report/index.js';
-import type { AnalyzedRange, LlmAnalysis, Repository, TrendReport } from './report/index.js';
+import { resolveBoundDate } from './deterministic/commits.js';
+import { analyzeRepository } from './analyze-repo.js';
+import { assembleTrendReport } from './report/index.js';
+import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
-import type { CloneResult } from './repo/clone.js';
-import { filterGroupsForPeriod, splitPeriods } from './trend/periods.js';
+import { splitPeriods } from './trend/periods.js';
 import { errorDetail } from './util/error.js';
+import { pluralize, rangeBound } from './util/format.js';
+import { createScopedLog, logInfo, logWarn, setVerbose } from './util/log.js';
+import type { ScopedLog } from './util/log.js';
 import { prettyJson, writeJsonFile } from './util/json.js';
-import { logInfo, logWarn, setVerbose } from './util/log.js';
+import { mapLimit } from './util/pool.js';
 
 /** Date string git resolves for the default `--until` bound. */
 const DEFAULT_UNTIL = 'today';
-
-/** One repository analyzed across all periods of the run. */
-interface RepoAnalysis {
-  /** Resolved author-date range of the run (UTC instants). */
-  range: AnalyzedRange;
-  /** Period bounds of the run; one whole-range period without `--unit`. */
-  periods: AnalyzedRange[];
-  /** Assembled repository entries, one per period. */
-  repositories: Repository[];
-}
 
 /** Per-run analysis state: the range, its periods, and the entries. */
 interface RunAnalysis {
@@ -52,14 +41,6 @@ interface RunAnalysis {
   repositories: Repository[][];
 }
 
-/** The repo's LLM phase: one opencode server and its session service. */
-interface LlmPhase {
-  /** The running server, closed by the caller. */
-  server: LlmServerHandle;
-  /** The session service bound to the server. */
-  service: SessionService;
-}
-
 /**
  * Runs the analysis pipeline end to end: clones or reuses the cached
  * clone for each repository, resolves the analyzed author-date range
@@ -68,10 +49,14 @@ interface LlmPhase {
  * author once per repo, runs the LLM phase when enabled (one server
  * per repo shared by its periods, per-period analyses merged into the
  * report), assembles the report, and writes it as pretty JSON to
- * stdout or the `--output` file. With `options.verbose`, progress
- * (clone/reuse with duration, the resolved range, the period split,
- * per-repo commit counts, LLM sessions) is logged to stderr; stdout
- * stays reserved for the report JSON.
+ * stdout or the `--output` file. Duplicate repository specs are
+ * analyzed once (their entries are identical anyway, and parallel
+ * analysis of the same cache entry would race); the report parameters
+ * list the unique repos in input order. With `options.verbose`,
+ * progress (clone/reuse with duration, the resolved range, the period
+ * split, per-repo commit counts, LLM sessions) is logged to stderr —
+ * per-repo lines carry the repo's label; stdout stays reserved for the
+ * report JSON.
  *
  * @param options - Validated CLI options (see `parseCliOptions`).
  * @returns The assembled trend report document.
@@ -84,9 +69,10 @@ interface LlmPhase {
  */
 export async function runPipeline(options: CliOptions): Promise<TrendReport> {
   setVerbose(options.verbose === true);
-  const analyzed = await analyzeAllRepos(options);
+  const repos = dedupeRepos(options.repos);
+  const analyzed = await analyzeAllRepos(options, repos);
   const report = assembleTrendReport({
-    repos: options.repos,
+    repos,
     range: analyzed.range,
     unit: options.unit,
     model: options.llm ? options.model : undefined,
@@ -109,358 +95,161 @@ export async function runPipeline(options: CliOptions): Promise<TrendReport> {
  * Analyzes all repositories of the run: the range is resolved once
  * from the first clone (date parsing is repo-independent) and split
  * into periods once; each repository is then analyzed across those
- * periods. Returns the run range, the period bounds, and the assembled
- * repository entries grouped by period (one entry per repo per
- * period).
+ * periods — in parallel up to `--parallel`. Returns the run range, the
+ * period bounds, and the assembled repository entries grouped by
+ * period (one entry per repo per period). Every repository runs to
+ * completion (each one's `finally` shuts its opencode server down);
+ * the first failure is rethrown after the pool settled, and any
+ * additional failures are logged as warnings.
  *
  * @param options - Validated CLI options.
+ * @param repos - The deduplicated repository specs, in input order.
  * @returns The run range, periods, and per-period repository entries.
- */
-async function analyzeAllRepos(options: CliOptions): Promise<RunAnalysis> {
-  let range: AnalyzedRange | undefined;
-  let periods: AnalyzedRange[] | undefined;
-  const repositories: Repository[][] = [];
-  for (const repo of options.repos) {
-    const analyzed = await analyzeRepository(repo, options, range, periods);
-    range ??= analyzed.range;
-    periods ??= analyzed.periods;
-    for (let index = 0; index < analyzed.repositories.length; index += 1) {
-      (repositories[index] ??= []).push(analyzed.repositories[index]);
-    }
-  }
-  return {
-    range: range ?? { since: '', until: '' },
-    periods: periods ?? [{ since: '', until: '' }],
-    repositories,
-  };
-}
-
-/**
- * Analyzes one repository across all periods of the run: ensures the
- * clone (reusing the cache when possible), reads the commits of the
- * whole range once, groups them by author, and runs the LLM phase
- * when enabled (`runLlmPhase` — one opencode server per attempt,
- * restarted between retries). Each period gets the groups' commits
- * filtered to its bounds, an LLM analysis for its active users, and
- * an assembled repository entry. The range and periods are reused
- * from the run when the first repository already resolved them.
- *
- * @param repo - Repository URL or local path as given on the command line.
- * @param options - Validated CLI options.
- * @param runRange - The run's resolved range, when already resolved.
- * @param runPeriods - The run's period bounds, when already resolved.
- * @returns The resolved range, the period bounds, and the per-period
- * entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
  * cannot be parsed.
  * @throws {Error} When the LLM phase fails; the message names the repo
  * — and the period when `--unit` is set — plus the underlying cause.
  */
-async function analyzeRepository(
-  repo: string,
-  options: CliOptions,
-  runRange: AnalyzedRange | undefined,
-  runPeriods: AnalyzedRange[] | undefined,
-): Promise<RepoAnalysis> {
-  const startedAt = Date.now();
-  const clone = await ensureClone(repo, { cacheDir: options.cacheDir, refresh: options.refresh });
-  logInfo(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} ${repo} in ${Date.now() - startedAt} ms`,
-  );
-  const range = runRange ?? (await resolveRange(clone.repoDir, options.since, options.until));
-  const periods = runPeriods ?? splitPeriods(range, options.unit);
-  if (runRange === undefined) {
-    logInfo(`range: ${rangeBound(range.since)} to ${rangeBound(range.until)}`);
-    if (options.unit !== undefined) {
-      const first = periods[0];
-      const last = periods[periods.length - 1];
-      logInfo(
-        `periods: ${pluralize(periods.length, options.unit)} from ${rangeBound(first.since)} to ${rangeBound(last.until)}`,
-      );
-    }
+async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<RunAnalysis> {
+  const logs = scopedLogs(repos);
+  const first = repos[0];
+  const firstLog = logs[0];
+  if (first === undefined || firstLog === undefined) {
+    return {
+      range: { since: '', until: '' },
+      periods: [{ since: '', until: '' }],
+      repositories: [],
+    };
   }
-  const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
-  const groups = groupByAuthor(commits);
-  logInfo(
-    `${repo}: ${pluralize(commits.length, 'commit')} from ${pluralize(groups.length, 'author')}`,
+  // Serial prefix: clone the first repo and resolve the run's range
+  // and periods from it — git date parsing is repo-independent, and
+  // the first clone is then a cache hit inside the parallel pool.
+  const startedAt = Date.now();
+  const clone = await ensureClone(first, {
+    cacheDir: options.cacheDir,
+    refresh: options.refresh,
+    log: firstLog,
+  });
+  firstLog.info(
+    `${clone.reused ? 'reused cached clone' : 'cloned'} ${first} in ${Date.now() - startedAt} ms`,
   );
+  const range = await resolveRange(clone.repoDir, options.since, options.until);
+  const periods = splitPeriods(range, options.unit);
+  logInfo(`range: ${rangeBound(range.since)} to ${rangeBound(range.until)}`);
+  if (options.unit !== undefined) {
+    const firstPeriod = periods[0];
+    const lastPeriod = periods[periods.length - 1];
+    logInfo(
+      `periods: ${pluralize(periods.length, options.unit)} from ${rangeBound(firstPeriod.since)} to ${rangeBound(lastPeriod.until)}`,
+    );
+  }
 
-  const repositories = await runLlmPhase(repo, clone, periods, groups, options);
+  const repositories = await analyzeReposInParallel(options, repos, logs, range, periods);
   return { range, periods, repositories };
 }
 
 /**
- * Runs a repository's LLM phase with automatic retries: the analysis
- * (server start plus per-period sessions) is attempted up to
- * `1 + llmRetries` times, and every failed attempt is retried with a
- * fully restarted opencode server — the server is stopped and its
- * whole process tree force-killed when it does not exit, so the next
- * attempt starts from a clean slate. Completed per-user analyses are
- * cached and reused across attempts, so a retry only re-runs the
- * sessions that failed. The analysis succeeds as soon as one attempt
- * completes; when every attempt fails, the error names the repository
- * and the attempt count. With `llmRetries: 0` the original error is
- * rethrown unchanged (fail fast).
+ * Runs the parallel analysis of all repositories with the run's
+ * resolved range and periods: every repository — the first one hits
+ * the cache — runs to completion, so each task's `finally` shuts its
+ * opencode server down; the first failure is rethrown once the pool
+ * settled, with any additional failures logged as warnings. Returns
+ * the assembled entries grouped by period (one entry per repo per
+ * period).
  *
- * @param repo - Repository URL or local path as given on the command line.
- * @param clone - The clone the analysis runs in.
+ * @param options - Validated CLI options.
+ * @param repos - The deduplicated repository specs, in input order.
+ * @param logs - The per-repository scoped loggers, aligned with `repos`.
+ * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
- * @param groups - The author groups of the whole range.
- * @param options - Validated CLI options.
- * @returns One assembled repository entry per period.
- * @throws {Error} When every LLM attempt fails; the message names the
- * repo — and the period when `--unit` is set — plus the underlying
- * cause.
- */
-async function runLlmPhase(
-  repo: string,
-  clone: CloneResult,
-  periods: AnalyzedRange[],
-  groups: AuthorGroup[],
-  options: CliOptions,
-): Promise<Repository[]> {
-  const attempts = 1 + options.llmRetries;
-  let lastError: Error | undefined;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    if (attempt > 1) {
-      logWarn(
-        `LLM: ${repo}: attempt ${attempt - 1} of ${attempts} failed; ` +
-          `restarting the opencode server and retrying: ${errorDetail(lastError)}`,
-      );
-    }
-    let llm: LlmPhase | undefined;
-    try {
-      llm = await startLlmServer(repo, clone, groups, options);
-      return await assemblePeriods(repo, clone, periods, groups, llm, options);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(errorDetail(error));
-    } finally {
-      // Fully stop the server — SIGTERM, a bounded wait, and a
-      // force-kill of its whole process tree when it ignores SIGTERM —
-      // so the next attempt starts from a clean slate.
-      await closeLlmServer(llm);
-    }
-  }
-  if (attempts === 1) {
-    // No retries configured: surface the original error unchanged.
-    throw lastError ?? new Error(`LLM analysis failed for ${repo}`);
-  }
-  throw new Error(
-    `LLM analysis failed for ${repo} after ${attempts} attempts: ${errorDetail(lastError)}`,
-    { cause: lastError },
-  );
-}
-
-/**
- * Starts the repo's LLM phase when enabled and the range has authors:
- * one opencode server with its session service, shared by all of the
- * repo's periods. Returns `undefined` when LLM analysis is disabled or
- * the repo has no authors in the range.
- *
- * @param repo - Repository URL or local path as given on the command line.
- * @param clone - The clone the analysis runs in.
- * @param groups - The author groups of the whole range.
- * @param options - Validated CLI options.
- * @returns The server and its session service, or `undefined`.
- * @throws {Error} When the server cannot start; the message names the
- * repo and the underlying cause.
- */
-async function startLlmServer(
-  repo: string,
-  clone: CloneResult,
-  groups: AuthorGroup[],
-  options: CliOptions,
-): Promise<LlmPhase | undefined> {
-  if (!options.llm || groups.length === 0) {
-    if (options.llm) {
-      logInfo(`LLM: ${repo} has no authors in the range; skipping LLM analysis`);
-    }
-    return undefined;
-  }
-  try {
-    const server = await startServer(clone.repoDir, llmServerConfig(options));
-    return { server, service: createSessionService(server.client) };
-  } catch (error) {
-    // errorDetail walks the cause chain: a bare `fetch failed` from
-    // the opencode SDK gets its real reason (e.g. `connect ECONNREFUSED
-    // 127.0.0.1:50664`) appended.
-    throw new Error(`LLM analysis failed for ${repo}: ${errorDetail(error)}`, { cause: error });
-  }
-}
-
-/**
- * Assembles one repository entry per period: each period gets the
- * groups' commits filtered to its bounds, an LLM analysis for its
- * active users, and an assembled repository entry.
- *
- * @param repo - Repository URL or local path as given on the command line.
- * @param clone - The clone the analysis runs in.
- * @param periods - The run's period bounds.
- * @param groups - The author groups of the whole range.
- * @param llm - The repo's LLM phase, or `undefined` when disabled.
- * @param options - Validated CLI options.
- * @returns One assembled repository entry per period.
+ * @returns The per-period repository entries.
+ * @throws {GitError} When a clone or git log fails.
  * @throws {Error} When the LLM phase fails; the message names the repo
  * — and the period when `--unit` is set — plus the underlying cause.
  */
-async function assemblePeriods(
-  repo: string,
-  clone: CloneResult,
-  periods: AnalyzedRange[],
-  groups: AuthorGroup[],
-  llm: LlmPhase | undefined,
+async function analyzeReposInParallel(
   options: CliOptions,
-): Promise<Repository[]> {
-  const repositories: Repository[] = [];
-  for (const period of periods) {
-    const filtered = filterGroupsForPeriod(groups, period);
-    let llmResults: ReadonlyMap<string, LlmAnalysis> | undefined;
-    if (llm !== undefined) {
-      try {
-        llmResults = await analyzePeriodLlm(repo, clone, period, filtered, options, llm.service);
-      } catch (error) {
-        const where =
-          options.unit === undefined
-            ? ''
-            : ` in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`;
-        throw new Error(`LLM analysis failed for ${repo}${where}: ${errorDetail(error)}`, {
-          cause: error,
-        });
+  repos: readonly string[],
+  logs: readonly ScopedLog[],
+  range: AnalyzedRange,
+  periods: AnalyzedRange[],
+): Promise<Repository[][]> {
+  const failures: unknown[] = [];
+  const analyzed = await mapLimit(repos, options.parallel, (repo, index) =>
+    analyzeRepository(repo, options, range, periods, logs[index]).catch((error: unknown) => {
+      failures.push(error);
+      throw error;
+    }),
+  ).catch((error: unknown) => {
+    for (const failure of failures) {
+      if (failure !== error) {
+        logWarn(`analysis of another repository failed: ${errorDetail(failure)}`);
       }
     }
-    repositories.push(
-      assembleRepository({
-        repo,
-        clonePath: clone.repoDir,
-        branch: clone.branch,
-        head: clone.head,
-        range: period,
-        groups: filtered,
-        llmResults,
-      }),
-    );
+    throw error;
+  });
+
+  const repositories: Repository[][] = [];
+  for (const entry of analyzed) {
+    for (let index = 0; index < entry.repositories.length; index += 1) {
+      (repositories[index] ??= []).push(entry.repositories[index]);
+    }
   }
   return repositories;
 }
 
 /**
- * Shuts the repo's LLM server down. A shutdown failure is logged but
- * does not mask an analysis error.
+ * Removes duplicate repository specs, preserving input order. Duplicate
+ * URLs would race on the same cache entry (concurrent re-clone and LLM
+ * writes), and their report entries are identical anyway; a warning
+ * names each dropped duplicate.
  *
- * @param llm - The repo's LLM phase, or `undefined` when none started.
+ * @param repos - The repository specs as given on the command line.
+ * @returns The unique specs, in input order.
  */
-async function closeLlmServer(llm: LlmPhase | undefined): Promise<void> {
-  if (llm === undefined) {
-    return;
+function dedupeRepos(repos: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const repo of repos) {
+    if (seen.has(repo)) {
+      logWarn(`duplicate repository skipped: ${repo}`);
+      continue;
+    }
+    seen.add(repo);
+    unique.push(repo);
   }
-  try {
-    await llm.server.close();
-  } catch (error) {
-    logWarn(`LLM server shutdown failed: ${errorDetail(error)}`);
-  }
+  return unique;
 }
 
 /**
- * Runs the LLM phase for one period of a repository: the repo's
- * opencode server is reused, and `analyzeRepositoryLLM` produces one
- * analysis per user with commits in the period (cached results reused
- * unless `--refresh`). Users without commits in the period get no
- * analysis — their report entries stay skipped. Returns `undefined`
- * when no user has commits in the period.
+ * The scope label of one repository: the basename without a trailing
+ * `.git` — for URLs (`https://host/org/repo.git` → `repo`) and local
+ * paths (`/path/to/repo` → `repo`) alike.
  *
  * @param repo - Repository URL or local path as given on the command line.
- * @param clone - The clone the analysis runs in.
- * @param period - The period bounds (UTC instants).
- * @param groups - The period's author groups (zero-commit groups kept).
- * @param options - Validated CLI options.
- * @param service - The session service bound to the repo's server.
- * @returns Completed analyses keyed by lowercased author email, or
- * `undefined` when the period has no active users.
- * @throws {Error} When an analysis fails; the message names the user
- * and session plus the underlying cause.
+ * @returns The label.
  */
-async function analyzePeriodLlm(
-  repo: string,
-  clone: CloneResult,
-  period: AnalyzedRange,
-  groups: AuthorGroup[],
-  options: CliOptions,
-  service: SessionService,
-): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
-  const active = groups.filter((group) => group.commits.length > 0);
-  if (active.length === 0) {
-    logInfo(
-      `LLM: ${repo}: no authors in period ${rangeBound(period.since)} to ${rangeBound(period.until)}; skipping`,
-    );
-    return undefined;
-  }
-  const results = await analyzeRepositoryLLM({
-    repo,
-    cloneDir: clone.repoDir,
-    entryDir: path.dirname(clone.repoDir),
-    config: llmServerConfig(options),
-    range: period,
-    groups: active,
-    service,
-    refresh: options.refresh === true,
+function repoLabel(repo: string): string {
+  const withoutSuffix = repo.replace(/\.git$/, '');
+  return withoutSuffix.split('/').pop() ?? withoutSuffix;
+}
+
+/**
+ * One scoped logger per repository, computed once in input order:
+ * colliding basenames get a `#2`, `#3`, … suffix so parallel progress
+ * lines stay distinguishable.
+ *
+ * @param repos - The deduplicated repository specs.
+ * @returns The scoped loggers, aligned with `repos`.
+ */
+function scopedLogs(repos: readonly string[]): ScopedLog[] {
+  const seen = new Map<string, number>();
+  return repos.map((repo) => {
+    const base = repoLabel(repo);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return createScopedLog(count === 0 ? base : `${base}#${count + 1}`);
   });
-  logInfo(
-    `LLM: ${repo}: analyzed ${pluralize(results.length, 'user')} in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`,
-  );
-  return new Map(results.map((result) => [result.email, result.llm]));
-}
-
-/**
- * Builds the LLM server configuration from the validated CLI options.
- * `parseCliOptions` guarantees `model`, `providerUrl` and `apiKey`
- * (the key may come from `DEV_PERF_API_KEY`, resolved by
- * `resolveRawOptions`) whenever LLM analysis is enabled; the guard is
- * defensive for direct pipeline callers.
- *
- * @param options - Validated CLI options (LLM enabled).
- * @returns The server configuration.
- * @throws {Error} When a required LLM option is missing — unreachable
- * after `parseCliOptions`, possible only when options are constructed
- * by hand.
- */
-function llmServerConfig(options: CliOptions): LlmServerConfig {
-  if (
-    options.model === undefined ||
-    options.providerUrl === undefined ||
-    options.apiKey === undefined
-  ) {
-    throw new Error('model, provider URL and API key are required for LLM analysis');
-  }
-  return {
-    providerUrl: options.providerUrl,
-    model: options.model,
-    apiKey: options.apiKey,
-    limitContext: options.limitContext,
-    limitOutput: options.limitOutput,
-  };
-}
-
-/**
- * Formats one side of the analyzed range for progress logging: an
- * empty string means that side is unbounded.
- *
- * @param bound - The resolved UTC instant, or `''` when unbounded.
- * @returns A human-readable label.
- */
-function rangeBound(bound: string): string {
-  return bound === '' ? 'unbounded' : bound;
-}
-
-/**
- * Renders a count with its unit, pluralizing the unit unless the count
- * is exactly one.
- *
- * @param count - The number.
- * @param unit - The unit in singular form, e.g. `'commit'`.
- * @returns `"1 commit"` or `"3 commits"` etc.
- */
-function pluralize(count: number, unit: string): string {
-  return `${count} ${unit}${count === 1 ? '' : 's'}`;
 }
 
 /**

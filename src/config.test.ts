@@ -23,6 +23,7 @@ describe('cliOptionsSchema', () => {
       expect(result.data.limitContext).toBe(262144);
       expect(result.data.limitOutput).toBe(65536);
       expect(result.data.llmRetries).toBe(2);
+      expect(result.data.parallel).toBe(1);
       expect(result.data.refresh).toBeUndefined();
     }
   });
@@ -178,6 +179,33 @@ describe('cliOptionsSchema', () => {
     }
   });
 
+  it('coerces parallel strings, accepts one, and rejects invalid values', () => {
+    const coerced = cliOptionsSchema.safeParse({ ...validOptions(), parallel: '4' });
+    expect(coerced.success).toBe(true);
+    if (coerced.success) {
+      expect(coerced.data.parallel).toBe(4);
+    }
+
+    const one = cliOptionsSchema.safeParse({ ...validOptions(), parallel: 1 });
+    expect(one.success).toBe(true);
+    if (one.success) {
+      expect(one.data.parallel).toBe(1);
+    }
+
+    for (const value of [0, -1, 1.5, 'abc']) {
+      const options = validOptions();
+      options.parallel = value;
+
+      const result = cliOptionsSchema.safeParse(options);
+
+      expect(result.success, `expected parallel ${String(value)} to be rejected`).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('parallel');
+      }
+    }
+  });
+
   it('validates limit-output independently', () => {
     const options = validOptions();
     options.limitOutput = -1;
@@ -261,6 +289,7 @@ describe('resolveRawOptions', () => {
         DEV_PERF_LIMIT_CONTEXT: '128',
         DEV_PERF_LIMIT_OUTPUT: '64',
         DEV_PERF_LLM_RETRIES: '3',
+        DEV_PERF_PARALLEL: '4',
       },
     );
 
@@ -276,6 +305,7 @@ describe('resolveRawOptions', () => {
       limitContext: '128',
       limitOutput: '64',
       llmRetries: '3',
+      parallel: '4',
     });
   });
 
@@ -293,6 +323,12 @@ describe('resolveRawOptions', () => {
     const merged = resolveRawOptions([], { llmRetries: '1' }, { DEV_PERF_LLM_RETRIES: '3' });
 
     expect(merged.llmRetries).toBe('1');
+  });
+
+  it('lets the flag win over DEV_PERF_PARALLEL', () => {
+    const merged = resolveRawOptions([], { parallel: '2' }, { DEV_PERF_PARALLEL: '4' });
+
+    expect(merged.parallel).toBe('2');
   });
 
   it('parses boolean environment variables, inverting DEV_PERF_NO_LLM', () => {

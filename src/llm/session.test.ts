@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Event, OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LlmToolPayload } from '../report/index.js';
-import { logInfo } from '../util/log.js';
+import { createScopedLog } from '../util/log.js';
 import { ANALYST_AGENT_ID } from './server.js';
 import {
   collectSessionUsage,
@@ -21,6 +21,7 @@ vi.mock('../util/log.js', () => ({
   logInfo: vi.fn(),
   logDebug: vi.fn(),
   setVerbose: vi.fn(),
+  createScopedLog: vi.fn(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() })),
 }));
 
 const DIRECTORY = '/clone/repo';
@@ -254,6 +255,7 @@ describe('createSessionService', () => {
       });
       const client = stubClient({ prompt: () => pendingPrompt });
       const service = createSessionService(client);
+      const scoped = vi.mocked(createScopedLog).mock.results.at(-1)?.value;
 
       const resultPromise = service.promptSession(
         { id: 'ses_1', directory: DIRECTORY },
@@ -262,10 +264,10 @@ describe('createSessionService', () => {
       );
       await vi.advanceTimersByTimeAsync(31_000);
 
-      expect(logInfo).toHaveBeenCalledWith(
+      expect(scoped?.info).toHaveBeenCalledWith(
         expect.stringContaining('LLM: Alice: still waiting for the LLM reply'),
       );
-      expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
+      expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
       settlePrompt({
         data: {
@@ -337,6 +339,7 @@ describe('promptSessionUntilReport', () => {
       });
       const client = stubClient({ prompt: () => pendingPrompt });
       const service = createSessionService(client);
+      const scoped = vi.mocked(createScopedLog).mock.results.at(-1)?.value;
 
       const resultPromise = service.promptSessionUntilReport(
         { id: 'ses_1', directory: DIRECTORY },
@@ -346,10 +349,10 @@ describe('promptSessionUntilReport', () => {
       );
       await vi.advanceTimersByTimeAsync(31_000);
 
-      expect(logInfo).toHaveBeenCalledWith(
+      expect(scoped?.info).toHaveBeenCalledWith(
         expect.stringContaining('LLM: Alice: still waiting for devperf_report'),
       );
-      expect(logInfo).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
+      expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
       // The simulated tool writes its output while the turn is running.
       await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');

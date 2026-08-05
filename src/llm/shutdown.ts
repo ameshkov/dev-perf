@@ -12,7 +12,8 @@
  */
 import { connect } from 'node:net';
 import { execa } from 'execa';
-import { logWarn } from '../util/log.js';
+import { createScopedLog } from '../util/log.js';
+import type { ScopedLog } from '../util/log.js';
 
 /** How long to wait for the server to exit after SIGTERM before force-killing it. */
 const SERVER_STOP_TIMEOUT_MS = 5_000;
@@ -29,6 +30,8 @@ interface WaitForServerExitOptions {
   timeoutMs?: number;
   /** Force-kill implementation; injectable for tests. */
   kill?: (url: string) => Promise<number | undefined>;
+  /** The repository's scoped logger for the force-kill warnings. */
+  log?: ScopedLog;
 }
 
 /**
@@ -43,7 +46,7 @@ interface WaitForServerExitOptions {
  * throws — shutdown is best effort.
  *
  * @param url - The server base URL, e.g. `http://127.0.0.1:4096`.
- * @param options - Timeout and kill-function overrides (tests).
+ * @param options - Timeout, kill-function and logger overrides (tests).
  * @returns A promise resolving when the server is gone or the
  * force-kill was attempted.
  */
@@ -52,6 +55,7 @@ export async function waitForServerExit(
   options: WaitForServerExitOptions = {},
 ): Promise<void> {
   const { timeoutMs = SERVER_STOP_TIMEOUT_MS, kill = killPortListener } = options;
+  const log = options.log ?? createScopedLog();
   const deadline = Date.now() + timeoutMs;
   let alive = true;
   while (Date.now() < deadline) {
@@ -66,9 +70,9 @@ export async function waitForServerExit(
   // but leaked a child holding the port is still cleaned up.
   const pid = await kill(url);
   if (pid !== undefined) {
-    logWarn(`LLM server did not exit on SIGTERM; force-killed PID ${pid} (process tree)`);
+    log.warn(`LLM server did not exit on SIGTERM; force-killed PID ${pid} (process tree)`);
   } else if (alive) {
-    logWarn(`LLM server did not exit on SIGTERM and could not be force-killed: ${url}`);
+    log.warn(`LLM server did not exit on SIGTERM and could not be force-killed: ${url}`);
   }
 }
 

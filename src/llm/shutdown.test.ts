@@ -10,13 +10,17 @@
  */
 import { createServer, type Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import * as log from '../util/log.js';
 import { killPortListener, serverAlive, waitForServerExit } from './shutdown.js';
 
 /** The execa mock: `killPortListener` resolves lsof/pgrep output through it. */
 const execaMock = vi.hoisted(() => ({ execa: vi.fn() }));
 
 vi.mock('execa', () => ({ execa: execaMock.execa }));
+
+/** A no-op scoped logger whose `warn` calls are asserted. */
+function stubLog() {
+  return { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+}
 
 /**
  * Starts a real TCP server on an ephemeral localhost port.
@@ -83,17 +87,17 @@ describe('waitForServerExit', () => {
   it('runs the force-kill after a prompt exit but kills and logs nothing', async () => {
     const server = await startListener();
     const kill = vi.fn(async () => undefined);
-    const warn = vi.spyOn(log, 'logWarn').mockImplementation(() => {});
+    const log = stubLog();
     try {
       const url = serverUrl(server);
-      const waiting = waitForServerExit(url, { timeoutMs: 2_000, kill });
+      const waiting = waitForServerExit(url, { timeoutMs: 2_000, kill, log });
       await stopListener(server);
       await waiting;
       // Escalation is unconditional: the kill runs even after a prompt
       // exit, but finds nothing to kill and logs no warning.
       expect(kill).toHaveBeenCalledTimes(1);
       expect(kill).toHaveBeenCalledWith(url);
-      expect(warn).not.toHaveBeenCalled();
+      expect(log.warn).not.toHaveBeenCalled();
     } finally {
       await stopListener(server).catch(() => {});
     }
@@ -102,11 +106,11 @@ describe('waitForServerExit', () => {
   it('force-kills a server that does not exit within the timeout and logs the PID', async () => {
     const server = await startListener();
     const kill = vi.fn(async () => 4321);
-    const warn = vi.spyOn(log, 'logWarn').mockImplementation(() => {});
+    const log = stubLog();
     try {
-      await waitForServerExit(serverUrl(server), { timeoutMs: 100, kill });
+      await waitForServerExit(serverUrl(server), { timeoutMs: 100, kill, log });
       expect(kill).toHaveBeenCalledWith(serverUrl(server));
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('force-killed PID 4321'));
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('force-killed PID 4321'));
     } finally {
       await stopListener(server).catch(() => {});
     }
@@ -115,10 +119,10 @@ describe('waitForServerExit', () => {
   it('logs a warning when the force-kill finds nothing to kill', async () => {
     const server = await startListener();
     const kill = vi.fn(async () => undefined);
-    const warn = vi.spyOn(log, 'logWarn').mockImplementation(() => {});
+    const log = stubLog();
     try {
-      await waitForServerExit(serverUrl(server), { timeoutMs: 100, kill });
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not be force-killed'));
+      await waitForServerExit(serverUrl(server), { timeoutMs: 100, kill, log });
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('could not be force-killed'));
     } finally {
       await stopListener(server).catch(() => {});
     }

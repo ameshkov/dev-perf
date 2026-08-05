@@ -78,6 +78,7 @@ dev-perf/
 │   ├── cli.ts                 # Command registry (report, compile)
 │   ├── commands/              # One file per CLI command
 │   ├── pipeline.ts            # Orchestration: clone → analysis → LLM → assemble → write
+│   ├── analyze-repo.ts        # Per-repository analysis: clone, commits, LLM phase, assembly
 │   ├── config.ts              # zod validation of parsed CLI options
 │   ├── repo/                  # Clone/cache management
 │   ├── deterministic/         # Deterministic analysis (commits, identity, metrics, languages)

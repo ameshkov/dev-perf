@@ -11,7 +11,8 @@ import { pathToFileURL } from 'node:url';
 import { cacheEntryDir, readCloneInfo, repoDir, resolveCacheDir, writeCloneInfo } from './cache.js';
 import { GitError, gitClone, runGit } from './git.js';
 import type { RunGitOptions } from './git.js';
-import { logWarn } from '../util/log.js';
+import { createScopedLog } from '../util/log.js';
+import type { ScopedLog } from '../util/log.js';
 
 /** Matches URLs with a scheme, e.g. `https://`, `ssh://`, `file://`. */
 const SCHEME_URL_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
@@ -25,6 +26,8 @@ export interface EnsureCloneOptions {
   cacheDir?: string;
   /** Force a fresh clone even when the cache matches. */
   refresh?: boolean;
+  /** The repository's scoped logger for clone warnings. */
+  log?: ScopedLog;
   /** Git executable to run; defaults to `git`. Tests override it to
    * simulate hosts that reject partial clones. */
   gitBinary?: string;
@@ -105,6 +108,7 @@ export async function ensureClone(
   url: string,
   options: EnsureCloneOptions = {},
 ): Promise<CloneResult> {
+  const log = options.log ?? createScopedLog();
   const cacheDir = resolveCacheDir(options.cacheDir);
   const entryDir = cacheEntryDir(cacheDir, url);
   const gitOptions = { gitBinary: options.gitBinary };
@@ -133,7 +137,7 @@ export async function ensureClone(
     await gitClone(entryDir, ['--filter=blob:none', target, 'repo'], gitOptions);
   } catch (error) {
     if (error instanceof GitError && isPartialCloneFailure(error)) {
-      logWarn(`partial clone failed (${error.message}); falling back to a full clone`);
+      log.warn(`partial clone failed (${error.message}); falling back to a full clone`);
       await gitClone(entryDir, [target, 'repo'], gitOptions);
     } else {
       throw error;

@@ -23,6 +23,7 @@ function options(overrides: Partial<CliOptions> = {}): CliOptions {
     limitContext: 262144,
     limitOutput: 65536,
     llmRetries: 2,
+    parallel: 1,
     ...overrides,
   };
 }
@@ -440,6 +441,68 @@ describe('runPipeline', () => {
         1, 1,
       ]);
     } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('with --parallel 2 analyzes all repos and produces the same report as --parallel 1', async () => {
+    const first = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'feat: app',
+        files: [{ path: 'src/app.ts', content: 'line1\nline2\n' }],
+      },
+    ]);
+    const second = await buildFixtureRepo([
+      {
+        author: { name: 'Bob', email: 'bob@example.com' },
+        date: '2026-01-02T11:00:00Z',
+        message: 'docs: readme',
+        files: [{ path: 'README.md', content: 'hello\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    try {
+      const repos = [first.url, second.url];
+      const serial = await runPipeline(options({ repos, cacheDir, parallel: 1 }));
+      const parallel = await runPipeline(options({ repos, cacheDir, parallel: 2 }));
+
+      expect(parallel.parameters.repos).toEqual(repos);
+      expect(parallel.periods).toHaveLength(1);
+      expect(parallel.periods[0].repositories.map((entry) => entry.repo)).toEqual(repos);
+      // The two runs differ only in the generation timestamp.
+      expect({ ...parallel, generatedAt: '' }).toStrictEqual({ ...serial, generatedAt: '' });
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(first);
+      await removeFixtureRepo(second);
+    }
+  });
+
+  it('analyzes a duplicate repository once and warns about the dropped copy', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const report = await runPipeline(options({ repos: [repo.url, repo.url], cacheDir }));
+
+      // One entry, listed once in the parameters — not two identical
+      // copies.
+      expect(report.parameters.repos).toEqual([repo.url]);
+      expect(report.periods[0].repositories).toHaveLength(1);
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).toContain(`duplicate repository skipped: ${repo.url}`);
+    } finally {
+      vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }

@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthorGroup } from '../deterministic/identity.js';
 import type { LlmToolPayload } from '../report/index.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
+import type { ScopedLog } from '../util/log.js';
 import { analyzeRepositoryLLM } from './analyze.js';
 import type { AnalyzeRepoInput } from './analyze.js';
 import type { PromptOptions, SessionHandle, SessionService, UsageCollector } from './session.js';
@@ -163,6 +164,11 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
+/** A no-op scoped logger keeping test output quiet. */
+function stubLog(): ScopedLog {
+  return { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+}
+
 /** Builds the analysis input for the given groups and service. */
 function inputFor(
   service: SessionService,
@@ -178,6 +184,7 @@ function inputFor(
     groups,
     service,
     refresh,
+    log: stubLog(),
   };
 }
 

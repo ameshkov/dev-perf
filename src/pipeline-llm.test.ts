@@ -151,6 +151,7 @@ function options(overrides: Partial<CliOptions> = {}): CliOptions {
     limitContext: 262144,
     limitOutput: 65536,
     llmRetries: 2,
+    parallel: 1,
     ...overrides,
   };
 }

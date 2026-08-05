@@ -26,7 +26,7 @@ import type { AnalyzedRange, LlmAnalysis, LlmToolPayload } from '../report/index
 import { llmToolPayloadSchema, tokenUsageSchema } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
-import { logDebug, logInfo, logWarn } from '../util/log.js';
+import type { ScopedLog } from '../util/log.js';
 import { buildOrientationPrompt, buildToolCallReminder, buildUserPrompt } from './prompts.js';
 import { sessionReportPath } from './session.js';
 import type { SessionHandle, SessionService, SessionUsage, UsageCollector } from './session.js';
@@ -97,6 +97,8 @@ export interface AnalyzeRepoInput {
   groups: AuthorGroup[];
   /** Session operations; the pipeline binds the real service. */
   service: SessionService;
+  /** The repository's scoped logger for progress lines. */
+  log: ScopedLog;
   /** True to ignore cached results and re-run everything. */
   refresh: boolean;
 }
@@ -148,7 +150,7 @@ export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<Use
     for (const group of input.groups) {
       const result = cached.get(group.email);
       if (result !== undefined) {
-        logInfo(`LLM: reusing cached analysis for ${group.name}`);
+        input.log.info(`LLM: reusing cached analysis for ${group.name}`);
         results.push({ email: group.email, llm: completedLlm(result) });
         continue;
       }
@@ -178,16 +180,18 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   const collector = await input.service.collectUsage(input.cloneDir);
   try {
     const session = await input.service.createSession(input.cloneDir, ORIENTATION_TITLE);
-    logInfo(`LLM: orientation session ${session.id} for ${input.repo}`);
-    logInfo(`LLM: orientation prompt sent to session ${session.id}, waiting for the repo context`);
+    input.log.info(`LLM: orientation session ${session.id} for ${input.repo}`);
+    input.log.info(
+      `LLM: orientation prompt sent to session ${session.id}, waiting for the repo context`,
+    );
     const context = await input.service.promptSession(
       session,
       await buildOrientationPrompt(input.repo),
       input.repo,
     );
     await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
-    logInfo(`LLM: repo context established for ${input.repo}`);
-    logDebug(`LLM: repo context: ${context}`);
+    input.log.info(`LLM: repo context established for ${input.repo}`);
+    input.log.debug(`LLM: repo context: ${context}`);
     return { context, collector };
   } catch (error) {
     collector.close();
@@ -219,12 +223,12 @@ async function analyzeUser(
   orientation: OrientationState,
 ): Promise<UserLlmResult> {
   const session = await input.service.createSession(input.cloneDir, `dev-perf: ${group.name}`);
-  logInfo(`LLM: analyzing ${group.name} <${group.email}> (session ${session.id})`);
+  input.log.info(`LLM: analyzing ${group.name} <${group.email}> (session ${session.id})`);
   try {
     await input.service.promptSession(session, orientation.context, group.name, {
       noReply: true,
     });
-    logInfo(`LLM: ${group.name}: repo context injected`);
+    input.log.info(`LLM: ${group.name}: repo context injected`);
     const analysisPrompt = await buildUserPrompt({
       repo: input.repo,
       name: group.name,
@@ -235,7 +239,7 @@ async function analyzeUser(
     });
     const payload = await enforceReport(input, group, session, analysisPrompt);
     const usage = orientation.collector.get(session.id) ?? ZERO_USAGE;
-    logInfo(
+    input.log.info(
       `LLM: ${group.name}: ${usage.tokenUsage.input} in / ${usage.tokenUsage.cacheRead} cached in / ${usage.tokenUsage.output} out tokens, $${usage.estimatedCostUsd.toFixed(4)}`,
     );
     const result: CachedResult = {
@@ -280,11 +284,11 @@ async function enforceReport(
   const reminder = await buildToolCallReminder();
   for (let attempt = 0; attempt <= MAX_REMINDERS; attempt++) {
     if (attempt > 0) {
-      logWarn(
+      input.log.warn(
         `LLM: ${group.name}: devperf_report not called, reminding (${attempt}/${MAX_REMINDERS})`,
       );
     } else {
-      logInfo(`LLM: ${group.name}: analysis prompt sent, waiting for devperf_report`);
+      input.log.info(`LLM: ${group.name}: analysis prompt sent, waiting for devperf_report`);
     }
     const payload = await input.service.promptSessionUntilReport(
       session,
@@ -293,7 +297,7 @@ async function enforceReport(
       group.name,
     );
     if (payload !== undefined) {
-      logInfo(`LLM: ${group.name}: devperf_report received`);
+      input.log.info(`LLM: ${group.name}: devperf_report received`);
       return payload;
     }
   }
