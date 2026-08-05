@@ -26,7 +26,7 @@ export interface RawCliOptions {
   unit?: string;
   /** Write the JSON report to this file instead of stdout. */
   output?: string;
-  /** Cache directory for cloned repos and LLM results (default: .dev-perf/cache). */
+  /** Cache directory for cloned repos and LLM results (default: <tmpdir>/.dev-cache). */
   cacheDir?: string;
   /** Force re-clone and re-analysis even if the cache is present. */
   refresh?: boolean;

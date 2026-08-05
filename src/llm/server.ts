@@ -283,7 +283,7 @@ async function spawnServer(
       path: { id: PROVIDER_ID },
       body: { type: 'api', key: config.apiKey },
     });
-    log.info(`LLM server: ${server.url} (model ${config.model})`);
+    log.info(`LLM server: "${server.url}" (model "${config.model}")`);
     return {
       client,
       url: server.url,

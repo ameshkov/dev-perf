@@ -62,8 +62,8 @@ describe('layout path builders', () => {
 });
 
 describe('resolveCacheDir', () => {
-  it('defaults to .dev-perf/cache under the working directory', () => {
-    expect(resolveCacheDir()).toBe(path.resolve(process.cwd(), '.dev-perf', 'cache'));
+  it('defaults to .dev-cache under the OS temp directory', () => {
+    expect(resolveCacheDir()).toBe(path.join(os.tmpdir(), '.dev-cache'));
   });
 
   it('resolves a custom cache dir under the working directory', () => {

@@ -26,7 +26,7 @@ export function registerReportCommand(program: Command): void {
     .option('--output <file>', 'Write the JSON report to a file (default: stdout)')
     .option(
       '--cache-dir <dir>',
-      'Cache directory for cloned repos and LLM results (default: .dev-perf/cache)',
+      'Cache directory for cloned repos and LLM results (default: <tmpdir>/.dev-cache)',
     )
     .option('--refresh', 'Force re-clone and re-analysis, invalidating the LLM result cache')
     .option('--no-llm', 'Deterministic stats only, skip LLM analysis')

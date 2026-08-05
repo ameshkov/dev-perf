@@ -16,7 +16,9 @@
 - The agentic layer uses **opencode as a library** (`@opencode-ai/sdk`), which gives
   us agents, built-in repo tools (read/grep/bash), custom tools, structured JSON
   output, and multi-provider support (Anthropic, OpenAI, Google, …) out of the box.
-- All analysis happens on a fresh clone stored in a **gitignored cache directory**.
+- All analysis happens on a fresh clone stored in a **cache directory**
+  (`<tmpdir>/.dev-cache` by default — in the OS temp directory, so nothing needs
+  to be gitignored).
 
 ### Non-goals (for now)
 
@@ -43,7 +45,7 @@
 
 Pipeline phases, in order:
 
-1. **Clone** — for each repo, clone into `.dev-perf/cache/<hash>/repo`
+1. **Clone** — for each repo, clone into `<tmpdir>/.dev-cache/<hash>/repo`
    (partial clone, see §4).
 2. **Deterministic analysis** — enumerate commits in the range, compute per-user
    metrics (§5). This is fast and cheap; it also produces the inputs (commit list,
@@ -68,7 +70,7 @@ Options:
   --unit <unit>          Split the range into periods: day, week, month,
                          quarter, year (requires --since)
   --output <file>        Write JSON report to file (default: stdout; pretty-printed)
-  --cache-dir <dir>      Cache directory (default: .dev-perf/cache) — cloned repos
+  --cache-dir <dir>      Cache directory (default: <tmpdir>/.dev-cache) — cloned repos
                          and LLM analysis results (§4, §6.6)
   --refresh              Force re-clone and re-analysis even if cache is present
   --no-llm               Deterministic stats only
@@ -102,22 +104,21 @@ Implementation: `commander` for arg parsing, `zod` for validation of args and al
 data schemas. The report schema (zod) is shared between the CLI, the deterministic
 layer, and the LLM structured-output schema so nothing can drift.
 
-## 4. Working directory and cloning
+## 4. Cache and cloning
 
-- Default cache root: `.dev-perf/` next to where the tool is invoked. It must be
-  gitignored by the invoking project (the dev-perf repo's own `.gitignore` includes
-  it; users running it elsewhere can point `--cache-dir` anywhere, e.g.
-  `~/.cache/dev-perf`).
+- Default cache root: `<tmpdir>/.dev-cache` — `.dev-cache` in the OS temp
+  directory, so invoking the tool never pollutes the working directory and
+  nothing needs to be gitignored. Point `--cache-dir` anywhere to override,
+  e.g. `~/.cache/dev-perf`.
 - Layout:
 
 ```text
-.dev-perf/
-└── cache/
-    └── <sha256(repoUrl).slice(0,16)>/
-        ├── repo/        # the git clone
-        ├── clone.json   # { url, clonedAt, branch, head }
-        ├── llm/         # cached LLM analysis results (§6.6)
-        └── opencode/    # generated .opencode/tools/devperf_report.ts + opencode.json (§6.2, §6.5)
+<tmpdir>/.dev-cache/
+└── <sha256(repoUrl).slice(0,16)>/
+    ├── repo/        # the git clone
+    ├── clone.json   # { url, clonedAt, branch, head }
+    ├── llm/         # cached LLM analysis results (§6.6)
+    └── opencode/    # generated .opencode/tools/devperf_report.ts + opencode.json (§6.2, §6.5)
 ```
 
 - Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
@@ -348,6 +349,17 @@ schema v2: repository entries are always wrapped in a `periods` array. Without
 `--unit` there is exactly one period covering the whole range — the v1 report
 content, nested one level deeper. With `--unit`, each period is a full
 per-repository report over its bounds (UTC instants, `until` inclusive).
+
+Before the analysis, every run logs the application version
+(`dev-perf <version>`) to stderr through the logger; a `report` run
+follows it with the full resolved configuration as one indented line
+per field (`src/run-config.ts`): repositories, dates, unit, output
+file, the resolved cache directory, refresh, LLM settings (model,
+provider, API key masked), limits, retries, parallelism, and verbose —
+always printed, so the effective settings are visible even when the
+run fails before the report is written. stdout carries the report JSON
+only; with `--output` the report goes to the file and stdout stays
+empty.
 
 ```json
 {

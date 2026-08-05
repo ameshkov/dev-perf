@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '../../test/helpers/temp-dir.js';
 import { fixtureContribution, trendReportJson } from '../../test/fixtures/trend-report-builder.js';
+import { appVersion } from '../version.js';
 import { runCompile } from './compile.js';
 import { parseCompileOptions } from './options.js';
 
@@ -80,164 +81,176 @@ describe('runCompile', () => {
       const reportFile = path.join(dir, 'report.json');
       await writeFile(reportFile, llmReport());
       const output = path.join(dir, 'out');
+      const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-      const result = await runCompile(
-        reportFile,
-        parseCompileOptions({ report: reportFile, output }),
-      );
+      try {
+        const result = await runCompile(
+          reportFile,
+          parseCompileOptions({ report: reportFile, output }),
+        );
 
-      const md = await readFile(result.reportPath, 'utf8');
-      expect(md).toContain('# Dev Performance Report');
-      expect(md).toContain('## Executive summary');
-      expect(md).toContain('## Team dynamics');
-      expect(md).toContain('## Contributors');
-      expect(md).toContain('## Individual dynamics');
-      expect(md).toContain('### Alice');
-      expect(md).toContain('### Bob');
-      expect(md).toContain('## LLM analysis summary');
-      expect(md).toContain('## Appendix');
-      expect(md).toContain(
-        '![Contributions per period, stacked by size (xs–xl).](assets/team-contributions-by-size.svg)',
-      );
-      // Executive summary key facts: the analyzed range, the
-      // repositories and the people as nested bullet lists.
-      expect(md).toContain(
-        '- Analysis period: 2026-01-01T00:00:00.000Z → 2026-02-28T23:59:59.999Z',
-      );
-      expect(md).toContain(
-        ['- Repositories (1):', '    - repo-a', '- People (2):', '    - Alice', '    - Bob'].join(
-          '\n',
-        ),
-      );
-      // The totals table carries a one-line description per metric.
-      expect(md).toContain('| Metric | Value | Description |');
-      expect(md).toContain('| Commits | 10 | Total commits in the analyzed range |');
-      // The contributors table carries the per-user repository columns.
-      expect(md).toContain('| Repos |');
-      expect(md).toContain('| Top repo |');
-      expect(md).toContain(
-        '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 1 | TypeScript | completed | 1 | repo-a |',
-      );
-      // The individual sections link to the per-person reports.
-      expect(md).toContain('[Full individual report →](people/alice.md)');
-      // LLM cost is reported with the token usage breakdown: two users
-      // over two periods of the fixture default (100 in / 50 cached in /
-      // 20 out, $0.01 per user per period).
-      expect(md).toContain('- LLM analysis cost: 400 in / 200 cached in / 80 out / $0.0400');
-      // The top contributors by commits, contributions and points:
-      // Alice and Bob tie on commits (5) and contributions (2), and
-      // Alice leads on points (two m-sized contributions), so the
-      // master user order resolves every tie in favor of Alice.
-      expect(md).toContain('- Top contributor by commits: Alice (5 commits)');
-      expect(md).toContain('- Top contributor by contributions: Alice (2 contributions)');
-      expect(md).toContain('- Top contributor by points: Alice (6 points)');
-      // The busiest periods follow the same pattern: January leads on
-      // commits (6 vs 4), and ties on contributions (2) and points (6)
-      // resolve in favor of the older period.
-      expect(md).toContain('- Busiest period by commits: 2026-01 (6 commits)');
-      expect(md).toContain('- Busiest period by contributions: 2026-01 (2 contributions)');
-      expect(md).toContain('- Busiest period by points: 2026-01 (6 points)');
-      expect(md).toContain(
-        '| LLM cost | 400 in / 200 cached in / 80 out / $0.0400 | Estimated token usage and cost of the LLM analysis |',
-      );
-      expect(md).toContain('| User | Input tokens | Cached in | Output tokens | Cost |');
-      expect(md).toContain('| Alice | 200 | 100 | 40 | $0.0200 |');
-      expect(md).toContain('| Total | 400 | 200 | 80 | $0.0400 |');
+        // The startup version line is always logged, even in quiet
+        // mode, mirroring report runs.
+        const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+        expect(stderr).toContain(`dev-perf ${appVersion}`);
 
-      const files = await readdir(result.assetsPath);
-      expect(files).toContain('team-points-per-period.svg');
-      expect(files).toContain('team-work-types-per-period.svg');
-      expect(files).toContain('team-commits-per-period.svg');
-      expect(files).toContain('team-contributions-per-period.svg');
-      expect(files).toContain('team-complexity-per-period.svg');
-      expect(files).toContain('team-languages-per-period.svg');
-      expect(files).toContain('team-risk-per-period.svg');
-      expect(files).toContain('team-quality-per-period.svg');
-      expect(files).toContain('team-risk-flags-per-contribution.svg');
-      expect(files).toContain('team-quality-signals-per-contribution.svg');
-      expect(files).not.toContain('team-contributions-and-points.svg');
-      expect(files).toContain('alice-contributions-by-size.svg');
-      expect(files).toContain('alice-contributions-by-complexity.svg');
-      expect(files).toContain('alice-contributions-per-period.svg');
-      expect(files).toContain('alice-contributions-by-complexity-per-period.svg');
-      expect(files).toContain('alice-risk-per-period.svg');
-      expect(files).toContain('alice-quality-per-period.svg');
-      expect(files).toContain('alice-risk-per-contribution.svg');
-      expect(files).toContain('alice-quality-per-contribution.svg');
-      expect(files).toContain('alice-points-per-period.svg');
-      expect(files).toContain('alice-work-types-per-period.svg');
-      expect(files).toContain('alice-work-types.svg');
-      expect(files).toContain('alice-commits-per-period.svg');
-      expect(files).toContain('alice-contributions-and-cumulative-per-period.svg');
-      expect(files).toContain('alice-lines-per-period.svg');
-      expect(files).toContain('alice-languages-per-period.svg');
-      expect(files).toContain('work-types.svg');
-      expect(files).toContain('risk-distribution.svg');
-      expect(files).toContain('quality-distribution.svg');
-      // The team and LLM summary sections embed the new charts.
-      expect(md).toContain('assets/team-complexity-per-period.svg');
-      expect(md).toContain(
-        '![Contributions per period (bars) and cumulative contributions (line).](assets/team-contributions-per-period.svg)',
-      );
-      expect(md).toContain(
-        '![Points per period (size-weighted).](assets/team-points-per-period.svg)',
-      );
-      expect(md).toContain('assets/team-risk-per-period.svg');
-      expect(md).toContain('assets/team-quality-per-period.svg');
-      expect(md).toContain('assets/team-risk-flags-per-contribution.svg');
-      expect(md).toContain('assets/team-quality-signals-per-contribution.svg');
-      expect(md).toContain('assets/risk-distribution.svg');
-      expect(md).toContain('assets/quality-distribution.svg');
-      expect(md).not.toContain('assets/team-contributions-and-points.svg');
-      // The points chart leads the stacked contributions chart, and
-      // the contributions chart leads the commits chart in the team
-      // dynamics section; the work-type chart sits between the
-      // complexity and cumulative-contributions charts.
-      expect(md.indexOf('assets/team-points-per-period.svg')).toBeLessThan(
-        md.indexOf('assets/team-contributions-by-size.svg'),
-      );
-      expect(md.indexOf('assets/team-work-types-per-period.svg')).toBeLessThan(
-        md.indexOf('assets/team-contributions-per-period.svg'),
-      );
-      expect(md.indexOf('assets/team-contributions-per-period.svg')).toBeLessThan(
-        md.indexOf('assets/team-commits-per-period.svg'),
-      );
-      // The individual sections embed the four per-period charts of
-      // every person; the signal charts stay in the per-person reports.
-      expect(md).toContain(
-        '![Contributions per period, stacked by complexity (low–high).](assets/alice-contributions-by-complexity-per-period.svg)',
-      );
-      expect(md).toContain(
-        '![Points per period (size-weighted).](assets/alice-points-per-period.svg)',
-      );
-      expect(md).toContain('assets/alice-contributions-and-cumulative-per-period.svg');
-      expect(md).not.toContain('assets/alice-risk-per-period.svg');
-      expect(md).not.toContain('assets/alice-risk-per-contribution.svg');
-      // The signal charts keep the top 5 flags plus `other`; the
-      // per-period averages show the flag density of the work.
-      expect(md).toContain(
-        'Risk flags per period — share of contributions (top 5 flags plus other).',
-      );
-      expect(md).toContain(
-        'Quality signals per period — share of contributions (top 5 signals plus other).',
-      );
-      expect(md).toContain('Share of contributions by risk flag (top 5 flags plus other).');
-      expect(md).toContain('Share of contributions by quality signal (top 5 signals plus other).');
-      expect(md).toContain('Average risk flags per contribution per period.');
-      expect(md).toContain('Average quality signals per contribution per period.');
-      // The fixture flags are tallied across the whole report.
-      expect(md).toContain('- Most common risk flag: large-diff (2 contributions)');
-      expect(md).toContain('| no-tests | 2 |');
-      // The main report stays lean: no LLM overview, no languages,
-      // complexity or whole-range sizes charts, no contributions
-      // table — those live in the per-person reports.
-      expect(md).not.toContain('**Overview:**');
-      expect(md).not.toContain('alice-languages-per-period.svg');
-      expect(md).not.toContain('alice-contributions-by-complexity.svg');
-      expect(md).not.toContain('alice-contributions-by-size.svg');
-      expect(md).not.toContain('| Fixture work |');
-      expect(result.chartCount).toBeGreaterThan(15);
-      expect(result.userCount).toBe(2);
+        const md = await readFile(result.reportPath, 'utf8');
+        expect(md).toContain('# Dev Performance Report');
+        expect(md).toContain('## Executive summary');
+        expect(md).toContain('## Team dynamics');
+        expect(md).toContain('## Contributors');
+        expect(md).toContain('## Individual dynamics');
+        expect(md).toContain('### Alice');
+        expect(md).toContain('### Bob');
+        expect(md).toContain('## LLM analysis summary');
+        expect(md).toContain('## Appendix');
+        expect(md).toContain(
+          '![Contributions per period, stacked by size (xs–xl).](assets/team-contributions-by-size.svg)',
+        );
+        // Executive summary key facts: the analyzed range, the
+        // repositories and the people as nested bullet lists.
+        expect(md).toContain(
+          '- Analysis period: 2026-01-01T00:00:00.000Z → 2026-02-28T23:59:59.999Z',
+        );
+        expect(md).toContain(
+          ['- Repositories (1):', '    - repo-a', '- People (2):', '    - Alice', '    - Bob'].join(
+            '\n',
+          ),
+        );
+        // The totals table carries a one-line description per metric.
+        expect(md).toContain('| Metric | Value | Description |');
+        expect(md).toContain('| Commits | 10 | Total commits in the analyzed range |');
+        // The contributors table carries the per-user repository columns.
+        expect(md).toContain('| Repos |');
+        expect(md).toContain('| Top repo |');
+        expect(md).toContain(
+          '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 1 | TypeScript | completed | 1 | repo-a |',
+        );
+        // The individual sections link to the per-person reports.
+        expect(md).toContain('[Full individual report →](people/alice.md)');
+        // LLM cost is reported with the token usage breakdown: two users
+        // over two periods of the fixture default (100 in / 50 cached in /
+        // 20 out, $0.01 per user per period).
+        expect(md).toContain('- LLM analysis cost: 400 in / 200 cached in / 80 out / $0.0400');
+        // The top contributors by commits, contributions and points:
+        // Alice and Bob tie on commits (5) and contributions (2), and
+        // Alice leads on points (two m-sized contributions), so the
+        // master user order resolves every tie in favor of Alice.
+        expect(md).toContain('- Top contributor by commits: Alice (5 commits)');
+        expect(md).toContain('- Top contributor by contributions: Alice (2 contributions)');
+        expect(md).toContain('- Top contributor by points: Alice (6 points)');
+        // The busiest periods follow the same pattern: January leads on
+        // commits (6 vs 4), and ties on contributions (2) and points (6)
+        // resolve in favor of the older period.
+        expect(md).toContain('- Busiest period by commits: 2026-01 (6 commits)');
+        expect(md).toContain('- Busiest period by contributions: 2026-01 (2 contributions)');
+        expect(md).toContain('- Busiest period by points: 2026-01 (6 points)');
+        expect(md).toContain(
+          '| LLM cost | 400 in / 200 cached in / 80 out / $0.0400 | Estimated token usage and cost of the LLM analysis |',
+        );
+        expect(md).toContain('| User | Input tokens | Cached in | Output tokens | Cost |');
+        expect(md).toContain('| Alice | 200 | 100 | 40 | $0.0200 |');
+        expect(md).toContain('| Total | 400 | 200 | 80 | $0.0400 |');
+
+        const files = await readdir(result.assetsPath);
+        expect(files).toContain('team-points-per-period.svg');
+        expect(files).toContain('team-work-types-per-period.svg');
+        expect(files).toContain('team-commits-per-period.svg');
+        expect(files).toContain('team-contributions-per-period.svg');
+        expect(files).toContain('team-complexity-per-period.svg');
+        expect(files).toContain('team-languages-per-period.svg');
+        expect(files).toContain('team-risk-per-period.svg');
+        expect(files).toContain('team-quality-per-period.svg');
+        expect(files).toContain('team-risk-flags-per-contribution.svg');
+        expect(files).toContain('team-quality-signals-per-contribution.svg');
+        expect(files).not.toContain('team-contributions-and-points.svg');
+        expect(files).toContain('alice-contributions-by-size.svg');
+        expect(files).toContain('alice-contributions-by-complexity.svg');
+        expect(files).toContain('alice-contributions-per-period.svg');
+        expect(files).toContain('alice-contributions-by-complexity-per-period.svg');
+        expect(files).toContain('alice-risk-per-period.svg');
+        expect(files).toContain('alice-quality-per-period.svg');
+        expect(files).toContain('alice-risk-per-contribution.svg');
+        expect(files).toContain('alice-quality-per-contribution.svg');
+        expect(files).toContain('alice-points-per-period.svg');
+        expect(files).toContain('alice-work-types-per-period.svg');
+        expect(files).toContain('alice-work-types.svg');
+        expect(files).toContain('alice-commits-per-period.svg');
+        expect(files).toContain('alice-contributions-and-cumulative-per-period.svg');
+        expect(files).toContain('alice-lines-per-period.svg');
+        expect(files).toContain('alice-languages-per-period.svg');
+        expect(files).toContain('work-types.svg');
+        expect(files).toContain('risk-distribution.svg');
+        expect(files).toContain('quality-distribution.svg');
+        // The team and LLM summary sections embed the new charts.
+        expect(md).toContain('assets/team-complexity-per-period.svg');
+        expect(md).toContain(
+          '![Contributions per period (bars) and cumulative contributions (line).](assets/team-contributions-per-period.svg)',
+        );
+        expect(md).toContain(
+          '![Points per period (size-weighted).](assets/team-points-per-period.svg)',
+        );
+        expect(md).toContain('assets/team-risk-per-period.svg');
+        expect(md).toContain('assets/team-quality-per-period.svg');
+        expect(md).toContain('assets/team-risk-flags-per-contribution.svg');
+        expect(md).toContain('assets/team-quality-signals-per-contribution.svg');
+        expect(md).toContain('assets/risk-distribution.svg');
+        expect(md).toContain('assets/quality-distribution.svg');
+        expect(md).not.toContain('assets/team-contributions-and-points.svg');
+        // The points chart leads the stacked contributions chart, and
+        // the contributions chart leads the commits chart in the team
+        // dynamics section; the work-type chart sits between the
+        // complexity and cumulative-contributions charts.
+        expect(md.indexOf('assets/team-points-per-period.svg')).toBeLessThan(
+          md.indexOf('assets/team-contributions-by-size.svg'),
+        );
+        expect(md.indexOf('assets/team-work-types-per-period.svg')).toBeLessThan(
+          md.indexOf('assets/team-contributions-per-period.svg'),
+        );
+        expect(md.indexOf('assets/team-contributions-per-period.svg')).toBeLessThan(
+          md.indexOf('assets/team-commits-per-period.svg'),
+        );
+        // The individual sections embed the four per-period charts of
+        // every person; the signal charts stay in the per-person reports.
+        expect(md).toContain(
+          '![Contributions per period, stacked by complexity (low–high).](assets/alice-contributions-by-complexity-per-period.svg)',
+        );
+        expect(md).toContain(
+          '![Points per period (size-weighted).](assets/alice-points-per-period.svg)',
+        );
+        expect(md).toContain('assets/alice-contributions-and-cumulative-per-period.svg');
+        expect(md).not.toContain('assets/alice-risk-per-period.svg');
+        expect(md).not.toContain('assets/alice-risk-per-contribution.svg');
+        // The signal charts keep the top 5 flags plus `other`; the
+        // per-period averages show the flag density of the work.
+        expect(md).toContain(
+          'Risk flags per period — share of contributions (top 5 flags plus other).',
+        );
+        expect(md).toContain(
+          'Quality signals per period — share of contributions (top 5 signals plus other).',
+        );
+        expect(md).toContain('Share of contributions by risk flag (top 5 flags plus other).');
+        expect(md).toContain(
+          'Share of contributions by quality signal (top 5 signals plus other).',
+        );
+        expect(md).toContain('Average risk flags per contribution per period.');
+        expect(md).toContain('Average quality signals per contribution per period.');
+        // The fixture flags are tallied across the whole report.
+        expect(md).toContain('- Most common risk flag: large-diff (2 contributions)');
+        expect(md).toContain('| no-tests | 2 |');
+        // The main report stays lean: no LLM overview, no languages,
+        // complexity or whole-range sizes charts, no contributions
+        // table — those live in the per-person reports.
+        expect(md).not.toContain('**Overview:**');
+        expect(md).not.toContain('alice-languages-per-period.svg');
+        expect(md).not.toContain('alice-contributions-by-complexity.svg');
+        expect(md).not.toContain('alice-contributions-by-size.svg');
+        expect(md).not.toContain('| Fixture work |');
+        expect(result.chartCount).toBeGreaterThan(15);
+        expect(result.userCount).toBe(2);
+      } finally {
+        stderrWrite.mockRestore();
+      }
     });
   });
 

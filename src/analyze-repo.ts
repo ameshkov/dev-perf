@@ -81,7 +81,7 @@ export async function analyzeRepository(
     log,
   });
   log.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} ${repo} in ${Date.now() - startedAt} ms`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo}" in ${Date.now() - startedAt} ms`,
   );
   const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
   const groups = groupByAuthor(commits);

@@ -11,8 +11,8 @@ and produces a JSON report of per-user metrics.
 
 Given one or more repositories (any git URL) and a date range, `dev-perf`:
 
-1. **Clones** each repository into a local, gitignored cache directory
-   (`.dev-perf/cache` by default).
+1. **Clones** each repository into a local cache directory in the OS temp
+   directory (`<tmpdir>/.dev-cache` by default).
 2. **Counts deterministically** — straight from git history — commits, lines
    added/removed, files touched, churn, active days, and per-language contribution
    sizes (cloc-style counting applied to contributions).
@@ -26,8 +26,9 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 
 ## Usage
 
-`dev-perf` is command-based: `report` builds the JSON report, and
-`compile` renders it into a markdown report with charts. Running
+`dev-perf` is command-based: `report` builds the JSON report,
+`compile` renders it into a markdown report with charts, and `version`
+prints the application version (same as `--version`/`-V`). Running
 `dev-perf` without a command prints the command list.
 
 ```text
@@ -46,7 +47,7 @@ Options:
                          quarter, year (requires --since)
   --output <file>        Write the JSON report to a file (default: stdout)
   --cache-dir <dir>      Cache directory for cloned repos and LLM results
-                         (default: .dev-perf/cache)
+                         (default: <tmpdir>/.dev-cache)
   --refresh              Force re-clone and re-analysis, invalidating the
                          LLM result cache
   --no-llm               Deterministic stats only, skip LLM analysis
@@ -61,6 +62,7 @@ Options:
   --parallel <n>         Analyze up to <n> repositories in parallel
                          (default: 1)
   --verbose              Verbose logging
+  -V, --version          Show version
   --help                 Show help
 ```
 
@@ -77,7 +79,7 @@ The `opencode` CLI must be installed and on `PATH` (the analysis runs opencode
 as a library, scoped to each cloned repository).
 
 LLM analysis results are cached in the cache directory
-(`.dev-perf/cache/<hash>/llm/`), keyed by repo, user, date range, model and
+(`<tmpdir>/.dev-cache/<hash>/llm/`), keyed by repo, user, date range, model and
 limits — a rerun with the same parameters reuses them and makes no new calls.
 `--refresh` forces a re-clone and invalidates the cached LLM results.
 
@@ -101,14 +103,23 @@ Cost visibility: the report records, per user, the `tokenUsage` (input/output
 tokens) and the `estimatedCostUsd` from the provider's event stream, so runaway
 costs are visible in the report itself.
 
-`--verbose` prints progress to stderr — cache reuse vs a fresh clone (with
-duration), the resolved author-date range, and per-repo commit counts. Each
-line carries a millisecond timestamp, and per-repository lines are
-prefixed with the repository's label (`[repo]`), so the progress of a
-parallel run stays traceable. stdout carries nothing but the report
-JSON, and a default run is silent apart from errors and warnings (e.g.
-when a host rejects partial clones and the full-clone fallback kicks
-in).
+stdout carries the report JSON only. Every `report` run starts by
+logging the application version and the full resolved configuration to
+stderr as one indented line per field: repositories, dates, unit,
+output file, the resolved cache directory, refresh, LLM settings
+(model, provider, masked API key), limits, retries, parallelism, and
+verbose — so the effective settings are visible before the analysis,
+and even when the run fails before the report is written. Every
+`compile` run logs the version line as well.
+
+`--verbose` additionally prints progress to stderr — cache reuse vs a
+fresh clone (with duration), the resolved author-date range, and
+per-repo commit counts. Each line carries a millisecond timestamp and a
+`[LEVEL]` tag (`[ERROR]`/`[WARN]`/`[INFO]`/`[DEBUG]`), and
+per-repository lines are prefixed with the repository's label
+(`[repo]`), so the progress of a parallel run stays traceable.
+Redirect stderr to a `.log` file to get syntax highlighting in editors
+that understand the standard log format (e.g. VS Code's Log mode).
 
 Time-based period reports: with `--unit day|week|month|quarter|year`, the
 `--since`/`--until` range is split into consecutive UTC-aligned periods (days
@@ -292,7 +303,7 @@ exported in the shell are never overridden by `.env`.
 | `--until <date>` | `DEV_PERF_UNTIL` | Default: today |
 | `--unit <unit>` | `DEV_PERF_UNIT` | day/week/month/quarter/year; requires `--since` |
 | `--output <file>` | `DEV_PERF_OUTPUT` | Default: stdout |
-| `--cache-dir <dir>` | `DEV_PERF_CACHE_DIR` | Default: .dev-perf/cache |
+| `--cache-dir <dir>` | `DEV_PERF_CACHE_DIR` | Default: `<tmpdir>/.dev-cache` |
 | `--refresh` | `DEV_PERF_REFRESH` | Boolean |
 | `--no-llm` | `DEV_PERF_NO_LLM` | Boolean; `true` skips LLM analysis |
 | `--model <model>` | `DEV_PERF_MODEL` | Required for LLM analysis |

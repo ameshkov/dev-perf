@@ -14,6 +14,7 @@ import { entryHash } from './repo/cache.js';
 import { gitRevParse } from './repo/git.js';
 import { trendReportSchema } from './report/schema.js';
 import { prettyJson } from './util/json.js';
+import { appVersion } from './version.js';
 
 /** Defaults for a deterministic-only pipeline run. */
 function options(overrides: Partial<CliOptions> = {}): CliOptions {
@@ -229,7 +230,7 @@ describe('runPipeline', () => {
     }
   });
 
-  it('with --verbose logs progress to stderr while stdout carries only the report', async () => {
+  it('with --verbose logs the startup block and progress to stderr while stdout carries the report JSON only', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -242,15 +243,29 @@ describe('runPipeline', () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
-      const report = await runPipeline(
-        options({ repos: [repo.url], cacheDir, verbose: true, since: '2026-01-01T00:00:00Z' }),
-      );
+      const runOptions = options({
+        repos: [repo.url],
+        cacheDir,
+        verbose: true,
+        since: '2026-01-01T00:00:00Z',
+      });
+      const report = await runPipeline(runOptions);
 
       const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      // The startup block: application version, then the configuration
+      // as one indented line per field.
+      expect(stderr).toContain(`dev-perf ${appVersion}`);
+      expect(stderr).toContain('configuration:');
+      expect(stderr).toContain('    - ' + repo.url);
+      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
+      expect(stderr).toContain('  verbose: true');
+      // Then the verbose progress lines.
       expect(stderr).toMatch(/cloned .* in \d+ ms/);
       expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to');
       expect(stderr).toContain('1 commit from 1 author');
 
+      // Stdout carries the report JSON alone — the configuration never
+      // reaches stdout.
       const stdout = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
       expect(stdout).toBe(prettyJson(report));
     } finally {
@@ -260,7 +275,7 @@ describe('runPipeline', () => {
     }
   });
 
-  it('a default run is silent on stderr', async () => {
+  it('a default run prints only the startup block on stderr, with no progress lines', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -274,7 +289,14 @@ describe('runPipeline', () => {
     try {
       await runPipeline(options({ repos: [repo.url], cacheDir }));
 
-      expect(stderrWrite).not.toHaveBeenCalled();
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      // The startup block is always logged, even in quiet mode…
+      expect(stderr).toContain(`dev-perf ${appVersion}`);
+      expect(stderr).toContain('configuration:');
+      expect(stderr).toContain('  verbose: false');
+      // …but nothing else: progress lines stay hidden without
+      // `--verbose`.
+      expect(stderr).not.toMatch(/cloned|range:|commit/);
     } finally {
       vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });
@@ -500,7 +522,7 @@ describe('runPipeline', () => {
       expect(report.parameters.repos).toEqual([repo.url]);
       expect(report.periods[0].repositories).toHaveLength(1);
       const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
-      expect(stderr).toContain(`duplicate repository skipped: ${repo.url}`);
+      expect(stderr).toContain(`duplicate repository skipped: "${repo.url}"`);
     } finally {
       vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });

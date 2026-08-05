@@ -72,7 +72,7 @@ export async function waitForServerExit(
   if (pid !== undefined) {
     log.warn(`LLM server did not exit on SIGTERM; force-killed PID ${pid} (process tree)`);
   } else if (alive) {
-    log.warn(`LLM server did not exit on SIGTERM and could not be force-killed: ${url}`);
+    log.warn(`LLM server did not exit on SIGTERM and could not be force-killed: "${url}"`);
   }
 }
 

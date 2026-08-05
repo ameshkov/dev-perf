@@ -392,7 +392,7 @@ function startHeartbeat(log: ScopedLog, label: string, what: string): () => void
   const startedAt = Date.now();
   const timer = setInterval(() => {
     log.info(
-      `LLM: ${label}: still waiting for ${what} (${Math.floor((Date.now() - startedAt) / 1000)}s elapsed)`,
+      `LLM: "${label}": still waiting for ${what} (${Math.floor((Date.now() - startedAt) / 1000)}s elapsed)`,
     );
   }, STILL_WAITING_INTERVAL_MS);
   timer.unref();

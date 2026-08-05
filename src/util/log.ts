@@ -1,11 +1,16 @@
 /**
  * Minimal stderr logger: level-based
- * with no dependencies. Every line carries a millisecond timestamp;
- * scoped lines (per-repository progress) additionally carry a `[label]`
- * prefix so concurrent analysis of several repositories can be told
- * apart. Quiet by default — `error` and `warn` messages are always
- * printed; `--verbose` enables `info` (progress) and `debug`. Every
- * message goes to stderr; stdout carries nothing but the report JSON.
+ * with no dependencies. Every line is `[HH:mm:ss.SSS] [LEVEL]
+ * [label] message` — the standard log format, so a redirected log
+ * file (`2>run.log`) gets full syntax highlighting in editors that
+ * understand it (e.g. VS Code's Log mode). The millisecond timestamp
+ * prefixes every line; the `[LEVEL]` tag (`[ERROR]`, `[WARN]`,
+ * `[INFO]`, `[DEBUG]`) carries the severity; scoped lines
+ * (per-repository progress) additionally carry a `[label]` prefix so
+ * concurrent analysis of several repositories can be told apart.
+ * Quiet by default — `error` and `warn` messages are always printed;
+ * `--verbose` enables `info` (progress) and `debug`. Every message
+ * goes to stderr; stdout carries nothing but the report JSON.
  */
 
 /**
@@ -42,6 +47,13 @@ export interface ScopedLog {
 }
 
 /**
+ * The severity tag of a log line. Rendered as `[LEVEL]` in the
+ * standard log format; editors with log syntax highlighting color the
+ * levels individually.
+ */
+type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
+
+/**
  * The current local time as `HH:mm:ss.SSS`, the timestamp prefix of
  * every log line.
  *
@@ -54,22 +66,24 @@ function timestamp(): string {
 }
 
 /**
- * Writes one line to stderr: `[HH:mm:ss.SSS] [label] message` — the
- * scope label is omitted for unscoped (global) lines.
+ * Writes one line to stderr: `[HH:mm:ss.SSS] [LEVEL] [label] message`
+ * — the level tag is always present; the scope label is omitted for
+ * unscoped (global) lines.
  *
+ * @param level - The severity tag (`ERROR`, `WARN`, `INFO`, `DEBUG`).
  * @param scope - The scope label, or `undefined`/empty for the global
  * logger.
  * @param message - The message text; a trailing newline is appended.
  */
-function writeLine(scope: string | undefined, message: string): void {
+function writeLine(level: LogLevel, scope: string | undefined, message: string): void {
   const label = scope === undefined || scope === '' ? '' : ` [${scope}]`;
-  process.stderr.write(`[${timestamp()}]${label} ${message}\n`);
+  process.stderr.write(`[${timestamp()}] [${level}]${label} ${message}\n`);
 }
 
 /**
- * Creates a scoped logger whose lines carry `[label]` next to the
- * timestamp — used for per-repository progress so concurrent analyses
- * are distinguishable. Scope labels must be stable per run; the caller
+ * Creates a scoped logger whose lines carry `[label]` after the level
+ * tag — used for per-repository progress so concurrent analyses are
+ * distinguishable. Scope labels must be stable per run; the caller
  * computes them once (e.g. repo basenames in input order). Without a
  * label the scoped logger behaves exactly like the global one.
  *
@@ -78,16 +92,16 @@ function writeLine(scope: string | undefined, message: string): void {
  */
 export function createScopedLog(label?: string): ScopedLog {
   return {
-    error: (message) => writeLine(label, message),
-    warn: (message) => writeLine(label, message),
+    error: (message) => writeLine('ERROR', label, message),
+    warn: (message) => writeLine('WARN', label, message),
     info: (message) => {
       if (verbose) {
-        writeLine(label, message);
+        writeLine('INFO', label, message);
       }
     },
     debug: (message) => {
       if (verbose) {
-        writeLine(label, message);
+        writeLine('DEBUG', label, message);
       }
     },
   };
@@ -99,7 +113,7 @@ export function createScopedLog(label?: string): ScopedLog {
  * @param message - The message to write to stderr.
  */
 export function logError(message: string): void {
-  writeLine(undefined, message);
+  writeLine('ERROR', undefined, message);
 }
 
 /**
@@ -108,7 +122,19 @@ export function logError(message: string): void {
  * @param message - The message to write to stderr.
  */
 export function logWarn(message: string): void {
-  writeLine(undefined, message);
+  writeLine('WARN', undefined, message);
+}
+
+/**
+ * Logs an informational line that is always printed, regardless of
+ * verbose mode — the run-startup block (the application version and
+ * the per-line run configuration) must be visible on every run, not
+ * only in verbose logs.
+ *
+ * @param message - The message to write to stderr.
+ */
+export function logConfig(message: string): void {
+  writeLine('INFO', undefined, message);
 }
 
 /**
@@ -119,7 +145,7 @@ export function logWarn(message: string): void {
  */
 export function logInfo(message: string): void {
   if (verbose) {
-    writeLine(undefined, message);
+    writeLine('INFO', undefined, message);
   }
 }
 
@@ -135,6 +161,6 @@ export function logInfo(message: string): void {
  */
 export function logDebug(message: string): void {
   if (verbose) {
-    writeLine(undefined, message);
+    writeLine('DEBUG', undefined, message);
   }
 }

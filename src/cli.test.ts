@@ -7,6 +7,7 @@ import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-build
 import { trendReportJson } from '../test/fixtures/trend-report-builder.js';
 import { registerCommands } from './cli.js';
 import { trendReportSchema } from './report/schema.js';
+import { appVersion } from './version.js';
 
 function createProgram(): Command {
   const program = new Command();
@@ -88,6 +89,18 @@ describe('cli', () => {
     expect(compileHelp).toContain('--repo <repo>');
     expect(compileHelp).toContain('--exclude-repo <repo>');
     expect(compileHelp).toContain('DEV_PERF_COMPILE_');
+  });
+
+  it('prints the application version for the version command', async () => {
+    const program = createProgram();
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await program.parseAsync(['node', 'dev-perf', 'version']);
+
+      expect(stdout).toHaveBeenCalledWith(`${appVersion}\n`);
+    } finally {
+      stdout.mockRestore();
+    }
   });
 
   it('rejects unknown commands', async () => {

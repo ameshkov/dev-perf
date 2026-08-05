@@ -20,13 +20,15 @@ import { analyzeRepository } from './analyze-repo.js';
 import { assembleTrendReport } from './report/index.js';
 import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
+import { runConfigLines } from './run-config.js';
 import { splitPeriods } from './trend/periods.js';
 import { errorDetail } from './util/error.js';
 import { pluralize, rangeBound } from './util/format.js';
-import { createScopedLog, logInfo, logWarn, setVerbose } from './util/log.js';
+import { createScopedLog, logConfig, logInfo, logWarn, setVerbose } from './util/log.js';
 import type { ScopedLog } from './util/log.js';
 import { prettyJson, writeJsonFile } from './util/json.js';
 import { mapLimit } from './util/pool.js';
+import { appVersion } from './version.js';
 
 /** Date string git resolves for the default `--until` bound. */
 const DEFAULT_UNTIL = 'today';
@@ -52,11 +54,16 @@ interface RunAnalysis {
  * stdout or the `--output` file. Duplicate repository specs are
  * analyzed once (their entries are identical anyway, and parallel
  * analysis of the same cache entry would race); the report parameters
- * list the unique repos in input order. With `options.verbose`,
- * progress (clone/reuse with duration, the resolved range, the period
- * split, per-repo commit counts, LLM sessions) is logged to stderr —
- * per-repo lines carry the repo's label; stdout stays reserved for the
- * report JSON.
+ * list the unique repos in input order. The run starts by logging the
+ * application version and the full resolved configuration to stderr
+ * through the logger — one indented line per config field, always
+ * printed even in quiet mode — so the effective settings are visible
+ * before the analysis, and even when the run fails before the report
+ * is written; stdout carries the report JSON only. With
+ * `options.verbose`, progress (clone/reuse with duration, the resolved
+ * range, the period split, per-repo commit counts, LLM sessions) is
+ * additionally logged to stderr — per-repo lines carry the repo's
+ * label.
  *
  * @param options - Validated CLI options (see `parseCliOptions`).
  * @returns The assembled trend report document.
@@ -70,6 +77,15 @@ interface RunAnalysis {
 export async function runPipeline(options: CliOptions): Promise<TrendReport> {
   setVerbose(options.verbose === true);
   const repos = dedupeRepos(options.repos);
+  // The startup block — application version, then the resolved
+  // configuration as one indented line per field — is always logged
+  // to stderr, so the effective settings are visible on every run,
+  // even in quiet mode and when the run fails before the report is
+  // written. Stdout stays reserved for the report JSON.
+  logConfig(`dev-perf ${appVersion}`);
+  for (const line of runConfigLines(options, repos)) {
+    logConfig(line);
+  }
   const analyzed = await analyzeAllRepos(options, repos);
   const report = assembleTrendReport({
     repos,
@@ -131,7 +147,7 @@ async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<Ru
     log: firstLog,
   });
   firstLog.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} ${first} in ${Date.now() - startedAt} ms`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first}" in ${Date.now() - startedAt} ms`,
   );
   const range = await resolveRange(clone.repoDir, options.since, options.until);
   const periods = splitPeriods(range, options.unit);
@@ -212,7 +228,7 @@ function dedupeRepos(repos: readonly string[]): string[] {
   const unique: string[] = [];
   for (const repo of repos) {
     if (seen.has(repo)) {
-      logWarn(`duplicate repository skipped: ${repo}`);
+      logWarn(`duplicate repository skipped: "${repo}"`);
       continue;
     }
     seen.add(repo);

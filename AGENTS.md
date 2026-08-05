@@ -29,8 +29,8 @@ opencode as a library (`@opencode-ai/sdk`).
 and a date range, and produces a JSON report of contributions **per
 user**:
 
-1. **Clone** — each repository is cloned into a gitignored cache
-   directory (`.dev-perf/cache` by default, partial clone).
+1. **Clone** — each repository is cloned into a cache directory in the
+   OS temp directory (`<tmpdir>/.dev-cache` by default, partial clone).
 2. **Deterministic analysis** — commits, added/removed lines, files
    touched, churn, active days, and per-language contribution sizes,
    counted straight from git history.
@@ -75,11 +75,13 @@ a markdown report with charts. The full design lives in
 dev-perf/
 ├── src/                       # Application source code
 │   ├── index.ts               # CLI entry point
-│   ├── cli.ts                 # Command registry (report, compile)
+│   ├── cli.ts                 # Command registry (report, compile, version)
 │   ├── commands/              # One file per CLI command
 │   ├── pipeline.ts            # Orchestration: clone → analysis → LLM → assemble → write
 │   ├── analyze-repo.ts        # Per-repository analysis: clone, commits, LLM phase, assembly
 │   ├── config.ts              # zod validation of parsed CLI options
+│   ├── run-config.ts          # Per-line run configuration dump for the startup log
+│   ├── version.ts             # Application version from package.json
 │   ├── repo/                  # Clone/cache management
 │   ├── deterministic/         # Deterministic analysis (commits, identity, metrics, languages)
 │   ├── llm/                   # LLM agentic layer (server, tools, prompts, sessions, orchestration)
@@ -171,10 +173,16 @@ Universal design principles this codebase follows:
   and interact through narrow interfaces.
 - **Make Invalid States Impossible** — use TypeScript strict mode and
   validation (zod) to prevent illegal combinations at compile time.
-- **Stdout Purity** — stdout carries nothing but the report JSON.
-  Progress and errors go to stderr through the level-based logger
-  (`src/util/log.ts`): `error`/`warn` messages always, `info`/`debug`
-  messages only when `--verbose` is set.
+- **Stdout Discipline** — stdout carries the report JSON only (or the
+  compile command's written report path). Progress and errors go to
+  stderr through the level-based logger (`src/util/log.ts`):
+  `error`/`warn` messages always, `info`/`debug` messages only when
+  `--verbose` is set. Every `report` and `compile` run additionally
+  logs an always-visible startup line to stderr with the application
+  version (`dev-perf <version>`); `report` runs follow it with the
+  full resolved configuration as one indented line per config field
+  (`src/run-config.ts`), with the API key masked. Log message strings
+  are formatted per the **Log string formatting** guideline below.
 - **Guaranteed CLI exit** — the CLI must terminate once the report is
   written: the entry point forces a clean exit (waiting for stdout to
   flush first) instead of relying on the event loop draining, because
@@ -264,6 +272,16 @@ All code MUST meet documentation and style requirements before merge:
   which walks the cause chain — a bare `fetch failed` without its
   underlying `connect ECONNREFUSED`/`socket hang up` reason is a bug in
   reporting.
+- **Log string formatting**: Log messages are plain template-literal
+  strings rendered by the level-based logger (`src/util/log.ts`);
+  format them so the boundaries of every logged value are
+  unambiguous. Wrap interpolated string-variable values — file paths,
+  repository specs, user names, ids, urls, models — in double quotes,
+  e.g. `compile: report "report.json" (2 periods)` or
+  `cloned "repo" in 12 ms`, so empty or space-containing values stay
+  visible. Numbers, computed date strings (`rangeBound(...)`), and
+  embedded error/prose text (`errorDetail(...)`, multi-paragraph
+  dumps) stay unquoted.
 - **Import style**: Use top-level static `import` statements exclusively.
   Do NOT scatter dynamic `await import()` calls inside function bodies
   ("inline imports"). Dynamic imports placed mid-function obscure

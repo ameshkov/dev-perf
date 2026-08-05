@@ -265,7 +265,7 @@ describe('createSessionService', () => {
       await vi.advanceTimersByTimeAsync(31_000);
 
       expect(scoped?.info).toHaveBeenCalledWith(
-        expect.stringContaining('LLM: Alice: still waiting for the LLM reply'),
+        expect.stringContaining('LLM: "Alice": still waiting for the LLM reply'),
       );
       expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
@@ -350,7 +350,7 @@ describe('promptSessionUntilReport', () => {
       await vi.advanceTimersByTimeAsync(31_000);
 
       expect(scoped?.info).toHaveBeenCalledWith(
-        expect.stringContaining('LLM: Alice: still waiting for devperf_report'),
+        expect.stringContaining('LLM: "Alice": still waiting for devperf_report'),
       );
       expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 

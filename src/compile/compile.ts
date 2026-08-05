@@ -14,7 +14,8 @@ import type { TrendReport } from '../report/index.js';
 import { trendReportSchema } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile } from '../util/json.js';
-import { logInfo, setVerbose } from '../util/log.js';
+import { logConfig, logInfo, setVerbose } from '../util/log.js';
+import { appVersion } from '../version.js';
 import { buildChartData } from './chart-data.js';
 import type { ChartData } from './chart-data.js';
 import { buildChartAssets } from './charts.js';
@@ -129,7 +130,7 @@ async function renderCharts(
       const svg = await renderSvg(asset.spec);
       await writeFile(path.join(assetsDir, asset.file), svg, 'utf8');
       byFile.set(asset.file, asset);
-      logInfo(`compile: rendered ${asset.file}`);
+      logInfo(`compile: rendered "${asset.file}"`);
     } catch (error) {
       throw new Error(`failed to render chart ${asset.file}: ${errorDetail(error)}`, {
         cause: error,
@@ -156,8 +157,11 @@ export async function runCompile(
   options: CompileOptions,
 ): Promise<CompileResult> {
   setVerbose(options.verbose === true);
+  // The startup version line is always logged, mirroring report runs,
+  // so a compile log file names the dev-perf build that produced it.
+  logConfig(`dev-perf ${appVersion}`);
   const report = await loadReport(reportFile);
-  logInfo(`compile: report ${reportFile} (${report.periods.length} periods)`);
+  logInfo(`compile: report "${reportFile}" (${report.periods.length} periods)`);
   const emailMap = await loadEmailMap(options);
   const filtered = filterReport(report, {
     repos: options.repos,
@@ -181,7 +185,7 @@ export async function runCompile(
   await writeFile(reportPath, `${markdown}\n`, 'utf8');
   const peopleDir = await writePersonReports(data, assets, outputDir);
   logInfo(
-    `compile: wrote ${reportPath} with ${assets.size} charts for ${filtered.users.length} users`,
+    `compile: wrote "${reportPath}" with ${assets.size} charts for ${filtered.users.length} users`,
   );
   return {
     reportFile,
@@ -223,7 +227,7 @@ async function writePersonReports(
     usedSlugs.add(slug);
     const personPath = path.join(peopleDir, `${slug}.md`);
     await writeFile(personPath, `${assemblePersonMarkdown(series, data, assets)}\n`, 'utf8');
-    logInfo(`compile: wrote ${personPath}`);
+    logInfo(`compile: wrote "${personPath}"`);
   }
   return peopleDir;
 }

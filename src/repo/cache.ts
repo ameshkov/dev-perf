@@ -15,25 +15,29 @@
  * ```
  */
 import { createHash } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 
-/** Default cache directory, relative to the working directory. */
-const DEFAULT_CACHE_DIR = '.dev-perf/cache';
+/** Default cache directory name, inside the OS temp directory. */
+const DEFAULT_CACHE_DIR = '.dev-cache';
 
 /** Length of the per-repository entry hash. */
 const ENTRY_HASH_LENGTH = 16;
 
 /**
  * Resolves the cache root: the `--cache-dir` option if given, otherwise
- * `.dev-perf/cache` under the working directory.
+ * `.dev-cache` under the OS temp directory.
  *
  * @param cacheDir - Cache directory as given on the command line.
  * @returns The absolute cache root path.
  */
 export function resolveCacheDir(cacheDir?: string): string {
-  return path.resolve(process.cwd(), cacheDir ?? DEFAULT_CACHE_DIR);
+  if (cacheDir === undefined) {
+    return path.join(os.tmpdir(), DEFAULT_CACHE_DIR);
+  }
+  return path.resolve(process.cwd(), cacheDir);
 }
 
 /**

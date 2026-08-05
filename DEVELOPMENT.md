@@ -73,7 +73,7 @@ deterministic analysis path runs end to end:
 node build/index.js report --no-llm /path/to/some/git/repo
 ```
 
-This clones the repository into the cache (`.dev-perf/cache` by
+This clones the repository into the cache (`<tmpdir>/.dev-cache` by
 default), analyzes git history, and prints the JSON report to stdout.
 LLM analysis is wired in: a run without `--no-llm`
 requires `--model`, `--provider-url`, and `--api-key`, and the
@@ -154,7 +154,7 @@ node build/index.js report --no-llm --since 2026-01-01 --until 2026-12-31 \
 node build/index.js report
 
 # Verbose run: progress (clone vs cache reuse, range, commit counts)
-# goes to stderr, the report JSON stays on stdout
+# goes to stderr; stdout carries the report JSON only
 node build/index.js report --no-llm --verbose /tmp/fixture
 ```
 
@@ -174,7 +174,14 @@ A second run with the same repository reuses the cached clone; pass
 
 `--verbose` shows what the pipeline is doing on stderr — clone vs cache
 reuse (with duration), the resolved author-date range, and per-repo
-commit counts — while stdout stays reserved for the report JSON.
+commit counts. Every run starts by logging the application version
+(`dev-perf <version>`) to stderr; a `report` run follows it with the
+full resolved configuration as one indented line per field
+(repositories, dates, unit, output, resolved cache directory, refresh,
+LLM settings with the API key masked, limits, retries, parallelism,
+verbose), and stdout carries the report JSON only.
+`node build/index.js --version` (or `version`) prints the application
+version.
 
 ### Manual LLM run
 
@@ -199,7 +206,7 @@ Expectations:
 - The report's per-user `llm` entries have `status: "completed"` with
   `overview`, `contributions`, `tokenUsage` and `estimatedCostUsd`.
 - A rerun with identical parameters makes no new LLM calls (results
-  are cached in `.dev-perf/cache/<hash>/llm/`); `--refresh` re-runs
+  are cached in `<tmpdir>/.dev-cache/<hash>/llm/`); `--refresh` re-runs
   everything.
 - A provider that rejects the key fails fast: the run exits non-zero
   with a message naming the failing prompt, and no report is written.

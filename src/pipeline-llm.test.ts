@@ -249,13 +249,14 @@ describe('runPipeline with LLM analysis', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const { close } = stubServer({ callTool: false, payload: PAYLOAD, replyText: 'ok' });
     try {
-      await expect(
-        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
-      ).rejects.toThrow(
+      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 0 });
+      await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .*: LLM analysis for Alice did not call devperf_report/,
       );
 
       expect(close).toHaveBeenCalledTimes(1);
+      // The startup block goes to stderr through the logger; a failed
+      // run writes no report, so stdout stays untouched.
       expect(stdout).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();
@@ -285,13 +286,14 @@ describe('runPipeline with LLM analysis', () => {
       promptError,
     });
     try {
-      await expect(
-        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
-      ).rejects.toThrow(
+      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 0 });
+      await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .*: analysis of Alice <alice@example.com> \(session ses_\d+\) failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:50664/,
       );
 
       expect(close).toHaveBeenCalledTimes(1);
+      // The startup block goes to stderr through the logger; a failed
+      // run writes no report, so stdout stays untouched.
       expect(stdout).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();
@@ -480,14 +482,15 @@ describe('runPipeline with LLM analysis', () => {
       promptFailures: 99,
     });
     try {
-      await expect(
-        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 1 })),
-      ).rejects.toThrow(
+      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 1 });
+      await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .* after 2 attempts: .*analysis of Alice <alice@example.com>.*failed: fetch failed/,
       );
 
       expect(startServer).toHaveBeenCalledTimes(2);
       expect(close).toHaveBeenCalledTimes(2);
+      // The startup block goes to stderr through the logger; a failed
+      // run writes no report, so stdout stays untouched.
       expect(stdout).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();

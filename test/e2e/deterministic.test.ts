@@ -1,10 +1,11 @@
 /**
  * End-to-end tests for the deterministic analysis path: the compiled
  * CLI runs with `--no-llm` against a fixture repo as a child process,
- * and the emitted JSON is validated against the report schema and
- * checked exactly. A `--verbose` run is checked the same way,
- * additionally asserting that progress lines go to stderr only while
- * stdout stays pure JSON.
+ * and the emitted output is validated against the report schema and
+ * checked exactly. stdout carries the report JSON only; stderr carries
+ * the startup block — the application version and the per-line run
+ * configuration — on every run, plus the verbose progress lines when
+ * `--verbose` is passed.
  *
  * The suite needs `pnpm build` to have produced `build/index.js`; it
  * is skipped when the build is missing so a plain `pnpm test` stays
@@ -21,6 +22,7 @@ import { buildFixtureRepo, removeFixtureRepo } from '../fixtures/repo-builder.js
 import { entryHash } from '../../src/repo/cache.js';
 import { gitRevParse } from '../../src/repo/git.js';
 import { trendReportSchema } from '../../src/report/schema.js';
+import { appVersion } from '../../src/version.js';
 
 /** Compiled CLI entry point; the suite runs it as a child process. */
 const BUILD_ENTRY = path.resolve(process.cwd(), 'build', 'index.js');
@@ -48,8 +50,15 @@ function cleanEnv(): NodeJS.ProcessEnv {
  * @param cacheDir - The temp cache directory of the current test.
  * @returns The spawn options for the child CLI.
  */
-function spawnOptions(cacheDir: string): { env: NodeJS.ProcessEnv; cwd: string } {
-  return { env: cleanEnv(), cwd: cacheDir };
+function spawnOptions(cacheDir: string): {
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+  stripFinalNewline: false;
+} {
+  // `stripFinalNewline: false` keeps the captured stdout faithful: the
+  // report parsing expects the exact pretty-printed JSON, which execa's
+  // default newline stripping would disturb.
+  return { env: cleanEnv(), cwd: cacheDir, stripFinalNewline: false };
 }
 
 /**
@@ -183,11 +192,11 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
 }
 
 describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
-  it('prints the exact expected report to stdout', async () => {
+  it('prints the exact expected report to stdout with the configuration on stderr', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout } = await execa(
+      const { stdout, stderr } = await execa(
         'node',
         [
           BUILD_ENTRY,
@@ -204,15 +213,30 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         { ...spawnOptions(cacheDir) },
       );
 
+      // stdout carries the report JSON alone — parseable without any
+      // splitting.
       expect(trendReportSchema.safeParse(JSON.parse(stdout)).success).toBe(true);
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
+
+      // stderr carries the startup block: the application version,
+      // then the resolved configuration as one indented line per
+      // field.
+      expect(stderr).toContain(`dev-perf ${appVersion}`);
+      expect(stderr).toContain('configuration:');
+      expect(stderr).toContain(`    - ${repo.url}`);
+      expect(stderr).toContain('  since: 2026-01-01T00:00:00Z');
+      expect(stderr).toContain('  until: 2026-01-31T23:59:59Z');
+      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
+      expect(stderr).toContain('  refresh: false');
+      expect(stderr).toContain('  llm: false');
+      expect(stderr).toContain('  verbose: false');
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }
   });
 
-  it('with --verbose logs progress to stderr while stdout stays pure JSON', async () => {
+  it('with --verbose logs the startup block and progress to stderr while stdout stays pure report JSON', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
@@ -234,10 +258,13 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         { ...spawnOptions(cacheDir) },
       );
 
-      // stdout parses as the exact same report as a quiet run.
+      // stdout carries the same pure report JSON as a quiet run.
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
-      // stderr carries the progress lines: fresh clone (with duration),
-      // the resolved range, and per-repo commit counts.
+      // stderr carries the startup block plus the progress lines:
+      // fresh clone (with duration), the resolved range, and per-repo
+      // commit counts.
+      expect(stderr).toContain(`dev-perf ${appVersion}`);
+      expect(stderr).toContain('configuration:');
       expect(stderr).toMatch(/cloned .* in \d+ ms/);
       expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to 2026-01-31T23:59:59.000Z');
       expect(stderr).toContain('3 commits from 2 authors');
@@ -247,7 +274,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('a default run is silent on stderr', async () => {
+  it('a default run prints only the startup block on stderr, with no progress lines', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
@@ -269,7 +296,12 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       );
 
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
-      expect(stderr).toBe('');
+      // The startup block is always printed, even without --verbose…
+      expect(stderr).toContain(`dev-perf ${appVersion}`);
+      expect(stderr).toContain('configuration:');
+      expect(stderr).toContain('  verbose: false');
+      // …but nothing else: progress lines stay hidden in quiet mode.
+      expect(stderr).not.toMatch(/cloned|range:|commit/);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
@@ -281,7 +313,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
     try {
-      await execa(
+      const { stdout, stderr } = await execa(
         'node',
         [
           BUILD_ENTRY,
@@ -299,6 +331,12 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         ],
         { ...spawnOptions(cacheDir) },
       );
+
+      // With --output, stdout carries nothing — the report goes to the
+      // file and the configuration to stderr.
+      expect(stdout).toBe('');
+      expect(stderr).toContain(`  output: ${outFile}`);
+      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as {
         schemaVersion: number;
@@ -424,5 +462,19 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }
+  });
+
+  it('prints the application version for --version and the version command', async () => {
+    // The version commands need no repository; a bare temp cwd keeps
+    // the developer's .env out.
+    const versionFlag = await execa('node', [BUILD_ENTRY, '--version'], {
+      ...spawnOptions(os.tmpdir()),
+    });
+    expect(versionFlag.stdout).toBe(`${appVersion}\n`);
+
+    const versionCommand = await execa('node', [BUILD_ENTRY, 'version'], {
+      ...spawnOptions(os.tmpdir()),
+    });
+    expect(versionCommand.stdout).toBe(`${appVersion}\n`);
   });
 });

@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 /// <reference types="node" />
 
-import { createRequire } from 'node:module';
 import dotenv from 'dotenv';
 import { Command } from 'commander';
 import { registerCommands } from './cli.js';
 import { errorDetail } from './util/error.js';
 import { exitAfterStdoutFlushed } from './util/exit.js';
 import { logError } from './util/log.js';
-
-const { version } = createRequire(import.meta.url)('../package.json') as {
-  version: string;
-};
+import { appVersion } from './version.js';
 
 async function main() {
   // Load .env from the current working directory so DEV_PERF_API_KEY (and
@@ -25,7 +21,7 @@ async function main() {
     .description(
       'Measure developer contributions to git repositories and produce a JSON report of per-user metrics',
     )
-    .version(version);
+    .version(appVersion);
 
   registerCommands(program);
 

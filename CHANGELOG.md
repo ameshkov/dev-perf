@@ -127,6 +127,11 @@ and this project adheres to
   timestamp, and per-repository lines are prefixed with the
   repository's label (`[repo]`), so the progress of a parallel run
   stays traceable.
+- The new `version` command prints the application version
+  (`dev-perf version`), the same value as the `--version` flag.
+- Every `report` and `compile` run logs the application version as the
+  first line of its startup block on stderr, so a redirected log file
+  names the exact dev-perf build that produced it.
 
 ### Changed
 
@@ -143,3 +148,24 @@ and this project adheres to
   empty entries, and an empty `--output` falls back to the
   `dev-perf-report` default — so an optional value like
   `--exclude-user ""` excludes no user instead of failing.
+- The clone and LLM-result cache defaults to `.dev-cache` in the OS
+  temp directory (`<tmpdir>/.dev-cache`) instead of `.dev-perf/cache`
+  in the working directory, so running the tool no longer pollutes the
+  invoking project; `--cache-dir` / `DEV_PERF_CACHE_DIR` still
+  override it.
+- Every `report` run now logs the full resolved configuration to
+  stderr as one indented line per field — repositories, dates, unit,
+  output file, resolved cache directory, refresh, LLM settings (the
+  API key masked), limits, retries, parallelism, and verbose — always
+  printed, so the effective settings are visible even when the run
+  fails before the report is written. Stdout now carries the report
+  JSON only.
+- Progress and error log lines now carry a `[LEVEL]` tag (`[ERROR]`,
+  `[WARN]`, `[INFO]`, `[DEBUG]`) between the timestamp and the
+  message — the standard log format — so a redirected log file
+  (`2>run.log`) opens with full syntax highlighting in VS Code's Log
+  mode and other editors that understand the format.
+- Log lines now wrap string variable values — repository specs, file
+  paths, user names, session ids, server urls, models — in double
+  quotes (e.g. `cloned "repo" in 12 ms`), making the boundaries of
+  each value unambiguous even when it is empty or contains spaces.

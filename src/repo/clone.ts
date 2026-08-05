@@ -22,7 +22,7 @@ const SCP_LIKE_URL_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/;
 
 /** Options accepted by `ensureClone`. */
 export interface EnsureCloneOptions {
-  /** Cache directory (default: `.dev-perf/cache` under the cwd). */
+  /** Cache directory (default: `.dev-cache` under the OS temp dir). */
   cacheDir?: string;
   /** Force a fresh clone even when the cache matches. */
   refresh?: boolean;

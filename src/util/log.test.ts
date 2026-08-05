@@ -1,25 +1,35 @@
 /**
  * Tests for the stderr logger: level gating (quiet vs
- * verbose), the millisecond timestamp prefix, scoped labels, and stderr
- * targeting (stdout untouched).
+ * verbose), the millisecond timestamp prefix, the `[LEVEL]` tag,
+ * scoped labels, and stderr targeting (stdout untouched).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createScopedLog, logDebug, logError, logInfo, logWarn, setVerbose } from './log.js';
+import {
+  createScopedLog,
+  logConfig,
+  logDebug,
+  logError,
+  logInfo,
+  logWarn,
+  setVerbose,
+} from './log.js';
 
 /** Mock of a stream's `write` method. */
 type WriteSpy = ReturnType<typeof vi.spyOn>;
 
 /**
- * A regex matching one timestamped log line: `[HH:mm:ss.SSS]` with an
- * optional `[label]` scope prefix before the message.
+ * A regex matching one log line in the standard format:
+ * `[HH:mm:ss.SSS] [LEVEL]` with an optional `[label]` scope prefix
+ * before the message.
  *
+ * @param level - The expected `[LEVEL]` tag.
  * @param message - The expected message text (regex-escaped).
  * @param scope - The expected scope label, or `undefined` for none.
  * @returns The line regex.
  */
-function stampedLine(message: string, scope?: string): RegExp {
+function stampedLine(level: string, message: string, scope?: string): RegExp {
   const label = scope === undefined ? '' : ` \\[${scope}\\]`;
-  return new RegExp(`^\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\]${label} ${message}\n$`);
+  return new RegExp(`^\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\] \\[${level}\\]${label} ${message}\n$`);
 }
 
 describe('log', () => {
@@ -42,10 +52,16 @@ describe('log', () => {
     logInfo('progress');
     logDebug('detail');
 
-    expect(stderrWrite).toHaveBeenCalledWith(expect.stringMatching(stampedLine('boom')));
-    expect(stderrWrite).toHaveBeenCalledWith(expect.stringMatching(stampedLine('heads up')));
-    expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringMatching(stampedLine('progress')));
-    expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringMatching(stampedLine('detail')));
+    expect(stderrWrite).toHaveBeenCalledWith(expect.stringMatching(stampedLine('ERROR', 'boom')));
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('WARN', 'heads up')),
+    );
+    expect(stderrWrite).not.toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'progress')),
+    );
+    expect(stderrWrite).not.toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('DEBUG', 'detail')),
+    );
   });
 
   it('prints info and debug messages when verbose is enabled', () => {
@@ -55,10 +71,10 @@ describe('log', () => {
     logDebug('parsing 3 commits');
 
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('cloned repo in 12 ms')),
+      expect.stringMatching(stampedLine('INFO', 'cloned repo in 12 ms')),
     );
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('parsing 3 commits')),
+      expect.stringMatching(stampedLine('DEBUG', 'parsing 3 commits')),
     );
   });
 
@@ -71,17 +87,33 @@ describe('log', () => {
     expect(stderrWrite).not.toHaveBeenCalled();
   });
 
-  it('prefixes every line with a millisecond timestamp', () => {
-    setVerbose(true);
-
-    logInfo('timed');
+  it('always prints config lines as INFO, regardless of verbose mode', () => {
+    logConfig('dev-perf 0.1.0');
+    logConfig('  cacheDir: /tmp/cache');
 
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\] timed\n$/),
+      expect.stringMatching(stampedLine('INFO', 'dev-perf 0.1.0')),
+    );
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', '  cacheDir: /tmp/cache')),
     );
   });
 
-  it('carries the scope label between the timestamp and the message', () => {
+  it('prefixes every line with a millisecond timestamp and a level tag', () => {
+    setVerbose(true);
+
+    logInfo('timed');
+    logError('boom');
+
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\] \[INFO\] timed\n$/),
+    );
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\] \[ERROR\] boom\n$/),
+    );
+  });
+
+  it('carries the scope label after the level tag', () => {
     setVerbose(true);
     const scoped = createScopedLog('repo-a');
 
@@ -89,10 +121,10 @@ describe('log', () => {
     scoped.warn('partial clone failed');
 
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('parsing commits', 'repo-a')),
+      expect.stringMatching(stampedLine('INFO', 'parsing commits', 'repo-a')),
     );
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('partial clone failed', 'repo-a')),
+      expect.stringMatching(stampedLine('WARN', 'partial clone failed', 'repo-a')),
     );
   });
 
@@ -103,10 +135,10 @@ describe('log', () => {
     scoped.warn('visible warning');
 
     expect(stderrWrite).not.toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('hidden progress', 'repo-a')),
+      expect.stringMatching(stampedLine('INFO', 'hidden progress', 'repo-a')),
     );
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('visible warning', 'repo-a')),
+      expect.stringMatching(stampedLine('WARN', 'visible warning', 'repo-a')),
     );
   });
 
