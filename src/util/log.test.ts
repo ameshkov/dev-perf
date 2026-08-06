@@ -4,6 +4,7 @@
  * scoped labels, and stderr targeting (stdout untouched).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { appVersion } from '../version.js';
 import {
   createScopedLog,
   logConfig,
@@ -88,11 +89,11 @@ describe('log', () => {
   });
 
   it('always prints config lines as INFO, regardless of verbose mode', () => {
-    logConfig('dev-perf 0.1.0');
+    logConfig(`dev-perf ${appVersion}`);
     logConfig('  cacheDir: /tmp/cache');
 
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('INFO', 'dev-perf 0.1.0')),
+      expect.stringMatching(stampedLine('INFO', `dev-perf ${appVersion}`)),
     );
     expect(stderrWrite).toHaveBeenCalledWith(
       expect.stringMatching(stampedLine('INFO', '  cacheDir: /tmp/cache')),

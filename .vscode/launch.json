@@ -60,7 +60,7 @@
       "id": "compileOutput",
       "type": "promptString",
       "description": "Output directory for report.md, assets/ and people/",
-      "default": "${workspaceFolder}/output/windows"
+      "default": "${workspaceFolder}/output/report"
     },
     {
       "id": "compileExcludeUser",
@@ -72,7 +72,7 @@
       "id": "compileMap",
       "type": "promptString",
       "description": "Email-to-name mapping to merge identities, email=name (leave empty for none)",
-      "default": "d.argastsev@adguard.com=Danila Argastsev"
+      "default": "noreply@github.com=Bot"
     }
   ]
 }

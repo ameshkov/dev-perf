@@ -11,7 +11,7 @@
 
 <p align="center">
     <img src="docs/assets/dev-perf.png"
-         alt="MCP Compress Router" width="600"/>
+         alt="Dev Perf" width="600"/>
 </p>
 
 ## Table of Contents
