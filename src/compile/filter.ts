@@ -185,7 +185,7 @@ function mergeLanguages(entries: DeterministicMetrics[]): Record<string, Languag
 /**
  * Merges LLM analyses: `completed` wins over `failed` over `skipped`,
  * overviews are joined, contributions are concatenated, and token
- * usage and cost are summed.
+ * usage is summed.
  *
  * @param entries - The analyses to merge.
  * @returns The merged analysis.
@@ -205,22 +205,15 @@ function mergeLlm(entries: LlmAnalysis[]): LlmAnalysis {
     ...(overviews.length > 0 ? { overview: overviews.join('\n\n') } : {}),
   };
   const usage: TokenUsage = { input: 0, cacheRead: 0, output: 0 };
-  let cost = 0;
   for (const entry of entries) {
     if (entry.tokenUsage !== undefined) {
       usage.input += entry.tokenUsage.input;
       usage.cacheRead += entry.tokenUsage.cacheRead;
       usage.output += entry.tokenUsage.output;
     }
-    if (entry.estimatedCostUsd !== undefined) {
-      cost += entry.estimatedCostUsd;
-    }
   }
   if (usage.input > 0 || usage.cacheRead > 0 || usage.output > 0) {
     merged.tokenUsage = usage;
-  }
-  if (cost > 0) {
-    merged.estimatedCostUsd = cost;
   }
   return merged;
 }

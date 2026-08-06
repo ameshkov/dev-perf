@@ -3,12 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthorGroup } from '../deterministic/identity.js';
-import type { LlmToolPayload } from '../report/index.js';
+import type { LlmToolPayload, TokenUsage } from '../report/index.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 import type { ScopedLog } from '../util/log.js';
 import { analyzeRepositoryLLM } from './analyze.js';
 import type { AnalyzeRepoInput } from './analyze.js';
-import type { PromptOptions, SessionHandle, SessionService, UsageCollector } from './session.js';
+import type { SessionHandle, SessionService } from './session.js';
 
 const CONFIG = {
   providerUrl: 'https://llm.example.com/v1',
@@ -19,6 +19,9 @@ const CONFIG = {
 };
 
 const RANGE = { since: '2026-01-01T00:00:00.000Z', until: '2026-02-01T00:00:00.000Z' };
+
+/** The token usage every stub session reports. */
+const USAGE: TokenUsage = { input: 10, cacheRead: 7, output: 5 };
 
 /** The payload the stub model reports through `devperf_report`. */
 const PAYLOAD_A: LlmToolPayload = {
@@ -61,17 +64,17 @@ const PAYLOAD_B: LlmToolPayload = {
 };
 
 /**
- * A stub `SessionService` that simulates the opencode server without
- * touching it: sessions get sequential ids, prompts are recorded, and
- * — when `callTool` is set — every non-`noReply` analysis prompt makes
- * the model "call" `devperf_report` by writing the session's report
- * file.
+ * A stub `SessionService` that simulates the in-process pi layer
+ * without touching it: sessions get sequential ids, prompts and
+ * created sessions are recorded, and — when `callTool` is set — every
+ * analysis prompt makes the model "call" `devperf_report` by writing
+ * the session's report file.
  */
 class StubSessions implements SessionService {
   /** Session creations, in order. */
-  created: Array<{ directory: string; title: string }> = [];
+  created: Array<{ directory: string; title: string; systemPrompt: string }> = [];
   /** Prompt calls, in order. */
-  prompts: Array<{ sessionID: string; text: string; noReply: boolean; label: string }> = [];
+  prompts: Array<{ sessionID: string; text: string; label: string }> = [];
   private counter = 0;
 
   constructor(
@@ -87,18 +90,17 @@ class StubSessions implements SessionService {
     },
   ) {}
 
-  async createSession(directory: string, title: string): Promise<SessionHandle> {
-    this.created.push({ directory, title });
+  async createSession(
+    directory: string,
+    title: string,
+    systemPrompt: string,
+  ): Promise<SessionHandle> {
+    this.created.push({ directory, title, systemPrompt });
     return { id: `ses_${++this.counter}`, directory };
   }
 
-  async promptSession(
-    handle: SessionHandle,
-    text: string,
-    label: string,
-    options?: PromptOptions,
-  ): Promise<string> {
-    this.prompts.push({ sessionID: handle.id, text, noReply: options?.noReply === true, label });
+  async promptSession(handle: SessionHandle, text: string, label: string): Promise<string> {
+    this.prompts.push({ sessionID: handle.id, text, label });
     return this.state.replyText;
   }
 
@@ -108,7 +110,7 @@ class StubSessions implements SessionService {
     llmDir: string,
     label: string,
   ): Promise<LlmToolPayload | undefined> {
-    this.prompts.push({ sessionID: handle.id, text, noReply: false, label });
+    this.prompts.push({ sessionID: handle.id, text, label });
     if (this.state.failWith !== undefined) {
       throw this.state.failWith;
     }
@@ -119,11 +121,12 @@ class StubSessions implements SessionService {
     return undefined;
   }
 
-  async collectUsage(_directory: string): Promise<UsageCollector> {
-    return {
-      get: () => ({ tokenUsage: { input: 10, cacheRead: 7, output: 5 }, estimatedCostUsd: 0.01 }),
-      close: () => {},
-    };
+  getUsage(_session: SessionHandle): TokenUsage {
+    return USAGE;
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -174,6 +177,7 @@ function inputFor(
   service: SessionService,
   groups: AuthorGroup[],
   refresh = false,
+  log: ScopedLog = stubLog(),
 ): AnalyzeRepoInput {
   return {
     repo: 'https://example.com/repo.git',
@@ -184,7 +188,7 @@ function inputFor(
     groups,
     service,
     refresh,
-    log: stubLog(),
+    log,
   };
 }
 
@@ -212,26 +216,18 @@ describe('analyzeRepositoryLLM', () => {
       expect(result.llm.status).toBe('completed');
       expect(result.llm.overview).toBe(PAYLOAD_A.overview);
       expect(result.llm.contributions).toEqual(PAYLOAD_A.contributions);
-      expect(result.llm.tokenUsage).toEqual({ input: 10, cacheRead: 7, output: 5 });
-      expect(result.llm.estimatedCostUsd).toBe(0.01);
+      expect(result.llm.tokenUsage).toEqual(USAGE);
     }
-    // Orientation + (context injection + analysis) per user.
-    expect(service.prompts.map((prompt) => prompt.sessionID)).toEqual([
-      'ses_1',
-      'ses_2',
-      'ses_2',
-      'ses_3',
-      'ses_3',
-    ]);
+    // One orientation session, then one analysis session per user.
+    expect(service.prompts.map((prompt) => prompt.sessionID)).toEqual(['ses_1', 'ses_2', 'ses_3']);
     // The progress-line label names the operation: the repo for the
-    // orientation, the user for their context injection and analysis.
+    // orientation, the user for their analysis.
     expect(service.prompts[0]?.label).toBe('https://example.com/repo.git');
     expect(service.prompts[1]?.label).toBe('Alice');
-    expect(service.prompts[2]?.label).toBe('Alice');
-    expect(service.prompts[4]?.label).toBe('Bob');
+    expect(service.prompts[2]?.label).toBe('Bob');
   });
 
-  it('injects the orientation context into every user session with noReply', async () => {
+  it('keeps system prompts static and puts the task details in the analysis prompt', async () => {
     const service = stub(true);
     const groups = [
       group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline'),
@@ -240,16 +236,51 @@ describe('analyzeRepositoryLLM', () => {
 
     await analyzeRepositoryLLM(inputFor(service, groups));
 
-    const [orientation, aliceInject, aliceAnalysis, bobInject, bobAnalysis] = service.prompts;
-    expect(orientation?.text).toContain('orientation');
-    expect(aliceInject?.noReply).toBe(true);
-    expect(aliceInject?.text).toContain('repo context: TypeScript CLI');
-    expect(aliceAnalysis?.noReply).toBe(false);
-    expect(aliceAnalysis?.text).toContain('Alice');
+    // System prompts describe the agent and its environment only — no
+    // per-run task details like the repository, identity, or range.
+    expect(service.created[0]?.systemPrompt).toContain('read-only');
+    expect(service.created[0]?.systemPrompt).not.toContain('https://example.com/repo.git');
+    expect(service.created[1]?.systemPrompt).toContain('read-only');
+    expect(service.created[1]?.systemPrompt).not.toContain('Alice');
+    expect(service.created[1]?.systemPrompt).not.toContain('alice@example.com');
+    expect(service.created[2]?.systemPrompt).not.toContain('Bob');
+    // The task details — identity, repo, range — live in the analysis
+    // prompt together with the context and the commit list.
+    const aliceAnalysis = service.prompts[1];
+    expect(aliceAnalysis?.text).toContain('Alice (alice@example.com)');
+    expect(aliceAnalysis?.text).toContain('https://example.com/repo.git');
     expect(aliceAnalysis?.text).toContain('repo context: TypeScript CLI');
-    expect(bobInject?.noReply).toBe(true);
-    expect(bobAnalysis?.text).toContain('Bob');
-    expect(bobAnalysis?.text).toContain('repo context: TypeScript CLI');
+    expect(aliceAnalysis?.text).toContain('Commits by Alice');
+  });
+
+  it('logs every per-session event with the session id so the run can be traced', async () => {
+    const log = stubLog();
+    const service = stub(true);
+    await analyzeRepositoryLLM(
+      inputFor(
+        service,
+        [group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline')],
+        false,
+        log,
+      ),
+    );
+
+    // Every LLM event line names its session; orientation and analysis
+    // sessions are each traceable.
+    const info = vi
+      .mocked(log.info)
+      .mock.calls.map((call) => call[0])
+      .join('\n');
+    expect(info).toContain('(session "ses_1")');
+    expect(info).toContain('(session "ses_2")');
+    // The orientation establishes the context, then the user is
+    // analyzed, reports, and the usage is logged — all keyed by
+    // session to follow the lifecycle.
+    expect(info).toContain(
+      'repo context established for "https://example.com/repo.git" (session "ses_1")',
+    );
+    expect(info).toContain('devperf_report received (session "ses_2")');
+    expect(info).toContain('out tokens (session "ses_2")');
   });
 
   it('scopes every session to the clone directory', async () => {
@@ -290,6 +321,7 @@ describe('analyzeRepositoryLLM', () => {
 
     const cached = (await readJsonFile(path.join(llmDir, cacheFile!))) as {
       payload: LlmToolPayload;
+      cacheVersion: number;
       repo: string;
       email: string;
       since: string;
@@ -300,6 +332,7 @@ describe('analyzeRepositoryLLM', () => {
     };
     // The key parts the filename hash is derived from, self-described.
     expect(cached.payload.overview).toBe(PAYLOAD_A.overview);
+    expect(cached.cacheVersion).toBe(1);
     expect(cached.repo).toBe('https://example.com/repo.git');
     expect(cached.email).toBe('alice@example.com');
     expect(cached.since).toBe(RANGE.since);
@@ -323,7 +356,37 @@ describe('analyzeRepositoryLLM', () => {
     expect(second.prompts).toHaveLength(0);
     expect(second.created).toHaveLength(0);
     expect(results[0]?.llm.overview).toBe(PAYLOAD_A.overview);
-    expect(results[0]?.llm.tokenUsage).toEqual({ input: 10, cacheRead: 7, output: 5 });
+    expect(results[0]?.llm.tokenUsage).toEqual(USAGE);
+  });
+
+  it('treats a cached result from an older cache version as a miss', async () => {
+    // A pre-version cache entry validates nothing: strip the version
+    // field from the on-disk result and the next run must re-analyze
+    // instead of silently reusing the stale payload (whose prompt
+    // templates and schema no longer match the current analysis).
+    const first = stub(true, PAYLOAD_A);
+    const groups = [group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline')];
+    await analyzeRepositoryLLM(inputFor(first, groups));
+
+    // Locate and rewrite the cache entry without its cacheVersion.
+    const files = await readdir(llmDir);
+    const cacheFile = files.find((file) => /^[0-9a-f]{16}\.json$/.test(file));
+    expect(cacheFile).toBeDefined();
+    const cached = await readJsonFile(path.join(llmDir, cacheFile!));
+    const { cacheVersion: _dropped, ...stale } = cached as { cacheVersion: number } & Record<
+      string,
+      unknown
+    >;
+    await writeJsonFile(path.join(llmDir, cacheFile!), stale);
+    expect(stale.cacheVersion).toBeUndefined();
+
+    // The model would not call the tool this time; a cache hit would
+    // reuse the stale payload silently, a miss re-runs the analysis.
+    const second = stub(true, PAYLOAD_B);
+    const results = await analyzeRepositoryLLM(inputFor(second, groups));
+
+    expect(second.prompts.length).toBeGreaterThan(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
   });
 
   it('--refresh invalidates the cache and re-runs the analysis', async () => {
@@ -354,7 +417,7 @@ describe('analyzeRepositoryLLM', () => {
     expect(results[1]?.llm.overview).toBe(PAYLOAD_B.overview);
     // Orientation runs once; only Carol gets a session.
     expect(second.created).toHaveLength(2);
-    expect(second.prompts.map((prompt) => prompt.sessionID)).toEqual(['ses_1', 'ses_2', 'ses_2']);
+    expect(second.prompts.map((prompt) => prompt.sessionID)).toEqual(['ses_1', 'ses_2']);
   });
 
   it('enforces the report tool: 3 reminders, then an error naming user and session', async () => {
@@ -365,11 +428,11 @@ describe('analyzeRepositoryLLM', () => {
       /LLM analysis for Alice did not call devperf_report in session ses_2 after 4 prompts; the report is not written\./,
     );
 
-    // Orientation + context injection + analysis + 3 reminders.
-    expect(service.prompts).toHaveLength(6);
-    const reminders = service.prompts.slice(3);
-    expect(reminders.map((prompt) => prompt.noReply)).toEqual([false, false, false]);
+    // Orientation + analysis + 3 reminders.
+    expect(service.prompts).toHaveLength(5);
+    const reminders = service.prompts.slice(2);
     for (const reminder of reminders) {
+      expect(reminder.sessionID).toBe('ses_2');
       expect(reminder.text).toContain('devperf_report');
     }
   });

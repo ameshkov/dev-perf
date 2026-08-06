@@ -1,0 +1,27 @@
+# Keep the build context small and out of the image: the image is built
+# from the sources, not from any previous build artifacts.
+
+# VCS
+.git
+.gitignore
+.github
+
+# Local installs and build output
+node_modules
+build
+
+# Runtime data and local artifacts
+.dev-perf
+output
+*.log
+.DS_Store
+
+# Local configuration (secrets)
+.env
+
+# Editor and tooling state
+.vscode
+.sdd
+
+# Docs (not needed for the build)
+docs

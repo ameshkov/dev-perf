@@ -91,8 +91,8 @@ function peopleFact(data: ChartData): string {
  * The key-facts bullets of the executive summary: the analyzed range,
  * the repositories and the people as nested bullet lists, then the
  * busiest periods and the top contributors (by commits, and by LLM
- * contributions and points when the report has LLM analysis), the
- * most common risk flag and the LLM cost when present.
+ * contributions and points when the report has LLM analysis) and the
+ * most common risk flag.
  *
  * @param data - The chart data.
  * @returns The bullets.
@@ -109,16 +109,6 @@ function keyFacts(data: ChartData): string[] {
     const top = data.tallies.risk[0];
     facts.push(
       `Most common risk flag: ${top.key} (${formatInt(top.value)} ${top.value === 1 ? 'contribution' : 'contributions'})`,
-    );
-  }
-  if (data.parameters.llmEnabled && data.totals.costUsd > 0) {
-    facts.push(
-      `LLM analysis cost: ${formatLlmUsage(
-        data.totals.inputTokens,
-        data.totals.cacheReadTokens,
-        data.totals.outputTokens,
-        data.totals.costUsd,
-      )}`,
     );
   }
   return facts;
@@ -153,14 +143,9 @@ function totalsTable(data: ChartData): string {
       'Contributions scaled by size weight',
     ]);
     rows.push([
-      'LLM cost',
-      formatLlmUsage(
-        totals.inputTokens,
-        totals.cacheReadTokens,
-        totals.outputTokens,
-        totals.costUsd,
-      ),
-      'Estimated token usage and cost of the LLM analysis',
+      'LLM usage',
+      formatLlmUsage(totals.inputTokens, totals.cacheReadTokens, totals.outputTokens),
+      'Token usage of the LLM analysis',
     ]);
   }
   rows.push([

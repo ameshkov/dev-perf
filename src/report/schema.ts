@@ -326,7 +326,7 @@ export type LlmStatus = z.infer<typeof llmStatusSchema>;
 
 /**
  * Token usage of an LLM analysis; consumed by the LLM
- * layer (`src/llm/analyze.ts`). The opencode event stream reports
+ * layer (`src/llm/analyze.ts`). The pi session reports
  * non-overlapping counts: `input` excludes the tokens served from the
  * prompt cache, which `cacheRead` carries separately (openai-compatible
  * providers subtract the cached tokens from the reported prompt tokens;
@@ -366,8 +366,6 @@ export const llmAnalysisSchema = z.object({
   contributions: z.array(contributionSchema).default([]),
   /** Token usage reported by the provider. */
   tokenUsage: tokenUsageSchema.optional(),
-  /** Estimated cost of the analysis in USD. */
-  estimatedCostUsd: z.number().nonnegative().optional(),
   /** Error message when the analysis failed. */
   error: z.string().optional(),
 });
@@ -382,10 +380,11 @@ export type LlmAnalysis = z.infer<typeof llmAnalysisSchema>;
  * Payload the `devperf_report` tool accepts: the model's
  * analysis of one user — an optional overview and the changes split
  * into distinct contributions. Everything else in `llmAnalysisSchema`
- * (`status`, token usage, cost, error) is produced by dev-perf itself,
- * so the model never sees it. `src/llm/tools.ts` serializes this schema
- * (descriptions included) into the generated tool's argument schema,
- * keeping the model-facing shape in lockstep with the report schema.
+ * (`status`, token usage, error) is produced by dev-perf itself, so
+ * the model never sees it. `src/llm/tools.ts` derives the
+ * `devperf_report` tool's parameter schema from this schema
+ * (descriptions included), keeping the model-facing shape in lockstep
+ * with the report schema.
  */
 export const llmToolPayloadSchema = z.object({
   /** 1-2 sentences summarizing the user's work in the range. */

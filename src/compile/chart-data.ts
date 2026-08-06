@@ -2,7 +2,7 @@
  * Data extraction for the `compile` command: pulls every data frame
  * the charts and tables need out of a filtered report — period labels,
  * team series per period, per-user series, per-repository summaries,
- * LLM pies and tallies, cost rows, totals, and the bus factor. Pure
+ * LLM pies and tallies, usage rows, totals, and the bus factor. Pure
  * computation; rendering and markdown assembly live in `vega.ts`,
  * `charts.ts` and `markdown.ts`.
  */
@@ -109,8 +109,8 @@ export interface CountRow {
   value: number;
 }
 
-/** LLM cost of one user. */
-interface CostRow {
+/** Token usage of one user across the report. */
+interface UsageRow {
   /** The user's display name. */
   name: string;
   /** Non-cached input tokens across all analyses of the user. */
@@ -119,8 +119,6 @@ interface CostRow {
   cacheReadTokens: number;
   /** Output tokens across all analyses of the user. */
   outputTokens: number;
-  /** Estimated cost in USD. */
-  costUsd: number;
 }
 
 /** Team totals of the whole report. */
@@ -141,8 +139,6 @@ interface TeamTotals {
   filesTouched: number;
   /** Users with at least one commit. */
   activeUsers: number;
-  /** Estimated LLM cost in USD. */
-  costUsd: number;
   /** Non-cached input tokens across all LLM analyses. */
   inputTokens: number;
   /** Input tokens read from the prompt cache. */
@@ -214,8 +210,8 @@ export interface ChartData {
     /** Risk flags per period, most frequent first. */
     risk: CountRow[][];
   };
-  /** LLM cost per user. */
-  cost: CostRow[];
+  /** LLM token usage per user. */
+  usage: UsageRow[];
   /** Team totals. */
   totals: TeamTotals;
   /** Bus factor, or `undefined` when there are no commits. */
@@ -370,22 +366,34 @@ function topLanguagesOf(team: TeamPoint[]): string[] {
 }
 
 /**
- * The LLM cost rows of the master users, most expensive first.
+ * Total tokens (input + prompt-cache reads + output) of a usage
+ * row, used both to order the usage rows and to accumulate team
+ * totals.
+ *
+ * @param row - The usage row.
+ * @returns The row's total token count.
+ */
+function totalTokens(row: UsageRow): number {
+  return row.inputTokens + row.cacheReadTokens + row.outputTokens;
+}
+
+/**
+ * The per-user usage rows, ordered by total tokens descending (ties
+ * broken by name).
  *
  * @param users - The master users.
- * @returns The cost rows.
+ * @returns The usage rows.
  */
-function costRows(users: User[]): CostRow[] {
+function usageRows(users: User[]): UsageRow[] {
   return users
-    .filter((user) => user.llm.tokenUsage !== undefined || user.llm.estimatedCostUsd !== undefined)
+    .filter((user) => user.llm.tokenUsage !== undefined)
     .map((user) => ({
       name: user.name,
       inputTokens: user.llm.tokenUsage?.input ?? 0,
       cacheReadTokens: user.llm.tokenUsage?.cacheRead ?? 0,
       outputTokens: user.llm.tokenUsage?.output ?? 0,
-      costUsd: user.llm.estimatedCostUsd ?? 0,
     }))
-    .sort((a, b) => b.costUsd - a.costUsd || a.name.localeCompare(b.name));
+    .sort((a, b) => totalTokens(b) - totalTokens(a) || a.name.localeCompare(b.name));
 }
 
 /**
@@ -393,10 +401,10 @@ function costRows(users: User[]): CostRow[] {
  *
  * @param team - The team points.
  * @param users - The master users.
- * @param cost - The cost rows.
+ * @param usage - The usage rows.
  * @returns The totals.
  */
-function teamTotalsOf(team: TeamPoint[], users: User[], cost: CostRow[]): TeamTotals {
+function teamTotalsOf(team: TeamPoint[], users: User[], usage: UsageRow[]): TeamTotals {
   return {
     commits: team.reduce((sum, point) => sum + point.commits, 0),
     contributions: team.reduce((sum, point) => sum + point.contributions, 0),
@@ -406,16 +414,15 @@ function teamTotalsOf(team: TeamPoint[], users: User[], cost: CostRow[]): TeamTo
     netLines: team.reduce((sum, point) => sum + point.linesAdded - point.linesRemoved, 0),
     filesTouched: users.reduce((sum, user) => sum + user.deterministic.filesTouched, 0),
     activeUsers: users.filter((user) => user.deterministic.commits > 0).length,
-    costUsd: cost.reduce((sum, row) => sum + row.costUsd, 0),
-    inputTokens: cost.reduce((sum, row) => sum + row.inputTokens, 0),
-    cacheReadTokens: cost.reduce((sum, row) => sum + row.cacheReadTokens, 0),
-    outputTokens: cost.reduce((sum, row) => sum + row.outputTokens, 0),
+    inputTokens: usage.reduce((sum, row) => sum + row.inputTokens, 0),
+    cacheReadTokens: usage.reduce((sum, row) => sum + row.cacheReadTokens, 0),
+    outputTokens: usage.reduce((sum, row) => sum + row.outputTokens, 0),
   };
 }
 
 /**
  * Extracts every data frame of the filtered report: period labels,
- * team and per-user series, LLM pies and tallies, cost rows, totals
+ * team and per-user series, LLM pies and tallies, usage rows, totals
  * and the bus factor.
  *
  * @param filtered - The filtered report.
@@ -432,7 +439,7 @@ export function buildChartData(filtered: FilteredReport): ChartData {
   const team = teamPoints(views);
   const users = userSeries(views, filtered.users, filtered);
   const contributions = allContributions(filtered.users);
-  const cost = costRows(filtered.users);
+  const usage = usageRows(filtered.users);
   return {
     parameters: {
       repos: report.parameters.repos,
@@ -461,8 +468,8 @@ export function buildChartData(filtered: FilteredReport): ChartData {
       risk: countContributionsByKey((contribution) => contribution.riskFlags, contributions),
     },
     signals: periodSignals(views),
-    cost,
-    totals: teamTotalsOf(team, filtered.users, cost),
+    usage,
+    totals: teamTotalsOf(team, filtered.users, usage),
     busFactor: computeBusFactor(filtered.users),
   };
 }

@@ -13,9 +13,10 @@
      contributions, not the whole tree).
   2. **LLM-based, agentic** — dimensions that cannot be counted, determined by an
      agent that is given tools to read the repository and the actual diffs.
-- The agentic layer uses **opencode as a library** (`@opencode-ai/sdk`), which gives
-  us agents, built-in repo tools (read/grep/bash), custom tools, structured JSON
-  output, and multi-provider support (Anthropic, OpenAI, Google, …) out of the box.
+- The agentic layer runs **fully in-process** via the
+  `@earendil-works/pi-coding-agent` library (no spawned server), which
+  gives us agents, built-in repo tools (read/grep/bash), custom tools,
+  structured JSON output, and multi-provider support out of the box.
 - All analysis happens on a fresh clone stored in a **cache directory**
   (`<tmpdir>/.dev-cache` by default — in the OS temp directory, so nothing needs
   to be gitignored).
@@ -37,10 +38,10 @@
 └─────────┘   └──────────────────┘   └─────────────────────┘   └───────────────┘
                                              │                          ▲
                                              ▼                          │
-                                    ┌─────────────────────┐            │
-                                    │ LLM agentic layer   │────────────┘
-                                    │ (opencode SDK)      │
-                                    └─────────────────────┘
+                                     ┌─────────────────────┐            │
+                                     │ LLM agentic layer   │────────────┘
+                                     │ (pi-coding-agent)   │
+                                     └─────────────────────┘
 ```
 
 Pipeline phases, in order:
@@ -50,9 +51,9 @@ Pipeline phases, in order:
 2. **Deterministic analysis** — enumerate commits in the range, compute per-user
    metrics (§5). This is fast and cheap; it also produces the inputs (commit list,
    stats) the LLM layer will need.
-3. **LLM analysis** (optional, `--no-llm` to skip) — for each user, an opencode
-   session with read access to the repo finishes by calling the report tool with
-   its analysis (§6.5).
+3. **LLM analysis** (optional, `--no-llm` to skip) — for each user, an in-process
+   pi session with read access to the repo finishes by calling the report tool
+   with its analysis (§6.5).
 4. **Assemble** — merge layers into the report, write to stdout or `--output`
    (§7).
 
@@ -84,10 +85,10 @@ Options:
 ```
 
 The LLM layer requires `--model`, `--provider-url` and `--api-key` to be specified
-explicitly — dev-perf never falls back to the user's global opencode configuration
+explicitly — dev-perf never falls back to the user's global configuration
 (see §6.2). `--limit-context` and `--limit-output` are optional caps for the model
-window (defaults: 256k context / 64k output tokens), passed through as opencode's
-`limit` config (§6.2).
+window (defaults: 256k context / 64k output tokens), registered as the model's
+`contextWindow` / `maxTokens` (§6.2).
 
 With `--unit`, the analyzed range is split into UTC-aligned periods and the report
 carries one full per-repository report per period (`src/trend/periods.ts`):
@@ -96,9 +97,9 @@ quarter = Jan/Apr/Jul/Oct, year = Jan 1), first/last periods are trimmed to the
 range, `until` is inclusive (next start − 1 ms), and empty periods are included
 with zeroed metrics. The user list is resolved once over the whole range and
 shown in every period; the LLM phase runs per period for the users active in it
-(one opencode server per repo, shared across its periods; the LLM result cache
-keys by period bounds). `--since` is required with `--unit` — an unbounded range
-cannot be split.
+(one in-process pi runtime per repo, shared across its periods; the LLM result
+cache keys by period bounds). `--since` is required with `--unit` — an unbounded
+range cannot be split.
 
 Implementation: `commander` for arg parsing, `zod` for validation of args and all
 data schemas. The report schema (zod) is shared between the CLI, the deterministic
@@ -117,10 +118,13 @@ layer, and the LLM structured-output schema so nothing can drift.
 └── <sha256(repoUrl).slice(0,16)>/
     ├── repo/        # the git clone
     ├── clone.json   # { url, clonedAt, branch, head }
-    ├── llm/         # cached LLM analysis results (§6.6)
-    └── opencode/    # generated .opencode/tools/devperf_report.ts + opencode.json (§6.2, §6.5)
-        └── home/    # opencode's isolated HOME — server state and logs, kept (§6.2)
+    └── llm/         # cached LLM analysis results (§6.6)
 ```
+
+The LLM layer runs in-process and writes nothing beyond `llm/`: it
+registers the provider and model in code, keeps credentials in memory,
+and uses a logical `pi/home/` agent home that is never created on disk
+(§6.2), so the `pi/` directory is left out of the layout entirely.
 
 - Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
   needed for the date range, but blobs are fetched on demand when the deterministic
@@ -190,131 +194,129 @@ contribution.
 
 ## 6. LLM-based (agentic) analysis
 
-### 6.1 Why opencode as a library
+### 6.1 Why pi as an in-process library
 
 Building a custom tool-calling loop with a provider SDK would mean reimplementing
-agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sdk`
-(verified against v1.18.x) provides all of it:
+agent loops, tool schemas, retries, and multi-provider support.
+`@earendil-works/pi-coding-agent` (verified against v0.84.0) provides all of it,
+and runs **fully in-process** — no spawned server, no isolation environment, no
+binary on `PATH`:
 
-- `createOpencode({ hostname, port, config })` — starts a server **in-process**
-  (with a type-safe client), scoped to the working directory it runs in.
-  Configuration is passed explicitly: we generate the config ourselves rather than
-  relying on the user's global opencode setup (§6.2).
-- `createOpencodeClient({ baseUrl })` — connects to an already running
-  `opencode serve` (useful for debugging).
-- Sessions: `session.create`, `session.prompt` (with tool use), `session.abort`,
-  `session.messages`.
-- **Custom tools**: files in `<clone>/.opencode/tools/*.ts` using `tool()` from
-  `@opencode-ai/plugin` are loaded by the server at startup — we register a
-  report-capture tool there, so the agent returns its analysis as validated JSON
-  from any model, not only models with structured-output support (§6.5).
-- Progress: `event.subscribe()` SSE stream for logs/updates.
+- `ModelRuntime.create({ modelsPath: null })` — a model/auth runtime with no
+  generated `models.json`; the `devperf` provider and model are registered in
+  code via `registerProvider('devperf', { baseUrl, api: 'openai-completions',
+  models: [...] })`, and the API key is injected with
+  `setRuntimeApiKey('devperf', key)` — an in-memory-only overlay, never written
+  to disk.
+- `createAgentSession(...)` — one in-process agent session per analysis with an
+  explicit model, tool allowlist, custom tools, an in-memory session manager, a
+  settings manager with **auto-compaction and auto-retry** enabled, and thinking
+  disabled.
+- **Custom tools**: `defineTool(...)` registers the report-capture tool in code,
+  its parameter schema derived from the shared report schema (§6.5).
+- Progress and tool calls: `session.subscribe(...)` — the `tool_execution_start`
+  event carries the parsed tool arguments (early report detection, §6.5).
+- Per-session token usage: `session.getSessionStats()` (no cost tracking).
+- System prompts: `DefaultResourceLoader.systemPrompt` injects the rendered
+  per-session system prompt; sessions never read the user's global `~/.pi`.
 
-### 6.2 Server lifecycle and configuration
+### 6.2 Runtime lifecycle and configuration
 
-- One server per cloned repo: `createOpencode()` launched with cwd = the clone
-  directory, so the project, file tools, and LSP are scoped to the analyzed repo.
-- **No global opencode config**: dev-perf must not pick up the user's
-  `~/.config/opencode/` or project `opencode.json`. Instead we generate an
-  isolated `opencode.json` inside the clone that declares the provider and model
-  from the required `--provider-url` / `--model` flags, and ensure the server does
-  not merge any user config (e.g. by pointing `OPENCODE_CONFIG` at the generated
-  file — exact mechanism to be confirmed during implementation).
-- The API key from `--api-key` is set programmatically on the spawned server via
-  `client.auth.set({ path: { id: <provider> }, body: { type: "api", key } })`
-  rather than stored in any file.
-- The server runs with an **isolated HOME**: `HOME`/`XDG_CONFIG_HOME` point at the
-  cache entry's `opencode/home/` directory (a dev-perf-owned directory, created
-  per entry — the user's real home is never read). Unlike the generated files
-  beside it, this home is **kept** after the run, so opencode's state and log
-  files persist there (e.g. `opencode/home/.local/share/opencode/log/`) and can
-  be inspected to diagnose a failed analysis.
-- With `--verbose` the server is started at **DEBUG log level** (the SDK forwards
-  the generated config's `logLevel` as `--log-level=DEBUG` to `opencode serve`),
-  so the cache's `opencode.log` records server-side detail — per-part updates,
-  tool calls, provider round-trips — for diagnosing a stuck or failed attempt.
-  Without `--verbose` the server stays at its default INFO level.
-- Before starting the server, the tool writes into the clone:
-    - `opencode.json` — provider (base URL) + model, permissions (read-only for
-      the repo, deny writes), and a `limit` block;
-    - `.opencode/tools/devperf_report.ts` — the report-capture tool, registered
-      via a plugin (§6.5);
-    - `.opencode/agents/devperf-analyst.md` — the analysis agent, following
-      opencode's markdown agent spec: YAML frontmatter (description, mode,
-      permissions) and the prompt as the body (§6.4).
-- **Token limits** — the generated `opencode.json` caps the model window so a
-  single analysis cannot blow the context:
-
-  ```json
-  { "limit": { "context": 262144, "output": 65536 } }
-  ```
-
-  `--limit-context` and `--limit-output` override the defaults (256k context /
-  64k output tokens); both are optional.
-- Server shutdown in `finally`; `--verbose` prints the server URL and model.
-- Multiple repos are analyzed sequentially (one server at a time) in v1; user
-  sessions within a repo run one at a time to keep resource usage predictable.
+- One runtime per cloned repo: `createLlmRuntime(cloneDir, config)` (`src/llm/runtime.ts`)
+  creates the `ModelRuntime` in memory (no `models.json`, an in-memory
+  credential store so no `auth.json` is ever written), registers the
+  `devperf` provider (base URL from `--provider-url`), the single model
+  (`--model`, with `contextWindow`/`maxTokens` from
+  `--limit-context`/`--limit-output`), injects the API key from
+  `--api-key` in memory, and resolves the model. Nothing is written to
+  disk.
+- **No global pi config**: the agent home (`agentDir`) is a logical path
+  under the cache entry's `pi/home/` that is **never created** — it only
+  differs from the user's real `~/.pi` so no global configuration is
+  ever read. No `~/.pi/agent`, `settings.json`, `auth.json`, or
+  `models.json` is loaded or written.
+- **Token limits** — the registered model carries the caps:
+  `contextWindow: 262144`, `maxTokens: 65536` (overridable via
+  `--limit-context` / `--limit-output`).
+- Sessions are created per analysis by `createSessionService(runtime, entryDir,
+  log)` (`src/llm/session.ts`); `close()` disposes every session and
+  `runtime.dispose()` removes the in-memory API key.
+- LLM failures are retried (`--llm-retries`) with a **fresh runtime** per
+  attempt; completed per-user analyses are cached and reused across attempts
+  (§6.6).
+- Multiple repos are analyzed in parallel up to `--parallel`; user sessions
+  within a repo run one at a time to keep resource usage predictable.
 
 ### 6.3 Sessions and prompts
 
-- Prompt text lives in `src/llm/prompts/*.md` templates (`orientation.md`,
-  `user.md`, `reminder.md`); `prompts.ts` only renders them with the session
-  values, so the prose stays maintainable outside the code.
+- Prompt text lives in `src/llm/prompts/*.md` templates:
+  `orientation-system.md` / `user-system.md` (the per-session **system
+  prompts** that define the dev-perf analyst and its tool surface),
+  `orientation.md` / `user.md` (the user prompts), and `reminder.md`;
+  `prompts.ts` only renders them with the session values, so the prose stays
+  maintainable outside the code.
 - **Orientation session** (per repo, once): the agent explores the repo (README,
   manifests, top-level layout) and returns a compact "repo context": tech stack,
-  main modules, conventions. Output is cached and injected into every user prompt,
-  so user sessions do not re-explore.
-- **Per-user session**: prompt contains user identity, date range, the repo
-  context, and the user's commit list (sha, date, subject, numstat totals, files).
-  The agent then decides what to look at (via tools) and finishes by calling the
-  report tool with its analysis (§6.5).
-- Context injection without triggering a reply: `session.prompt` with
-  `noReply: true` for the fixed instructions, then the analysis request.
+  main modules, conventions. Dev-perf reads the final assistant text
+  (`getLastAssistantText()`) and injects it into every user prompt, so user
+  sessions do not re-explore.
+- **Per-user session**: the system prompt carries only who the agent is and the
+  environment (the tool surface) — no per-run task details; the user
+  prompt carries the analysis task — identity, date range, and repo — together
+  with the repo context and the user's commit list (sha, date, subject, numstat
+  totals, files). The agent then decides what to look at (via tools) and
+  finishes by calling the report tool with its analysis (§6.5). The context
+  lives in the same turn — no separate no-reply injection.
+- Auto-compaction and auto-retry are enabled explicitly via
+  `SettingsManager.inMemory({ compaction: { enabled: true }, retry: {
+  enabled: true } })`.
 
 ### 6.4 Agent tools
 
-Analysis runs through a dedicated `devperf-analyst` agent defined by an
-opencode **markdown agent file** (`src/llm/agents/devperf-analyst.md`, copied
-into the clone's `.opencode/agents/` where the server discovers it — the file
-name is the agent name). The file follows opencode's agent spec: YAML
-frontmatter with the description, `mode: primary`, and the permission
-surface; the body is the prompt. Permissions are deny-all with a short
-allow-list: a leading `"*": deny` (opencode matches permission rules
-last-wins) followed by the read tools (`read`, `glob`, `grep`, `list`),
-`bash` restricted to read-only commands — git history and ref
-inspection (`git show`, `git log`, `git diff`, `git blame`,
-`git status`, `git branch`, `git tag`, `git rev-parse`,
-`git rev-list`, `git shortlog`, `git ls-tree`, `git ls-files`,
-`git grep`, `git describe`, `git merge-base`, `git cat-file`; git is a
-prerequisite of dev-perf, so all history inspection goes through
-bash), file inspection (`ls`, `cat`, `tail`, `head`, `wc`, `file`,
-`grep`, `rg`), and text processing (`sort`, `uniq`, `cut`, `diff`,
-`echo`) — and the `devperf_report` capture tool. Everything
-else — edits, task delegation, todos, questions, web access, skills,
-LSP, doom-loop recovery, external directories — is denied by the
-wildcard. Sessions pass `agent: devperf-analyst` on every prompt,
-context injection included.
+The analysis agent is defined by the system prompt templates
+(`orientation-system.md`, `user-system.md`): a dev-perf analyst that never
+creates, modifies, or deletes files and never stages, commits, or pushes. Each
+session runs with the tool allowlist
+`['read', 'bash', 'grep', 'find', 'ls', 'devperf_report']` — the built-in pi
+tools plus the report-capture tool. read-only-ness of the agent is *not*
+enforced in code: `bash` is pi's built-in, unshielded tool that can run
+arbitrary shell commands in the clone (git inspection and file/text reading
+like `git show`, `git log`, `git diff`, `cat`, `ls`, `tail`, `head` are the
+intended use, but a hostile repository could prompt-inject destructive
+commands, and git's hooks, aliases, and config-driven execution cannot be
+reliably defended against). The only protection is the system-prompt text,
+which keeps the agent to read-only inspection. Because of this, LLM analysis
+is expected to run in the published Docker container, which sandboxes the
+analysis away from the host (see the README); a repository under analysis must
+be treated as untrusted.
 
 ### 6.5 Structured output via the report tool
 
-Not every model supports structured output (the SDK's `json_schema` prompt
-format), so the analysis result is captured with a **custom tool** instead. The
-tool is registered via a plugin: dev-perf writes `.opencode/tools/devperf_report.ts`
-into the clone before the server starts (using `tool()` from `@opencode-ai/plugin`):
+Not every model supports structured output, so the analysis result is captured
+with a **custom tool** instead. `buildReportTool(reportId, llmDir)`
+(`src/llm/tools.ts`) builds the `devperf_report` tool in-process with
+`defineTool`:
 
-- The tool takes the whole analysis object as its JSON argument, validates it
-  against the report schema (zod), writes it to
-  `<cache-dir>/<hash>/llm/<user-key>.json` and returns `ok`. It never depends on
-  the model supporting structured output.
+- The tool's parameter schema mirrors `llmToolPayloadSchema`: the JSON Schema
+  from `z.toJSONSchema` is mapped onto a TypeBox schema (hand-mapped — typebox
+  1.x has no `Type.Create`), descriptions included, so the model-facing shape
+  cannot drift from the report.
+- The model calls `devperf_report` with the whole analysis object; `execute`
+  zod-validates it against the report schema and writes it to
+  `<cache-dir>/<hash>/llm/<reportId>.json` (the report id is the
+  dev-perf-generated session id), returning `ok`. It never depends on the model
+  supporting structured output.
 - Every analysis prompt ends with the instruction: **call `devperf_report` with
   the final analysis before finishing** — no other output format is accepted.
-- Enforcement: the session's report file is polled while the analysis prompt
-  runs; as soon as the tool output exists, the session is aborted and the
-  analysis moves on — dev-perf never waits for an agent that keeps working
-  after reporting. If the prompt ends without a report, dev-perf sends a
-  follow-up prompt asking the agent to call the tool — up to 3 attempts. If
-  the tool was still not called, dev-perf **exits with a non-zero status** and
-  an error message naming the user and session; the report is not written.
+- Enforcement: while the analysis prompt runs, the session's
+  `tool_execution_start` event is observed; as soon as it fires for
+  `devperf_report` with valid arguments, the report file is written from those
+  arguments, the running session is aborted, and the analysis moves on — dev-perf
+  never waits for an agent that keeps working after reporting. If the turn ends
+  without a report, the report file is read as a fallback and a follow-up prompt
+  asks the agent to call the tool — up to 3 attempts. If the tool was still not
+  called, dev-perf **exits with a non-zero status** and an error message naming
+  the user and session; the report is not written.
 
 Default output shape (described in the `devperf_report` tool's schema; all fields
 have descriptions to guide the model):
@@ -339,7 +341,7 @@ have descriptions to guide the model):
 Changes of different complexity or size are reported as separate contributions
 rather than averaged into one description.
 
-### 6.6 Caching and cost visibility
+### 6.6 Caching and token usage
 
 - LLM analysis results are cached in the cache directory
   (`<cache-dir>/<hash>/llm/`), keyed by (repo, user, since, until, model, context
@@ -350,9 +352,8 @@ rather than averaged into one description.
   components.
 - `--no-llm` produces the deterministic-only report (also the CI mode).
 - The report includes `tokenUsage` (non-cached input, cached read, and output
-  tokens — opencode reports non-overlapping counts, so `input` excludes the
-  cached reads) and an estimated cost per user from the SDK event stream, so
-  runaway costs are visible.
+  tokens, read from the pi session's `getSessionStats()`). There is no cost
+  tracking: dev-perf deliberately does not report estimated USD.
 
 ## 7. Report format
 
@@ -399,7 +400,7 @@ empty.
                 contributions: [ { title, summary, types, complexity,
                   complexityReasoning, size, sizeReasoning, areas, commits,
                   qualitySignals, riskFlags } ],
-                tokenUsage: { input, cacheRead, output }?, estimatedCostUsd?, error?
+                tokenUsage: { input, cacheRead, output }?, error?
               }
             }
           ]
@@ -437,13 +438,12 @@ dev-perf/
 │   │   ├── identity.ts                 # email normalization + grouping
 │   │   └── languages.ts                # extension → language map
 │   ├── llm/
-│   │   ├── server.ts                   # createOpencode lifecycle
-│   │   ├── session.ts                  # create/prompt/tool-call capture/abort
-│   │   ├── tools.ts                    # generates .opencode/tools/*.ts
-│   │   ├── prompts.ts                  # renders src/llm/prompts/*.md templates
-│   │   ├── prompts/                    # LLM prompt templates (*.md)
-│   │   ├── agents/                     # the devperf-analyst agent definition (*.md)
-│   │   └── analyze.ts                  # orientation + per-user orchestration
+│   │   ├── runtime.ts                   # in-process pi ModelRuntime + provider registration
+│   │   ├── session.ts                   # create/prompt/tool-call capture/abort/usage
+│   │   ├── tools.ts                     # builds the devperf_report tool (defineTool)
+│   │   ├── prompts.ts                   # renders src/llm/prompts/*.md templates
+│   │   ├── prompts/                     # system + user prompt templates (*.md)
+│   │   └── analyze.ts                   # orientation + per-user orchestration
 │   ├── trend/periods.ts                # --unit period splitting + per-period commit filtering
 │   ├── report/{schema,assemble}.ts
 │   └── util/                           # logging, json
@@ -473,24 +473,28 @@ dev-perf/
 
 ## 10. Risks and open questions
 
-- **SDK API stability** — opencode 1.x evolves fast; pin the SDK version, keep the
-  server/client integration in one module so upgrades are localized.
-- **Provider auth** — the API key is passed via `--api-key` and injected with
-  `client.auth.set()`; if the provider rejects it, fail fast with a clear message
-  when the first prompt fails.
-- **Global config isolation** — the spawned server must not merge the user's
-  `opencode.json`/global config. Verify the isolation mechanism (e.g.
-  `OPENCODE_CONFIG`) during implementation; if it is not fully supported, fall
-  back to an empty inline `config` passed to `createOpencode` and document any
-  residual behavior.
-- **Server startup cost** — each repo spawns a server; verify startup time with
-  `createOpencode` on CI-sized machines and keep the external-server
-  (`createOpencodeClient`) path as an escape hatch.
+- **Library API stability** — `@earendil-works/pi-coding-agent` evolves fast
+  (its version pin must be checked when upgrading); keep the runtime/session
+  integration in one module so upgrades are localized.
+- **Provider auth** — the API key is injected in-memory via
+  `ModelRuntime.setRuntimeApiKey`; if the provider rejects it, fail fast with a
+  clear message when the first prompt fails.
+- **Global config isolation** — the in-process agent must not read the user's
+  global `~/.pi`; the isolated `agentDir` and explicit provider/model/key handle
+  this, but verify on upgrades that no env-driven config sneaks in.
+- **Early-abort race** — when the `devperf_report` tool call starts, the
+  session is aborted so the run never waits for the agent to finish; the report
+  file write settles the prompt, and the abort-induced prompt rejection is
+  recognized and swallowed (a real prompt failure still surfaces). The fallback
+  `readSessionReport` covers the turn-ending case.
+- **In-process provider calls** — the LLM layer runs inside the dev-perf
+  process; a stuck provider call surfaces as an error that ends the run (the
+  heartbeat keeps long waits visible in verbose logs).
 - **Large repos** — partial clones and lazy per-commit diffs keep the common path
   cheap; a repo with huge binary blobs in history is documented as a worst case.
-- **Session/directory scoping** — verify that sessions created via the SDK are
-  scoped to the server's cwd (they should be, given the server is started inside
-  the clone); if a session-level `directory` option exists, use it explicitly.
+- **Session/directory scoping** — each session is created with the clone as
+  `cwd` and the isolated `agentDir`, so tools and prompts are scoped to the
+  analyzed repo.
 - **Identity is hard** — plain email-based grouping is the v1 contract (no
   merging, bots included); `.mailmap`-aware identity resolution is a candidate v2
   feature.

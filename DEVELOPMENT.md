@@ -25,10 +25,11 @@ For usage as an end user, see the [README](./README.md) instead.
   pnpm@latest --activate`, then verify with `pnpm --version`).
 - **git** on `PATH` — the analysis pipeline shells out to git, and the
   LLM agent runs git commands through its `bash` tool.
-- **opencode** on `PATH` (only for LLM analysis) — the LLM layer starts
-  an opencode server as a library per repository; without it, LLM runs
-  fail fast with a hint. `dev-perf report --no-llm` never needs it.
 - A terminal running from the **repository root** for all commands below.
+
+The LLM layer runs fully in-process via the
+`@earendil-works/pi-coding-agent` library — no external LLM binary is
+needed.
 
 ## Initial Setup
 
@@ -76,8 +77,8 @@ node build/index.js report --no-llm /path/to/some/git/repo
 This clones the repository into the cache (`<tmpdir>/.dev-cache` by
 default), analyzes git history, and prints the JSON report to stdout.
 LLM analysis is wired in: a run without `--no-llm`
-requires `--model`, `--provider-url`, and `--api-key`, and the
-`opencode` CLI on `PATH`. Provider settings can come from the
+requires `--model`, `--provider-url`, and `--api-key`; the language
+model runs fully in-process. Provider settings can come from the
 environment instead of flags (see below).
 
 Full LLM run:
@@ -185,9 +186,8 @@ version.
 
 ### Manual LLM run
 
-With the `opencode` CLI installed and a provider key, run the full
-pipeline against a small public repository (keep the range narrow so
-the run is quick):
+With a provider API key, run the full pipeline against a small public
+repository (keep the range narrow so the run is quick):
 
 ```bash
 node build/index.js report \
@@ -201,10 +201,10 @@ node build/index.js report \
 
 Expectations:
 
-- Verbose stderr shows the server URL and model, the orientation
-  session, and per-user sessions with token usage and cost.
+- Verbose stderr shows the pi runtime creation with the model, the
+  orientation session, and per-user sessions with token usage.
 - The report's per-user `llm` entries have `status: "completed"` with
-  `overview`, `contributions`, `tokenUsage` and `estimatedCostUsd`.
+  `overview`, `contributions`, and `tokenUsage`.
 - A rerun with identical parameters makes no new LLM calls (results
   are cached in `<tmpdir>/.dev-cache/<hash>/llm/`); `--refresh` re-runs
   everything.
@@ -212,6 +212,42 @@ Expectations:
   with a message naming the failing prompt, and no report is written.
 - A model that never calls `devperf_report` fails after 3 reminders
   with an error naming the user and session.
+
+### Docker
+
+Build the image locally and exercise the CLI inside a container. The
+image exposes `dev-perf` as its entrypoint, so it is used exactly like
+the installed CLI (it runs inside the container, but every flag and
+argument is identical):
+
+```bash
+# Build the image (multi-stage; Node.js 24 runtime with git, bash,
+# file and ripgrep — the read-only tool set the LLM agent uses).
+docker build -t dev-perf:local .
+
+# Version and help.
+docker run --rm dev-perf:local --version
+docker run --rm dev-perf:local --help
+
+# Deterministic analysis of a local repository: mount it read-only
+# (the path is cloned into the container's cache; the working tree is
+# never modified) and pass the mount path.
+docker run --rm -v /path/to/repo:/repo:ro \
+  dev-perf:local report --no-llm /repo
+
+# Write the report onto the host by mounting a directory at the
+# container's working directory /work.
+docker run --rm -v /path/to/repo:/repo:ro -v "$PWD":/work \
+  dev-perf:local report --no-llm --output report.json /repo
+```
+
+The runtime dependency set is pure JavaScript (the one native-looking
+dependency, `@silvia-odwyer/photon-node`, is a WASM module), so the
+same `Dockerfile` builds unchanged for every architecture buildx
+targets; the publish workflow builds `linux/amd64` and `linux/arm64`.
+Each `docker run` starts fresh, so the clone cache inside the container
+(`/tmp/.dev-cache`) is ephemeral; mount a host directory there to reuse
+clones and cached LLM results across runs.
 
 ## Code Quality Gates
 
@@ -240,7 +276,10 @@ when you commit.
 
 Releases are published to the npm registry automatically by the
 [CI workflow](.github/workflows/ci.yml) whenever a version tag is
-pushed.
+pushed, and the [Docker workflow](.github/workflows/docker.yml) builds
+and pushes the Docker image to the GitHub Container Registry
+(`ghcr.io/ameshkov/dev-perf`) on the same tags (and on every push to
+`master`).
 
 ### One-time setup
 
@@ -268,7 +307,9 @@ pushed.
 The workflow verifies that the tag version matches `package.json`, runs
 the full quality gate, builds, publishes to npm with provenance, and
 creates a GitHub release linking to `CHANGELOG.md` with the npm tarball
-attached.
+attached. The Docker workflow pushes a multi-architecture image
+(`linux/amd64`, `linux/arm64`) tagged with the version and `latest` —
+it does not depend on the npm publish, so both run in parallel.
 
 ### Notes
 
@@ -278,15 +319,20 @@ attached.
   [provenance](https://docs.npmjs.com/generating-provenance-statements)
   is enabled, so each published version links back to its source
   commit and build.
+- The Docker workflow needs no extra secret: it authenticates to the
+  GitHub Container Registry with the automatic `GITHUB_TOKEN` (granted
+  `packages: write`), so GHCR access works out of the box for
+  repositories in GitHub. To make the image visible to everyone, ensure
+  the package's visibility is *public* on the package settings page.
 
 ## Troubleshooting
 
 - **`Error: Cannot find module 'build/index.js'`** — run `pnpm build`
   first.
-- **LLM run fails with "Is the opencode CLI installed and on PATH?"** —
-  the LLM layer spawns an opencode server via the SDK; install the
-  `opencode` CLI and make sure it is on `PATH`. Deterministic runs
-  (`--no-llm`) never need it.
+- **LLM run fails with "Failed to create the pi LLM runtime"** — the
+  in-process pi runtime could not be created or the model could not be
+  resolved; check the provider URL and the model id. Deterministic
+  runs (`--no-llm`) never need it.
 - **LLM run fails with an auth error on the first prompt** — the
   provider rejected the API key; check `--api-key` /
   `DEV_PERF_API_KEY` and the provider base URL.

@@ -40,7 +40,7 @@ export function registerReportCommand(program: Command): void {
     .option('--limit-output <n>', 'Max output tokens for LLM analysis (default: 65536)')
     .option(
       '--llm-retries <n>',
-      'Retry a failed LLM analysis up to <n> more times, restarting the opencode server between attempts (default: 2)',
+      'Retry a failed LLM analysis up to <n> more times, recreating the LLM runtime between attempts (default: 2)',
     )
     .option('--parallel <n>', 'Analyze up to <n> repositories in parallel (default: 1)')
     .option('--verbose', 'Verbose logging')

@@ -1,17 +1,17 @@
 /**
  * LLM prompt rendering: the prompt text itself lives in markdown
- * template files under `src/llm/prompts/` (`orientation.md` — the
- * orientation session that produces the repository context; `user.md`
- * — the per-user analysis prompt with identity, date range, repo
- * context, and the user's commit list; `reminder.md` — the tool-call
- * reminder used by the enforcement loop). The analysis agent's system
- * prompt is part of its opencode agent definition
- * (`src/llm/agents/devperf-analyst.md`) and is copied into the
- * clone's `.opencode/agents/` by the server layer, not rendered here.
- * This module loads the templates (relative to the module file, so
- * the same paths work from `src/` and `build/`), caches them, and
- * substitutes the `{{placeholder}}` values; it renders no prompt
- * prose itself.
+ * template files under `src/llm/prompts/`. The system prompts
+ * (`orientation-system.md` and `user-system.md`) define who the agent
+ * is and the environment it runs in — the read-only tool surface —
+ * and carry no per-run task details; the task details (repository,
+ * identity, date range, the context and the commit list) live in the
+ * user prompts (`orientation.md` — the orientation session that
+ * produces the repository context; `user.md` — the per-user analysis
+ * prompt; `reminder.md` — the tool-call reminder used by the
+ * enforcement loop). This module loads the templates (relative to the
+ * module file, so the same paths work from `src/` and `build/`),
+ * caches them, and substitutes the `{{placeholder}}` values; it
+ * renders no prompt prose itself.
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -42,6 +42,33 @@ export interface UserPromptInput {
 }
 
 /**
+ * Builds the orientation system prompt: defines the dev-perf
+ * repository analyst agent and its tool surface (read,
+ * grep, find, ls; bash; `devperf_report`) for the
+ * orientation session. It is static — who the agent is and how it may
+ * work — and carries no task details; the repository being analyzed
+ * and the requested context live in the orientation user prompt.
+ *
+ * @returns The orientation system prompt text.
+ */
+export function buildOrientationSystemPrompt(): Promise<string> {
+  return loadTemplate('orientation-system');
+}
+
+/**
+ * Builds the per-user system prompt: defines the dev-perf contributor
+ * analyst agent and its tool surface. It is static — who the
+ * agent is and how it may work — and carries no task details; the
+ * identity, repository, and analyzed range live in the per-user
+ * analysis prompt.
+ *
+ * @returns The per-user system prompt text.
+ */
+export function buildUserSystemPrompt(): Promise<string> {
+  return loadTemplate('user-system');
+}
+
+/**
  * Builds the orientation prompt: the agent explores the
  * repository with the read tools and read-only git commands and
  * returns a compact repository context — tech stack, main modules,
@@ -57,26 +84,27 @@ export async function buildOrientationPrompt(repo: string): Promise<string> {
 }
 
 /**
- * Builds the per-user analysis prompt: identity, date
- * range, the repository context from the orientation session, and the
- * user's commit list with sha, author date, subject, numstat totals,
- * and files per commit. The agent inspects the commits with read tools
- * and read-only git commands and reports what cannot be counted —
- * work types, complexity, impacted areas, quality signals, risk flags
- * — split into distinct contributions. The prompt ends with the
- * standard tool-call instruction.
+ * Builds the per-user analysis prompt: the analyzed identity,
+ * repository, and date range, the repository context from the
+ * orientation session, and the user's commit list with sha, author
+ * date, subject, numstat totals, and files per commit. The agent
+ * inspects the commits with read tools and read-only git commands and
+ * reports what cannot be counted — work types, complexity, impacted
+ * areas, quality signals, risk flags — split into distinct
+ * contributions. The prompt ends with the standard tool-call
+ * instruction.
  *
- * @param input - Identity, range, repo context, and commits.
+ * @param input - Repo context, user name, commits, and analyzed range.
  * @returns The per-user prompt text.
  */
 export async function buildUserPrompt(input: UserPromptInput): Promise<string> {
+  const lines = input.commits.map((commit) => `- ${commitLine(commit)}`).join('\n');
   const since = input.range.since === '' ? 'the beginning' : input.range.since;
   const until = input.range.until === '' ? 'now' : input.range.until;
-  const lines = input.commits.map((commit) => `- ${commitLine(commit)}`).join('\n');
   return renderTemplate(await loadTemplate('user'), {
-    repo: input.repo,
     name: input.name,
     email: input.email,
+    repo: input.repo,
     since,
     until,
     repoContext: input.repoContext,

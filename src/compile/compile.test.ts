@@ -129,10 +129,9 @@ describe('runCompile', () => {
         );
         // The individual sections link to the per-person reports.
         expect(md).toContain('[Full individual report →](people/alice.md)');
-        // LLM cost is reported with the token usage breakdown: two users
-        // over two periods of the fixture default (100 in / 50 cached in /
-        // 20 out, $0.01 per user per period).
-        expect(md).toContain('- LLM analysis cost: 400 in / 200 cached in / 80 out / $0.0400');
+        // LLM usage is reported with the token breakdown: two users over
+        // two periods of the fixture default (100 in / 50 cached in /
+        // 20 out per user per period).
         // The top contributors by commits, contributions and points:
         // Alice and Bob tie on commits (5) and contributions (2), and
         // Alice leads on points (two m-sized contributions), so the
@@ -147,11 +146,12 @@ describe('runCompile', () => {
         expect(md).toContain('- Busiest period by contributions: 2026-01 (2 contributions)');
         expect(md).toContain('- Busiest period by points: 2026-01 (6 points)');
         expect(md).toContain(
-          '| LLM cost | 400 in / 200 cached in / 80 out / $0.0400 | Estimated token usage and cost of the LLM analysis |',
+          '| LLM usage | 400 in / 200 cached in / 80 out | Token usage of the LLM analysis |',
         );
-        expect(md).toContain('| User | Input tokens | Cached in | Output tokens | Cost |');
-        expect(md).toContain('| Alice | 200 | 100 | 40 | $0.0200 |');
-        expect(md).toContain('| Total | 400 | 200 | 80 | $0.0400 |');
+        expect(md).toContain('### Usage');
+        expect(md).toContain('| User | Input tokens | Cached in | Output tokens |');
+        expect(md).toContain('| Alice | 200 | 100 | 40 |');
+        expect(md).toContain('| Total | 400 | 200 | 80 |');
 
         const files = await readdir(result.assetsPath);
         expect(files).toContain('team-points-per-period.svg');

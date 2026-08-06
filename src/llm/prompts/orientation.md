@@ -1,13 +1,11 @@
 # Repository orientation
 
-You are analyzing the git repository at {{repo}} for dev-perf, a
-developer-contribution analyzer. This orientation session establishes
-the repository context that later sessions use to analyze individual
-contributors.
+Analyze the repository at {{repo}} for dev-perf. This session
+establishes the repository context that the contributor analysis uses
+later.
 
-Explore the repository with the read tools (read, grep, glob) and
-read-only git commands (git log, git show, git status) as needed.
-Produce a compact repository context covering:
+Explore the repository with the read tools and read-only git commands
+as needed. Produce a compact repository context covering:
 
 - Tech stack: languages, frameworks, and key dependencies (README,
   manifests, config files).

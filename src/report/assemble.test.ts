@@ -117,7 +117,6 @@ describe('assembleRepository with LLM results', () => {
       },
     ],
     tokenUsage: { input: 10, cacheRead: 0, output: 5 },
-    estimatedCostUsd: 0.01,
   };
 
   it('maps completed analyses onto the matching users and skips the rest', () => {

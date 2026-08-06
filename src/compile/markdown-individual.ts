@@ -12,7 +12,7 @@ import { userSlug } from './chart-util.js';
 import type { ChartData, CountRow, UserSeries } from './chart-data.js';
 import { SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
 import type { EmailMap } from './filter.js';
-import { bullets, chartAsset, chartBlock, formatInt, formatUsd, table } from './markdown-util.js';
+import { bullets, chartAsset, chartBlock, formatInt, table } from './markdown-util.js';
 import { statisticsTable, userSummaryLine } from './markdown-user.js';
 import type { CompileOptions } from './options.js';
 
@@ -118,8 +118,8 @@ function tallyTable(title: string, rows: CountRow[]): string | undefined {
 
 /**
  * The LLM analysis summary section: distribution pies, quality and
- * risk tallies, and the per-user cost table. Omitted entirely when the
- * report has no LLM analysis.
+ * risk tallies, and the per-user token-usage table. Omitted entirely
+ * when the report has no LLM analysis.
  *
  * @param data - The chart data.
  * @param assets - The chart assets by file name.
@@ -144,25 +144,22 @@ function llmSummarySection(data: ChartData, assets: ReadonlyMap<string, ChartAss
   if (risk !== undefined) {
     sections.push(risk);
   }
-  if (data.cost.length > 0) {
-    const total = data.cost.reduce((sum, row) => sum + row.costUsd, 0);
+  if (data.usage.length > 0) {
     sections.push(
-      `### Cost\n\n${table(
-        ['User', 'Input tokens', 'Cached in', 'Output tokens', 'Cost'],
+      `### Usage\n\n${table(
+        ['User', 'Input tokens', 'Cached in', 'Output tokens'],
         [
-          ...data.cost.map((row) => [
+          ...data.usage.map((row) => [
             row.name,
             formatInt(row.inputTokens),
             formatInt(row.cacheReadTokens),
             formatInt(row.outputTokens),
-            formatUsd(row.costUsd),
           ]),
           [
             'Total',
-            formatInt(data.cost.reduce((sum, row) => sum + row.inputTokens, 0)),
-            formatInt(data.cost.reduce((sum, row) => sum + row.cacheReadTokens, 0)),
-            formatInt(data.cost.reduce((sum, row) => sum + row.outputTokens, 0)),
-            formatUsd(total),
+            formatInt(data.usage.reduce((sum, row) => sum + row.inputTokens, 0)),
+            formatInt(data.usage.reduce((sum, row) => sum + row.cacheReadTokens, 0)),
+            formatInt(data.usage.reduce((sum, row) => sum + row.outputTokens, 0)),
           ],
         ],
       )}`,

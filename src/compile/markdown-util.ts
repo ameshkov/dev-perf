@@ -17,16 +17,6 @@ export function formatInt(value: number): string {
 }
 
 /**
- * Formats a USD amount with four decimals.
- *
- * @param value - The amount in USD.
- * @returns The formatted text, e.g. `$0.0123`.
- */
-export function formatUsd(value: number): string {
-  return `$${value.toFixed(4)}`;
-}
-
-/**
  * Formats a token count in compact human-readable form: plain numbers
  * below 1k, `1.2k` in the thousands, `5M` in the millions.
  *
@@ -56,22 +46,20 @@ function formatCompact(value: number): string {
 
 /**
  * Formats the LLM usage summary line: the non-cached input, cached
- * input and output token counts plus the estimated cost, e.g.
- * `1.2k in / 5M cached in / 1M out / $0.0123`.
+ * input and output token counts, e.g.
+ * `1.2k in / 5M cached in / 1M out`.
  *
  * @param inputTokens - Non-cached input tokens.
  * @param cacheReadTokens - Input tokens read from the prompt cache.
  * @param outputTokens - Output tokens.
- * @param costUsd - Estimated cost in USD.
  * @returns The summary text.
  */
 export function formatLlmUsage(
   inputTokens: number,
   cacheReadTokens: number,
   outputTokens: number,
-  costUsd: number,
 ): string {
-  return `${formatTokens(inputTokens)} in / ${formatTokens(cacheReadTokens)} cached in / ${formatTokens(outputTokens)} out / ${formatUsd(costUsd)}`;
+  return `${formatTokens(inputTokens)} in / ${formatTokens(cacheReadTokens)} cached in / ${formatTokens(outputTokens)} out`;
 }
 
 /**

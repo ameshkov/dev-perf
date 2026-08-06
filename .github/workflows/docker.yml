@@ -1,0 +1,72 @@
+name: Docker
+
+# Publishes the dev-perf Docker image to GitHub Container Registry
+# (ghcr.io/ameshkov/dev-perf) on every push to the main/master branch
+# (a `master`-tagged image, always up to date) and on every version tag
+# (semver-tagged images plus `latest`). Multi-architecture build for
+# x86-64 and ARM64. This mirrors the gocurl publishing setup.
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - master
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# A tag push and a master push building the same ref must not race on
+# GHCR: only one in-flight build per ref; a newer push supersedes it.
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push-image:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write # to push the image to GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache: multi-platform runs under QEMU rebuild
+          # from scratch each push otherwise, risking the 30-minute job
+          # timeout; gha cache keeps the layer cache warm across runs.
+          cache-from: type=gha
+          cache-to: type=gha, mode=max

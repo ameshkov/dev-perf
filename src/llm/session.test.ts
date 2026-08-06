@@ -1,17 +1,59 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Event, OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LlmToolPayload } from '../report/index.js';
+import { llmDir } from '../repo/cache.js';
 import { createScopedLog } from '../util/log.js';
-import { ANALYST_AGENT_ID } from './server.js';
-import {
-  collectSessionUsage,
-  createSessionService,
-  readSessionReport,
-  sessionReportPath,
-} from './session.js';
+import type { LlmRuntime } from './runtime.js';
+import type { SessionService } from './session.js';
+import { createSessionService, readSessionReport, sessionReportPath } from './session.js';
+import { REPORT_TOOL_NAME } from './tools.js';
+
+// The pi package is mocked so the tests drive sessions in-process:
+// `createAgentSession` returns a controllable fake session per call,
+// and the resource/settings/session managers are inert stand-ins.
+const piMock = vi.hoisted(() => ({
+  /** Fake sessions returned by `createAgentSession`, in order. */
+  sessions: [] as Array<ReturnType<typeof makeFakeSession>>,
+  /** Options passed to each `createAgentSession` call. */
+  createOptions: [] as unknown[],
+  /** Options passed to each `DefaultResourceLoader` construction. */
+  loaderOptions: [] as unknown[],
+  /** Whether `SettingsManager.inMemory` was called with compaction/retry. */
+  settingsArgs: [] as unknown[],
+}));
+
+// Function declarations referenced by the mocked module are hoisted, so
+// `makeFakeSession` below is safe to use inside the mock factory.
+vi.mock('@earendil-works/pi-coding-agent', () => ({
+  DefaultResourceLoader: class {
+    constructor(options: unknown) {
+      piMock.loaderOptions.push(options);
+    }
+    reload(): Promise<void> {
+      return Promise.resolve();
+    }
+  },
+  SettingsManager: {
+    inMemory: vi.fn((settings: unknown) => {
+      piMock.settingsArgs.push(settings);
+      return { reload: vi.fn(async () => {}) };
+    }),
+  },
+  SessionManager: {
+    inMemory: vi.fn(() => ({})),
+  },
+  createAgentSession: vi.fn(async (options: unknown) => {
+    piMock.createOptions.push(options);
+    const fake = makeFakeSession();
+    piMock.sessions.push(fake);
+    return { session: fake.session };
+  }),
+  // tools.ts imports `defineTool` to build the report tool; the real
+  // wrapper only restores type inference, so identity is enough here.
+  defineTool: <T>(tool: T): T => tool,
+}));
 
 // The heartbeat progress lines are asserted via the mocked logger; the
 // other log levels are stubbed so nothing reaches stderr in tests.
@@ -46,236 +88,208 @@ const PAYLOAD: LlmToolPayload = {
   ],
 };
 
-/** Builds a `message.part.updated` event carrying a `step-finish` part. */
-function stepEvent(
-  sessionID: string,
-  input: number,
-  output: number,
-  cost: number,
-  cacheRead = 0,
-): Event {
-  return {
-    type: 'message.part.updated',
-    properties: {
-      part: {
-        id: `step-${sessionID}-${input}`,
-        sessionID,
-        messageID: 'msg_1',
-        type: 'step-finish',
-        reason: 'done',
-        cost,
-        tokens: { input, output, reasoning: 0, cache: { read: cacheRead, write: 0 } },
-      },
-    },
-  } as Event;
-}
-
-/** Builds a `message.part.updated` event carrying a plain text part. */
-function textEvent(sessionID: string, text: string): Event {
-  return {
-    type: 'message.part.updated',
-    properties: {
-      part: { id: `text-${sessionID}`, sessionID, messageID: 'msg_1', type: 'text', text },
-    },
-  } as Event;
-}
-
-interface StubOptions {
-  /** Error the server returns from `session.create`. */
-  createError?: unknown;
-  /** Error the server returns from `session.prompt`. */
-  promptError?: unknown;
-  /** Make `session.prompt` reject instead of returning an error. */
-  promptThrows?: boolean;
-  /** Custom `session.prompt` implementation (overrides the default). */
-  prompt?: () => Promise<{ data: unknown; error: unknown }>;
-  /** Event stream the `event.subscribe` stub yields. */
-  stream?: AsyncGenerator<Event>;
-  /** Make `event.subscribe` reject. */
-  subscribeThrows?: boolean;
-}
-
-/**
- * Builds a minimal opencode client stub around the v1 API surface the
- * session layer uses: `session.create`/`prompt`/`abort` and
- * `event.subscribe`, with the option style `{ query, body, path }`.
- *
- * @param options - Behavior overrides.
- * @returns The stubbed client with vi.fn methods.
- */
-function stubClient(options: StubOptions = {}): OpencodeClient & {
+/** A fake pi session with test controls; `vi.fn` works because the mock
+ * factory above runs lazily, after the module context is ready. */
+function makeFakeSession(): {
   session: {
-    create: ReturnType<typeof vi.fn>;
     prompt: ReturnType<typeof vi.fn>;
     abort: ReturnType<typeof vi.fn>;
+    getLastAssistantText: ReturnType<typeof vi.fn>;
+    getSessionStats: ReturnType<typeof vi.fn>;
+    setSessionName: ReturnType<typeof vi.fn>;
+    subscribe: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
   };
-  event: { subscribe: ReturnType<typeof vi.fn> };
+  control: {
+    setPromptImpl(fn: () => Promise<void>): void;
+    setReply(text: string): void;
+    setTokens(tokens: {
+      input: number;
+      cacheRead: number;
+      output: number;
+      cacheWrite: number;
+      total: number;
+    }): void;
+    listeners: Set<(event: unknown) => void>;
+  };
 } {
-  const emptyStream = async function* (): AsyncGenerator<Event> {};
+  const listeners = new Set<(event: unknown) => void>();
+  let promptImpl: () => Promise<void> = async () => {};
+  let replyText = 'assistant reply';
+  let tokens = { input: 10, cacheRead: 7, output: 5, cacheWrite: 0, total: 22 };
   return {
     session: {
-      create: vi.fn(async () => {
-        if (options.createError !== undefined) {
-          return { data: undefined, error: options.createError };
-        }
-        return {
-          data: { id: 'ses_1', directory: DIRECTORY, title: 't', version: '1' },
-          error: undefined,
-        };
+      prompt: vi.fn(() => promptImpl()),
+      abort: vi.fn(async () => {}),
+      getLastAssistantText: vi.fn(() => replyText),
+      getSessionStats: vi.fn(() => ({
+        sessionFile: undefined,
+        sessionId: 'pi-session',
+        userMessages: 1,
+        assistantMessages: 1,
+        toolCalls: 0,
+        toolResults: 0,
+        totalMessages: 2,
+        tokens,
+        cost: 0,
+      })),
+      setSessionName: vi.fn(),
+      subscribe: vi.fn((listener: (event: unknown) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
       }),
-      prompt: vi.fn(async () => {
-        if (options.prompt !== undefined) {
-          return options.prompt();
-        }
-        if (options.promptThrows) {
-          throw new Error('prompt rejected');
-        }
-        if (options.promptError !== undefined) {
-          return { data: undefined, error: options.promptError };
-        }
-        return {
-          data: {
-            info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
-            parts: [{ type: 'text', text: 'assistant reply' }],
-          },
-          error: undefined,
-        };
-      }),
-      abort: vi.fn(async () => ({ data: undefined, error: undefined })),
+      dispose: vi.fn(),
     },
-    event: {
-      subscribe: vi.fn(async () => {
-        if (options.subscribeThrows) {
-          throw new Error('no events');
-        }
-        return { stream: options.stream ?? emptyStream() };
-      }),
+    control: {
+      setPromptImpl(fn) {
+        promptImpl = fn;
+      },
+      setReply(text) {
+        replyText = text;
+      },
+      setTokens(next) {
+        tokens = next;
+      },
+      listeners,
     },
-  } as unknown as OpencodeClient & {
-    session: {
-      create: ReturnType<typeof vi.fn>;
-      prompt: ReturnType<typeof vi.fn>;
-      abort: ReturnType<typeof vi.fn>;
-    };
-    event: { subscribe: ReturnType<typeof vi.fn> };
   };
 }
 
+/** A fake runtime handle bound to nothing real. */
+function runtimeFor(entryDir: string): LlmRuntime {
+  return {
+    model: { id: 'gpt-4.1', provider: 'devperf' } as never,
+    modelRuntime: {} as never,
+    agentDir: path.join(entryDir, 'pi', 'home'),
+    dispose: vi.fn(async () => {}),
+  };
+}
+
+/** The last fake session created, with its controls. */
+function lastFake() {
+  const fake = piMock.sessions.at(-1);
+  if (fake === undefined) {
+    throw new Error('no fake session created');
+  }
+  return fake;
+}
+
+/** Emits a `devperf_report` tool-execution-start event on a fake session. */
+function emitToolCall(fake: ReturnType<typeof makeFakeSession>, args: unknown): void {
+  for (const listener of [...fake.control.listeners]) {
+    listener({ type: 'tool_execution_start', toolCallId: 'tc1', toolName: REPORT_TOOL_NAME, args });
+  }
+}
+
+function pendingPrompt(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+let entryDir: string;
+let llmDirPath: string;
+let service: SessionService;
+
+beforeEach(async () => {
+  entryDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-session-entry-'));
+  llmDirPath = llmDir(entryDir);
+  await mkdir(llmDirPath, { recursive: true });
+  piMock.sessions.length = 0;
+  piMock.createOptions.length = 0;
+  piMock.loaderOptions.length = 0;
+  piMock.settingsArgs.length = 0;
+  service = createSessionService(runtimeFor(entryDir), entryDir);
+});
+
+afterEach(async () => {
+  await service.close();
+  await rm(entryDir, { recursive: true, force: true });
+});
+
 describe('createSessionService', () => {
-  it('creates a session scoped to the clone directory with the title', async () => {
-    const client = stubClient();
-    const service = createSessionService(client);
+  it('creates a session scoped to the clone directory with the given system prompt', async () => {
+    const handle = await service.createSession(DIRECTORY, 'dev-perf: Alice', 'system prompt text');
 
-    const handle = await service.createSession(DIRECTORY, 'dev-perf: Alice');
+    expect(handle.directory).toBe(DIRECTORY);
+    expect(handle.id).toMatch(/^[0-9a-f]{8}-/u);
 
-    expect(client.session.create).toHaveBeenCalledWith({
-      query: { directory: DIRECTORY },
-      body: { title: 'dev-perf: Alice' },
+    const options = piMock.createOptions[0] as Record<string, unknown>;
+    expect(options.cwd).toBe(DIRECTORY);
+    expect(options.model).toEqual({ id: 'gpt-4.1', provider: 'devperf' });
+    expect(options.thinkingLevel).toBe('off');
+    expect(options.tools).toEqual(['read', 'bash', 'grep', 'find', 'ls', REPORT_TOOL_NAME]);
+    // Only the report tool is custom; `bash` is pi's built-in (regular)
+    // and therefore not part of customTools.
+    expect(options.customTools).toEqual([expect.objectContaining({ name: REPORT_TOOL_NAME })]);
+    expect(options.sessionManager).toBeDefined();
+    expect(options.resourceLoader).toBeDefined();
+    // In-memory settings enable auto-compaction and auto-retry.
+    expect(piMock.settingsArgs[0]).toEqual({
+      compaction: { enabled: true },
+      retry: { enabled: true },
     });
-    expect(handle).toEqual({ id: 'ses_1', directory: DIRECTORY });
   });
 
-  it('throws a readable error when the server rejects creation', async () => {
-    const client = stubClient({ createError: { message: 'nope' } });
-    const service = createSessionService(client);
+  it('gives the loader the system prompt and disables every resource category', async () => {
+    await service.createSession(DIRECTORY, 'title', 'orientation system prompt');
 
-    await expect(service.createSession(DIRECTORY, 't')).rejects.toThrow(
-      /Failed to create an LLM session in \/clone\/repo: nope/,
+    const loader = piMock.loaderOptions[0] as Record<string, unknown>;
+    expect(loader.cwd).toBe(DIRECTORY);
+    expect(loader.systemPrompt).toBe('orientation system prompt');
+    for (const flag of [
+      'noExtensions',
+      'noSkills',
+      'noPromptTemplates',
+      'noThemes',
+      'noContextFiles',
+    ]) {
+      expect(loader[flag]).toBe(true);
+    }
+  });
+
+  it('returns the final assistant text from promptSession', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    lastFake().control.setReply('the final context');
+
+    await expect(service.promptSession(handle, 'analyze', 'Alice')).resolves.toBe(
+      'the final context',
     );
+    expect(lastFake().session.prompt).toHaveBeenCalledWith('analyze');
   });
 
-  it('sends a text part with the analyst agent and returns the final assistant text', async () => {
-    const client = stubClient();
-    const service = createSessionService(client);
-
-    const text = await service.promptSession(
-      { id: 'ses_1', directory: DIRECTORY },
-      'analyze',
-      'Alice',
-    );
-
-    expect(text).toBe('assistant reply');
-    expect(client.session.prompt).toHaveBeenCalledWith({
-      path: { id: 'ses_1' },
-      query: { directory: DIRECTORY },
-      body: {
-        agent: ANALYST_AGENT_ID,
-        noReply: false,
-        parts: [{ type: 'text', text: 'analyze' }],
-      },
+  it('aborts the session and rethrows when the prompt fails', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    lastFake().control.setPromptImpl(async () => {
+      throw new Error('rate limited');
     });
-  });
+    const fake = lastFake();
 
-  it('passes noReply through for context injection, still with the analyst agent', async () => {
-    const client = stubClient();
-    const service = createSessionService(client);
-
-    await service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'context', 'Alice', {
-      noReply: true,
-    });
-
-    const call = client.session.prompt.mock.calls[0]?.[0] as {
-      body: { noReply: boolean; agent: string };
-    };
-    expect(call.body.noReply).toBe(true);
-    expect(call.body.agent).toBe(ANALYST_AGENT_ID);
-  });
-
-  it('aborts the session and rethrows when the server returns an error', async () => {
-    const client = stubClient({ promptError: { message: 'rate limited' } });
-    const service = createSessionService(client);
-
-    await expect(
-      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze', 'Alice'),
-    ).rejects.toThrow(/LLM session prompt failed in \/clone\/repo: rate limited/);
-    expect(client.session.abort).toHaveBeenCalledWith({
-      path: { id: 'ses_1' },
-      query: { directory: DIRECTORY },
-    });
-  });
-
-  it('aborts the session and rethrows when the request rejects', async () => {
-    const client = stubClient({ promptThrows: true });
-    const service = createSessionService(client);
-
-    await expect(
-      service.promptSession({ id: 'ses_1', directory: DIRECTORY }, 'analyze', 'Alice'),
-    ).rejects.toThrow('prompt rejected');
-    expect(client.session.abort).toHaveBeenCalledTimes(1);
+    await expect(service.promptSession(handle, 'analyze', 'Alice')).rejects.toThrow('rate limited');
+    expect(fake.session.abort).toHaveBeenCalledTimes(1);
   });
 
   it('logs a still-waiting progress line while the reply is pending', async () => {
     vi.useFakeTimers();
     try {
-      // The model never answers; the heartbeat must make the wait
-      // visible instead of an endless silent prompt.
-      let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
-      const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
-        settlePrompt = resolve;
-      });
-      const client = stubClient({ prompt: () => pendingPrompt });
-      const service = createSessionService(client);
+      const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+      const pending = pendingPrompt();
+      lastFake().control.setPromptImpl(() => pending.promise);
       const scoped = vi.mocked(createScopedLog).mock.results.at(-1)?.value;
 
-      const resultPromise = service.promptSession(
-        { id: 'ses_1', directory: DIRECTORY },
-        'analyze',
-        'Alice',
-      );
+      const resultPromise = service.promptSession(handle, 'analyze', 'Alice');
       await vi.advanceTimersByTimeAsync(31_000);
 
       expect(scoped?.info).toHaveBeenCalledWith(
-        expect.stringContaining('LLM: "Alice": still waiting for the LLM reply'),
+        expect.stringContaining(
+          `LLM: "Alice" (session "${handle.id}"): still waiting for the LLM reply`,
+        ),
       );
       expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
-      settlePrompt({
-        data: {
-          info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
-          parts: [{ type: 'text', text: 'assistant reply' }],
-        },
-        error: undefined,
-      });
+      pending.resolve();
       await expect(resultPromise).resolves.toBe('assistant reply');
     } finally {
       vi.useRealTimers();
@@ -284,219 +298,219 @@ describe('createSessionService', () => {
 });
 
 describe('promptSessionUntilReport', () => {
-  let llmDir: string;
+  it('settles from the tool-execution event, writes the report and aborts early', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    const pending = pendingPrompt();
+    fake.control.setPromptImpl(() => pending.promise);
 
-  beforeEach(async () => {
-    llmDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-session-poll-'));
-  });
-
-  afterEach(async () => {
-    await rm(llmDir, { recursive: true, force: true });
-  });
-
-  it('aborts the running session and returns the payload when the report appears mid-turn', async () => {
-    // The turn never finishes on its own; the report file is the only
-    // thing that can end the prompt.
-    let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
-    const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
-      settlePrompt = resolve;
-    });
-    const client = stubClient({ prompt: () => pendingPrompt });
-    const service = createSessionService(client);
-
-    const resultPromise = service.promptSessionUntilReport(
-      { id: 'ses_1', directory: DIRECTORY },
-      'analyze',
-      llmDir,
-      'Alice',
-    );
-    // The simulated tool writes its output while the turn is running.
-    await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
+    const resultPromise = service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice');
+    emitToolCall(fake, PAYLOAD);
 
     await expect(resultPromise).resolves.toEqual(PAYLOAD);
-    expect(client.session.abort).toHaveBeenCalledWith({
-      path: { id: 'ses_1' },
-      query: { directory: DIRECTORY },
+    // The report file was written from the event arguments.
+    const written = JSON.parse(
+      await readFile(sessionReportPath(llmDirPath, handle.id), 'utf8'),
+    ) as LlmToolPayload;
+    expect(written).toEqual(PAYLOAD);
+    expect(fake.session.abort).toHaveBeenCalledTimes(1);
+    pending.resolve();
+  });
+
+  it('ignores an invalid tool-call argument and waits for the turn to end', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    fake.control.setPromptImpl(async () => {});
+
+    emitToolCall(fake, { overview: 42 });
+    const result = await service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice');
+
+    expect(result).toBeUndefined();
+    expect(fake.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('returns the payload written before the turn ended, without aborting', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    fake.control.setPromptImpl(async () => {
+      await writeFile(sessionReportPath(llmDirPath, handle.id), JSON.stringify(PAYLOAD), 'utf8');
     });
-    // Settle the abandoned prompt so the test ends cleanly.
-    settlePrompt({
-      data: {
-        info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
-        parts: [{ type: 'text', text: 'assistant reply' }],
-      },
-      error: undefined,
+
+    await expect(
+      service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice'),
+    ).resolves.toEqual(PAYLOAD);
+    expect(fake.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined when the turn ends without calling the tool', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    fake.control.setPromptImpl(async () => {});
+
+    await expect(
+      service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice'),
+    ).resolves.toBeUndefined();
+    expect(fake.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('rejects with the real error when the prompt fails without a tool call', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    fake.control.setPromptImpl(async () => {
+      throw new TypeError('fetch failed');
     });
+
+    await expect(
+      service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice'),
+    ).rejects.toThrow('fetch failed');
+    expect(fake.session.abort).not.toHaveBeenCalled();
+  });
+
+  it('does not mask a valid tool call with the abort-induced prompt rejection', async () => {
+    // The tool call is observed, the report file write is dispatched,
+    // and the session is aborted; aborting rejects the in-flight prompt
+    // as a microtask — but a report was seen, so that rejection must not
+    // settle the result as "tool not called". The write path settles
+    // with the payload. The tool event runs synchronously (as pi emits
+    // it during the turn) before the microtask queue drains.
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    fake.control.setPromptImpl(async () => {
+      throw new TypeError('aborted');
+    });
+
+    const resultPromise = service.promptSessionUntilReport(handle, 'analyze', llmDirPath, 'Alice');
+    emitToolCall(fake, PAYLOAD);
+
+    await expect(resultPromise).resolves.toEqual(PAYLOAD);
+    expect(fake.session.abort).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when the report file cannot be written', async () => {
+    // Point the llm dir at a path whose parent is a file, so mkdir
+    // fails and the write path rejects instead of silently losing the
+    // report (or hanging).
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    const blockedParent = path.join(entryDir, 'blocker');
+    await writeFile(blockedParent, 'not a directory', 'utf8');
+    fake.control.setPromptImpl(async () => {});
+
+    const resultPromise = service.promptSessionUntilReport(
+      handle,
+      'analyze',
+      `${blockedParent}/llm`,
+      'Alice',
+    );
+    emitToolCall(fake, PAYLOAD);
+
+    await expect(resultPromise).rejects.toThrow();
   });
 
   it('logs a still-waiting progress line every 30 s while the turn runs', async () => {
     vi.useFakeTimers();
     try {
-      // The model never finishes; the heartbeat must make the wait
-      // visible instead of an endless silent prompt.
-      let settlePrompt: (value: { data: unknown; error: unknown }) => void = () => {};
-      const pendingPrompt = new Promise<{ data: unknown; error: unknown }>((resolve) => {
-        settlePrompt = resolve;
-      });
-      const client = stubClient({ prompt: () => pendingPrompt });
-      const service = createSessionService(client);
+      const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+      const fake = lastFake();
+      const pending = pendingPrompt();
+      fake.control.setPromptImpl(() => pending.promise);
       const scoped = vi.mocked(createScopedLog).mock.results.at(-1)?.value;
 
       const resultPromise = service.promptSessionUntilReport(
-        { id: 'ses_1', directory: DIRECTORY },
+        handle,
         'analyze',
-        llmDir,
+        llmDirPath,
         'Alice',
       );
       await vi.advanceTimersByTimeAsync(31_000);
 
       expect(scoped?.info).toHaveBeenCalledWith(
-        expect.stringContaining('LLM: "Alice": still waiting for devperf_report'),
+        expect.stringContaining(
+          `LLM: "Alice" (session "${handle.id}"): still waiting for ${REPORT_TOOL_NAME}`,
+        ),
       );
       expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
-      // The simulated tool writes its output while the turn is running.
-      await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
-      await vi.advanceTimersByTimeAsync(1_000);
-
+      emitToolCall(fake, PAYLOAD);
       await expect(resultPromise).resolves.toEqual(PAYLOAD);
-      expect(client.session.abort).toHaveBeenCalled();
-      // Settle the abandoned prompt so the test ends cleanly.
-      settlePrompt({
-        data: {
-          info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
-          parts: [{ type: 'text', text: 'assistant reply' }],
-        },
-        error: undefined,
-      });
+      pending.resolve();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('returns the payload written before the turn ended, without aborting', async () => {
-    const client = stubClient({
-      prompt: async () => {
-        await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
-        return {
-          data: {
-            info: { id: 'msg_1', sessionID: 'ses_1', role: 'assistant' },
-            parts: [{ type: 'text', text: 'assistant reply' }],
-          },
-          error: undefined,
-        };
-      },
-    });
-    const service = createSessionService(client);
+  it('the custom tool bound to the session writes its report file', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const options = piMock.createOptions[0] as {
+      customTools: Array<{ execute(...args: unknown[]): Promise<unknown> }>;
+    };
+    const reportTool = options.customTools[0];
+    expect(reportTool).toBeDefined();
 
-    await expect(
-      service.promptSessionUntilReport(
-        { id: 'ses_1', directory: DIRECTORY },
-        'analyze',
-        llmDir,
-        'Alice',
-      ),
-    ).resolves.toEqual(PAYLOAD);
-    expect(client.session.abort).not.toHaveBeenCalled();
+    await reportTool!.execute('tc1', PAYLOAD, undefined, undefined, {} as never);
+
+    const written = JSON.parse(
+      await readFile(sessionReportPath(llmDirPath, handle.id), 'utf8'),
+    ) as LlmToolPayload;
+    expect(written).toEqual(PAYLOAD);
   });
+});
 
-  it('returns undefined when the turn ends without calling the tool', async () => {
-    const client = stubClient();
-    const service = createSessionService(client);
-
-    await expect(
-      service.promptSessionUntilReport(
-        { id: 'ses_1', directory: DIRECTORY },
-        'analyze',
-        llmDir,
-        'Alice',
-      ),
-    ).resolves.toBeUndefined();
-    expect(client.session.abort).not.toHaveBeenCalled();
-  });
-
-  it('aborts the session and rethrows when the prompt fails', async () => {
-    const client = stubClient({ promptError: { message: 'rate limited' } });
-    const service = createSessionService(client);
-
-    await expect(
-      service.promptSessionUntilReport(
-        { id: 'ses_1', directory: DIRECTORY },
-        'analyze',
-        llmDir,
-        'Alice',
-      ),
-    ).rejects.toThrow(/LLM session prompt failed in \/clone\/repo: rate limited/);
-    expect(client.session.abort).toHaveBeenCalledWith({
-      path: { id: 'ses_1' },
-      query: { directory: DIRECTORY },
+describe('getUsage', () => {
+  it('maps the pi session statistics onto token usage', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    lastFake().control.setTokens({
+      input: 120,
+      cacheRead: 40,
+      output: 30,
+      cacheWrite: 0,
+      total: 190,
     });
+
+    expect(service.getUsage(handle)).toEqual({ input: 120, cacheRead: 40, output: 30 });
+  });
+});
+
+describe('close', () => {
+  it('disposes every created session', async () => {
+    const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+    const fake = lastFake();
+    await service.createSession(DIRECTORY, 'title2', 'sys2');
+    const fake2 = piMock.sessions[1]!;
+
+    await service.close();
+
+    expect(fake.session.dispose).toHaveBeenCalledTimes(1);
+    expect(fake2.session.dispose).toHaveBeenCalledTimes(1);
+    // Handles are invalid after close.
+    await expect(service.promptSession(handle, 'x', 'Alice')).rejects.toThrow(
+      /no LLM session registered/,
+    );
   });
 });
 
 describe('session report files', () => {
-  let llmDir: string;
-
-  beforeEach(async () => {
-    llmDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-session-llm-'));
-  });
-
-  afterEach(async () => {
-    await rm(llmDir, { recursive: true, force: true });
-  });
-
   it('names the report file after the session', () => {
     expect(sessionReportPath('/cache/entry/llm', 'ses_123')).toBe('/cache/entry/llm/ses_123.json');
   });
 
   it('returns the validated payload when the report file exists', async () => {
-    await writeFile(path.join(llmDir, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
-    await expect(readSessionReport(llmDir, 'ses_1')).resolves.toEqual(PAYLOAD);
+    await writeFile(path.join(llmDirPath, 'ses_1.json'), JSON.stringify(PAYLOAD), 'utf8');
+    await expect(readSessionReport(llmDirPath, 'ses_1')).resolves.toEqual(PAYLOAD);
   });
 
   it('returns undefined when the report file is missing', async () => {
-    await expect(readSessionReport(llmDir, 'ses_missing')).resolves.toBeUndefined();
+    await expect(readSessionReport(llmDirPath, 'ses_missing')).resolves.toBeUndefined();
   });
 
   it('returns undefined for a malformed or invalid report file', async () => {
-    await writeFile(path.join(llmDir, 'ses_bad.json'), 'not json', 'utf8');
-    await writeFile(path.join(llmDir, 'ses_wrong.json'), JSON.stringify({ overview: 42 }), 'utf8');
-    await expect(readSessionReport(llmDir, 'ses_bad')).resolves.toBeUndefined();
-    await expect(readSessionReport(llmDir, 'ses_wrong')).resolves.toBeUndefined();
-  });
-});
-
-describe('collectSessionUsage', () => {
-  it('accumulates step-finish tokens and cost per session', async () => {
-    const stream = (async function* () {
-      yield stepEvent('ses_1', 10, 5, 0.01, 40);
-      yield textEvent('ses_1', 'ignored text part');
-      yield stepEvent('ses_1', 20, 15, 0.02, 60);
-      yield stepEvent('ses_2', 100, 50, 0.1, 200);
-    })();
-    const client = stubClient({ stream });
-
-    const collector = await collectSessionUsage(client, DIRECTORY);
-
-    await vi.waitFor(() => {
-      expect(collector.get('ses_1')).toEqual({
-        tokenUsage: { input: 30, cacheRead: 100, output: 20 },
-        estimatedCostUsd: 0.03,
-      });
-    });
-    expect(collector.get('ses_2')).toEqual({
-      tokenUsage: { input: 100, cacheRead: 200, output: 50 },
-      estimatedCostUsd: 0.1,
-    });
-    expect(collector.get('ses_unknown')).toBeUndefined();
-    collector.close();
-  });
-
-  it('returns a no-op collector when the subscription fails', async () => {
-    const client = stubClient({ subscribeThrows: true });
-
-    const collector = await collectSessionUsage(client, DIRECTORY);
-
-    expect(collector.get('ses_1')).toBeUndefined();
-    expect(() => collector.close()).not.toThrow();
+    await writeFile(path.join(llmDirPath, 'ses_bad.json'), 'not json', 'utf8');
+    await writeFile(
+      path.join(llmDirPath, 'ses_wrong.json'),
+      JSON.stringify({ overview: 42 }),
+      'utf8',
+    );
+    await expect(readSessionReport(llmDirPath, 'ses_bad')).resolves.toBeUndefined();
+    await expect(readSessionReport(llmDirPath, 'ses_wrong')).resolves.toBeUndefined();
   });
 });

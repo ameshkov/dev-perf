@@ -10,10 +10,13 @@
  * └── <sha256(url).slice(0, 16)>/
  *     ├── repo/        # the git clone
  *     ├── clone.json   # { url, clonedAt, branch, head }
- *     ├── llm/         # cached LLM analysis results
- *     └── opencode/    # generated opencode config, tool, and agent
- *         └── home/    # the spawned server's isolated home (state, logs)
+ *     └── llm/         # cached LLM analysis results
  * ```
+ *
+ * The LLM layer runs fully in-process and configures its provider and
+ * model in code, so it writes nothing beyond the `llm/` results: the
+ * logical agent home (`pi/home`) below is a path used only to isolate
+ * pi from the user's real `~/.pi` — it is never created on disk.
  */
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -105,31 +108,33 @@ export function llmDir(entryDir: string): string {
 }
 
 /**
- * Returns the generated opencode directory inside a cache entry
- * (`opencode/`): the source of the generated
- * `opencode.json` and `.opencode/tools/devperf_report.ts`, which are
- * copied into the clone before the LLM server starts.
+ * Returns the generated pi directory inside a cache entry (`pi/`): the
+ * parent of the logical agent home. Nothing is generated into it —
+ * the provider and model are registered in code and the credential
+ * store stays in memory — so the directory is never created.
  *
  * @param entryDir - The cache entry directory.
- * @returns The opencode directory path.
+ * @returns The pi directory path.
+ *
+ * @internal Exported for tests only (`cache.test.ts`); used by
+ * `piHomeDir` within the module. Not part of the public module API.
  */
-export function opencodeDir(entryDir: string): string {
-  return path.join(entryDir, 'opencode');
+export function piDir(entryDir: string): string {
+  return path.join(entryDir, 'pi');
 }
 
 /**
- * Returns the opencode server home directory inside a cache entry
- * (`opencode/home`): the isolated `HOME`/`XDG_CONFIG_HOME` passed to
- * the spawned opencode server. It is deliberately kept in the cache
- * entry (not removed after the run), so the server's own state and log
- * files persist and can be inspected after an analysis while the
- * user's real home is still never read.
+ * Returns the logical pi agent home directory inside a cache entry
+ * (`pi/home`): the `agentDir` value the session layer passes to the
+ * in-process pi agent. It only needs to differ from the user's real
+ * `~/.pi` so no global configuration is ever read — it is never
+ * created on disk, so it leaves no cache state behind.
  *
  * @param entryDir - The cache entry directory.
- * @returns The opencode home directory path.
+ * @returns The pi home directory path.
  */
-export function opencodeHomeDir(entryDir: string): string {
-  return path.join(opencodeDir(entryDir), 'home');
+export function piHomeDir(entryDir: string): string {
+  return path.join(piDir(entryDir), 'home');
 }
 
 /**

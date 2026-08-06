@@ -153,8 +153,8 @@ function deterministicMetrics(
 
 /**
  * The LLM analysis of a fixture user: a completed entry with the given
- * contributions, token usage and cost by default; a skipped entry
- * carries no usage — like a real report, where the analysis never ran.
+ * contributions and token usage by default; a skipped entry carries no
+ * usage — like a real report, where the analysis never ran.
  *
  * @param llmEnabled - Whether the report has LLM analysis.
  * @param llm - LLM overrides.
@@ -169,12 +169,10 @@ function fixtureLlm(llmEnabled: boolean, llm: Partial<LlmAnalysis> = {}): LlmAna
     overview: `Overview of the work in the period.`,
     contributions: [fixtureContribution()],
     tokenUsage: { input: 100, cacheRead: 50, output: 20 },
-    estimatedCostUsd: 0.01,
     ...llm,
   };
   if (merged.status !== 'completed') {
     delete merged.tokenUsage;
-    delete merged.estimatedCostUsd;
   }
   return merged;
 }

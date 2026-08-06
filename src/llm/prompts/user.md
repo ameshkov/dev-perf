@@ -1,9 +1,8 @@
 # Contribution analysis
 
-You are analyzing the git contributions of {{name}} ({{email}}) in
-the repository at {{repo}} for dev-perf, a developer-contribution
-analyzer. The analysis covers commits whose author date lies in the
-range {{since}} to {{until}} (UTC).
+Analyze the git contributions of {{name}} ({{email}}) in the
+repository at {{repo}}. The analysis covers commits whose author date
+lies in the range {{since}} to {{until}} (UTC).
 
 ## Repository context
 

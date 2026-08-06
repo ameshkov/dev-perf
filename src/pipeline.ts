@@ -8,10 +8,10 @@
  * label. With `--unit`, the analyzed range is split into UTC-aligned
  * periods and the report carries one full per-repository report per
  * period. LLM failures are retried (`llmRetries`, each attempt with a
- * fully restarted server) and remain fatal when every attempt fails:
+ * fresh in-process runtime) and remain fatal when every attempt fails:
  * the error propagates and the report is not written. A failing
  * repository does not abort its siblings — every repository runs to
- * completion (each shuts its opencode server down in `finally`), the
+ * completion (each disposes its LLM runtime in `finally`), the
  * first failure is rethrown, and any additional failures are logged.
  */
 import type { CliOptions } from './config.js';
@@ -48,8 +48,8 @@ interface RunAnalysis {
  * clone for each repository, resolves the analyzed author-date range
  * (once per run — date parsing is repo-independent), splits it into
  * periods when `--unit` is set, extracts commits and groups them by
- * author once per repo, runs the LLM phase when enabled (one server
- * per repo shared by its periods, per-period analyses merged into the
+ * author once per repo, runs the LLM phase when enabled (one in-process
+ * runtime per repo shared by its periods, per-period analyses merged into the
  * report), assembles the report, and writes it as pretty JSON to
  * stdout or the `--output` file. Duplicate repository specs are
  * analyzed once (their entries are identical anyway, and parallel
@@ -69,7 +69,7 @@ interface RunAnalysis {
  * @returns The assembled trend report document.
  * @throws {GitError} When a clone or a git log fails, or when a bound
  * date cannot be parsed.
- * @throws {Error} When the LLM phase fails (server start, a prompt, or
+ * @throws {Error} When the LLM phase fails (runtime creation, a prompt, or
  * the `devperf_report` enforcement loop); the message names the repo —
  * and the period when `--unit` is set — plus the underlying cause, and
  * the report is not written.
@@ -114,7 +114,7 @@ export async function runPipeline(options: CliOptions): Promise<TrendReport> {
  * periods — in parallel up to `--parallel`. Returns the run range, the
  * period bounds, and the assembled repository entries grouped by
  * period (one entry per repo per period). Every repository runs to
- * completion (each one's `finally` shuts its opencode server down);
+ * completion (each one's `finally` disposes its LLM runtime);
  * the first failure is rethrown after the pool settled, and any
  * additional failures are logged as warnings.
  *
@@ -167,8 +167,8 @@ async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<Ru
 /**
  * Runs the parallel analysis of all repositories with the run's
  * resolved range and periods: every repository — the first one hits
- * the cache — runs to completion, so each task's `finally` shuts its
- * opencode server down; the first failure is rethrown once the pool
+ * the cache — runs to completion, so each task's `finally` disposes its
+ * LLM runtime; the first failure is rethrown once the pool
  * settled, with any additional failures logged as warnings. Returns
  * the assembled entries grouped by period (one entry per repo per
  * period).

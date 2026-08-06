@@ -217,7 +217,7 @@ describe('buildChartData', () => {
     expect(bob?.repos).toEqual([{ repo: 'repo-a', commits: 5 }]);
   });
 
-  it('computes totals, cost rows and the bus factor', () => {
+  it('computes totals, usage rows and the bus factor', () => {
     const data = fixtureData();
 
     expect(data.totals.commits).toBe(10);
@@ -225,21 +225,19 @@ describe('buildChartData', () => {
     expect(data.totals.weightedPoints).toBe(17);
     expect(data.totals.netLines).toBe(70);
     expect(data.totals.activeUsers).toBe(2);
-    expect(data.totals.costUsd).toBeCloseTo(0.02);
     expect(data.totals.inputTokens).toBe(200);
     expect(data.totals.cacheReadTokens).toBe(100);
     expect(data.totals.outputTokens).toBe(40);
     // Alice has 5 commits of 10 → 50% bus factor, single user.
     expect(data.busFactor).toEqual({ users: ['Alice'], commitShare: 0.5 });
-    // Bob was skipped, so only Alice has LLM cost; her usage is the
-    // fixture default (100 in / 50 cached in / 20 out, $0.01) per period.
-    expect(data.cost).toEqual([
+    // Bob was skipped, so only Alice has a usage row; her usage is the
+    // fixture default (100 in / 50 cached in / 20 out) per period.
+    expect(data.usage).toEqual([
       {
         name: 'Alice',
         inputTokens: 200,
         cacheReadTokens: 100,
         outputTokens: 40,
-        costUsd: 0.02,
       },
     ]);
   });

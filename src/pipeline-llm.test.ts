@@ -1,42 +1,53 @@
 /**
  * Tests for the LLM phase of the pipeline: with LLM
- * analysis enabled, the pipeline starts one opencode server per
- * repository, drives the real session service and orchestration, and
- * merges the completed per-user analyses into the report; LLM failures
- * fail fast with a clear message and no report is written.
- * `startServer` is stubbed at the module boundary — the real
- * server lifecycle is covered by `server.test.ts` and the
- * `DEV_PERF_SMOKE` test — and the stub client stands in for the
- * generated `devperf_report` tool by writing the session's report file.
+ * analysis enabled, the pipeline creates one in-process pi runtime per
+ * repository, drives the session service and orchestration, and merges
+ * the completed per-user analyses into the report; LLM failures fail
+ * fast with a clear message and no report is written.
+ * `createLlmRuntime` and `createSessionService` are stubbed at the
+ * module boundary — the real runtime and session layers are covered by
+ * `runtime.test.ts` and `session.test.ts` — and the stub service
+ * stands in for the model by returning the reported payload.
  */
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Event, OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import type { CliOptions } from './config.js';
-import { startServer } from './llm/server.js';
-import type { LlmServerConfig } from './llm/server.js';
+import { createLlmRuntime } from './llm/runtime.js';
+import type { LlmRuntimeConfig } from './llm/runtime.js';
+import { createSessionService } from './llm/session.js';
+import type { SessionHandle, SessionService } from './llm/session.js';
 import { runPipeline } from './pipeline.js';
 import { entryHash } from './repo/cache.js';
-import type { LlmToolPayload } from './report/index.js';
+import type { LlmToolPayload, TokenUsage } from './report/index.js';
 import { writeJsonFile } from './util/json.js';
 
-vi.mock('./llm/server.js', () => ({
-  ANALYST_AGENT_ID: 'devperf-analyst',
-  startServer: vi.fn(),
+vi.mock('./llm/runtime.js', () => ({
+  createLlmRuntime: vi.fn(),
 }));
 
-/** Behavior of the stubbed opencode client. */
+// The session layer is replaced by a stub service: the real one talks
+// to pi, which the pipeline tests do not exercise. `sessionReportPath`
+// is kept so `analyze.js` can remove the orientation report file.
+vi.mock('./llm/session.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./llm/session.js')>();
+  return {
+    ...actual,
+    createSessionService: vi.fn(),
+  };
+});
+
+/** Behavior of the stubbed model/session service. */
 interface StubState {
   /** Whether a prompt makes the model "call" `devperf_report`. */
   callTool: boolean;
-  /** Payload the simulated tool call writes to the session's report file. */
+  /** Payload the simulated tool call reports. */
   payload: LlmToolPayload;
   /** Assistant text returned for every prompt. */
   replyText: string;
-  /** When set, the user's analysis prompt rejects with this error. */
+  /** When set, the analysis prompt rejects with this error. */
   promptError?: Error;
   /**
    * How many analysis prompts reject before succeeding (tests the
@@ -65,79 +76,48 @@ const PAYLOAD: LlmToolPayload = {
   ],
 };
 
-/** An event stream with no usage events (zero usage for every session). */
-async function* emptyStream(): AsyncGenerator<Event> {}
+/** A stub `SessionService` simulating the in-process pi layer. */
+class StubSessions implements SessionService {
+  private counter = 0;
+  constructor(private readonly state: StubState) {}
 
-/**
- * Builds a minimal opencode client stub (the v1 API surface the
- * session layer uses) whose prompts write the session's report file —
- * the same effect the generated `devperf_report` tool has on a real
- * server. The report file lands in `<entry>/llm/<sessionID>.json`,
- * where the enforcement loop reads it.
- *
- * @param state - Whether and what the simulated model reports.
- * @returns The stubbed client.
- */
-function stubClient(state: StubState): OpencodeClient {
-  let counter = 0;
-  return {
-    auth: { set: vi.fn(async () => ({ data: undefined, error: undefined })) },
-    session: {
-      create: vi.fn(async (args: { query: { directory: string } }) => ({
-        data: {
-          id: `ses_${++counter}`,
-          directory: args.query.directory,
-          title: 't',
-          version: '1',
-        },
-        error: undefined,
-      })),
-      prompt: vi.fn(
-        async (args: {
-          path: { id: string };
-          query: { directory: string };
-          body: {
-            noReply?: boolean;
-            parts?: Array<{ type: string; text: string }>;
-          };
-        }) => {
-          // Reject only on the user's analysis prompt (it is the only
-          // one that carries the user's email); orientation and the
-          // noReply context injection keep working. With
-          // `promptFailures` set, that many analysis prompts reject
-          // before succeeding (retry tests); without it, every
-          // analysis prompt with a `promptError` rejects.
-          const analysisPrompt = args.body.parts?.some((part) =>
-            part.text.includes('alice@example.com'),
-          );
-          if (analysisPrompt === true && state.promptError !== undefined) {
-            const failures = state.promptFailures;
-            if (failures === undefined || failures > 0) {
-              if (failures !== undefined) {
-                state.promptFailures = failures - 1;
-              }
-              throw state.promptError;
-            }
-          }
-          if (args.body.noReply !== true && state.callTool) {
-            const llmDir = path.join(path.dirname(args.query.directory), 'llm');
-            await writeJsonFile(path.join(llmDir, `${args.path.id}.json`), state.payload);
-          }
-          return {
-            data: {
-              info: { id: `msg_${args.path.id}`, sessionID: args.path.id, role: 'assistant' },
-              parts: [{ type: 'text', text: state.replyText }],
-            },
-            error: undefined,
-          };
-        },
-      ),
-      abort: vi.fn(async () => ({ data: undefined, error: undefined })),
-    },
-    event: {
-      subscribe: vi.fn(async () => ({ stream: emptyStream() })),
-    },
-  } as unknown as OpencodeClient;
+  async createSession(directory: string, _title: string): Promise<SessionHandle> {
+    return { id: `ses_${++this.counter}`, directory };
+  }
+
+  async promptSession(_handle: SessionHandle, _text: string, _label: string): Promise<string> {
+    return this.state.replyText;
+  }
+
+  async promptSessionUntilReport(
+    handle: SessionHandle,
+    _text: string,
+    llmDir: string,
+    _label: string,
+  ): Promise<LlmToolPayload | undefined> {
+    if (this.state.promptError !== undefined) {
+      const failures = this.state.promptFailures;
+      if (failures === undefined || failures > 0) {
+        if (failures !== undefined) {
+          this.state.promptFailures = failures - 1;
+        }
+        throw this.state.promptError;
+      }
+    }
+    if (this.state.callTool) {
+      await writeJsonFile(path.join(llmDir, `${handle.id}.json`), this.state.payload);
+      return this.state.payload;
+    }
+    return undefined;
+  }
+
+  getUsage(_handle: SessionHandle): TokenUsage {
+    return { input: 10, cacheRead: 7, output: 5 };
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 /** Defaults for an LLM-enabled pipeline run. */
@@ -156,21 +136,32 @@ function options(overrides: Partial<CliOptions> = {}): CliOptions {
   };
 }
 
-/** Installs the `startServer` stub and returns its `close` spy. */
-function stubServer(state: StubState): { close: ReturnType<typeof vi.fn> } {
-  const close = vi.fn(async () => {});
-  vi.mocked(startServer).mockImplementation(async () => ({
-    client: stubClient(state),
-    url: 'http://127.0.0.1:4096',
-    close,
+/**
+ * Installs the `createLlmRuntime` and `createSessionService` stubs:
+ * every runtime resolves, and every service is a fresh stub bound to
+ * the shared `state`, so retry attempts observe the same failure
+ * counter.
+ *
+ * @param state - Behavior of the stubbed model/service.
+ * @returns The runtime dispose spy.
+ */
+function stubRuntime(state: StubState): { dispose: ReturnType<typeof vi.fn> } {
+  const dispose = vi.fn(async () => {});
+  vi.mocked(createLlmRuntime).mockImplementation(async () => ({
+    model: { id: 'gpt-4.1', provider: 'devperf' } as never,
+    modelRuntime: {} as never,
+    agentDir: '',
+    dispose,
   }));
-  return { close };
+  vi.mocked(createSessionService).mockImplementation(() => new StubSessions(state));
+  return { dispose };
 }
 
 let cacheDir: string;
 
 beforeEach(async () => {
-  vi.mocked(startServer).mockReset();
+  vi.mocked(createLlmRuntime).mockReset();
+  vi.mocked(createSessionService).mockReset();
   cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-llm-cache-'));
 });
 
@@ -179,7 +170,7 @@ afterEach(async () => {
 });
 
 describe('runPipeline with LLM analysis', () => {
-  it('starts one server, analyzes each user, and merges completed analyses into the report', async () => {
+  it('creates one runtime, analyzes each user, and merges completed analyses into the report', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -194,7 +185,7 @@ describe('runPipeline with LLM analysis', () => {
         files: [{ path: 'README.md', content: 'hello\nworld\n' }],
       },
     ]);
-    const { close } = stubServer({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
+    const { dispose } = stubRuntime({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
     try {
       const report = await runPipeline(
         options({
@@ -205,18 +196,18 @@ describe('runPipeline with LLM analysis', () => {
         }),
       );
 
-      // One server for the repo, started with the provider config, and
-      // shut down before the report is written.
-      expect(startServer).toHaveBeenCalledTimes(1);
-      const config = vi.mocked(startServer).mock.calls[0]?.[1];
+      // One runtime for the repo, created with the provider config, and
+      // disposed before the report is written.
+      expect(createLlmRuntime).toHaveBeenCalledTimes(1);
+      const config = vi.mocked(createLlmRuntime).mock.calls[0]?.[1];
       expect(config).toMatchObject({
         providerUrl: 'https://llm.example.com/v1',
         model: 'gpt-4.1',
         apiKey: 'sk-test-123',
         limitContext: 262144,
         limitOutput: 65536,
-      } satisfies Partial<LlmServerConfig>);
-      expect(close).toHaveBeenCalledTimes(1);
+      } satisfies Partial<LlmRuntimeConfig>);
+      expect(dispose).toHaveBeenCalledTimes(1);
 
       expect(report.parameters).toMatchObject({ llmEnabled: true, model: 'gpt-4.1' });
       const users = report.periods[0].repositories[0].users;
@@ -227,9 +218,7 @@ describe('runPipeline with LLM analysis', () => {
           status: 'completed',
           overview: PAYLOAD.overview,
           contributions: PAYLOAD.contributions,
-          // The stub event stream carries no usage events.
-          tokenUsage: { input: 0, cacheRead: 0, output: 0 },
-          estimatedCostUsd: 0,
+          tokenUsage: { input: 10, cacheRead: 7, output: 5 },
         });
       }
     } finally {
@@ -237,7 +226,7 @@ describe('runPipeline with LLM analysis', () => {
     }
   });
 
-  it('fails fast when a session never calls the tool, closing the server and writing no report', async () => {
+  it('fails fast when a session never calls the tool, disposing the runtime and writing no report', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -247,14 +236,14 @@ describe('runPipeline with LLM analysis', () => {
       },
     ]);
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const { close } = stubServer({ callTool: false, payload: PAYLOAD, replyText: 'ok' });
+    const { dispose } = stubRuntime({ callTool: false, payload: PAYLOAD, replyText: 'ok' });
     try {
       const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 0 });
       await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .*: LLM analysis for Alice did not call devperf_report/,
       );
 
-      expect(close).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
       // The startup block goes to stderr through the logger; a failed
       // run writes no report, so stdout stays untouched.
       expect(stdout).not.toHaveBeenCalled();
@@ -279,7 +268,7 @@ describe('runPipeline with LLM analysis', () => {
     const promptError = new TypeError('fetch failed', {
       cause: new AggregateError([new TypeError('connect ECONNREFUSED 127.0.0.1:50664')]),
     });
-    const { close } = stubServer({
+    const { dispose } = stubRuntime({
       callTool: true,
       payload: PAYLOAD,
       replyText: 'ok',
@@ -291,9 +280,7 @@ describe('runPipeline with LLM analysis', () => {
         /LLM analysis failed for .*: analysis of Alice <alice@example.com> \(session ses_\d+\) failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:50664/,
       );
 
-      expect(close).toHaveBeenCalledTimes(1);
-      // The startup block goes to stderr through the logger; a failed
-      // run writes no report, so stdout stays untouched.
+      expect(dispose).toHaveBeenCalledTimes(1);
       expect(stdout).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();
@@ -301,7 +288,7 @@ describe('runPipeline with LLM analysis', () => {
     }
   });
 
-  it('fails fast with a clear message when the server cannot start', async () => {
+  it('fails fast with a clear message when the runtime cannot be created', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -310,17 +297,17 @@ describe('runPipeline with LLM analysis', () => {
         files: [{ path: 'a.txt', content: 'a\n' }],
       },
     ]);
-    vi.mocked(startServer).mockRejectedValue(new Error('opencode binary missing'));
+    vi.mocked(createLlmRuntime).mockRejectedValue(new Error('pi runtime unavailable'));
     try {
       await expect(
         runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
-      ).rejects.toThrow(/LLM analysis failed for .*: opencode binary missing/);
+      ).rejects.toThrow(/LLM analysis failed for .*: pi runtime unavailable/);
     } finally {
       await removeFixtureRepo(repo);
     }
   });
 
-  it('starts no server when LLM analysis is disabled', async () => {
+  it('creates no runtime when LLM analysis is disabled', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -332,7 +319,7 @@ describe('runPipeline with LLM analysis', () => {
     try {
       const report = await runPipeline(options({ repos: [repo.url], cacheDir, llm: false }));
 
-      expect(startServer).not.toHaveBeenCalled();
+      expect(createLlmRuntime).not.toHaveBeenCalled();
       expect(report.parameters.llmEnabled).toBe(false);
       expect(report.periods[0].repositories[0].users[0].llm.status).toBe('skipped');
     } finally {
@@ -340,7 +327,7 @@ describe('runPipeline with LLM analysis', () => {
     }
   });
 
-  it('starts no server for a repository without authors in the range', async () => {
+  it('creates no runtime for a repository without authors in the range', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -354,7 +341,7 @@ describe('runPipeline with LLM analysis', () => {
         options({ repos: [repo.url], cacheDir, since: '2026-01-01T00:00:00Z' }),
       );
 
-      expect(startServer).not.toHaveBeenCalled();
+      expect(createLlmRuntime).not.toHaveBeenCalled();
       expect(report.periods[0].repositories[0].users).toEqual([]);
     } finally {
       await removeFixtureRepo(repo);
@@ -376,7 +363,7 @@ describe('runPipeline with LLM analysis', () => {
         files: [{ path: 'src/b.ts', content: 'b\n' }],
       },
     ]);
-    const { close } = stubServer({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
+    const { dispose } = stubRuntime({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
     try {
       const report = await runPipeline(
         options({
@@ -388,9 +375,9 @@ describe('runPipeline with LLM analysis', () => {
         }),
       );
 
-      // One server for the repo, shared by all of its periods.
-      expect(startServer).toHaveBeenCalledTimes(1);
-      expect(close).toHaveBeenCalledTimes(1);
+      // One runtime for the repo, shared by all of its periods.
+      expect(createLlmRuntime).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
 
       const periods = report.periods;
       expect(periods).toHaveLength(3);
@@ -430,7 +417,7 @@ describe('runPipeline with LLM analysis', () => {
     }
   });
 
-  it('retries a failed analysis with a fully restarted server and succeeds', async () => {
+  it('retries a failed analysis with a fresh runtime and succeeds', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -439,7 +426,7 @@ describe('runPipeline with LLM analysis', () => {
         files: [{ path: 'a.txt', content: 'a\n' }],
       },
     ]);
-    const { close } = stubServer({
+    const { dispose } = stubRuntime({
       callTool: true,
       payload: PAYLOAD,
       replyText: 'ok',
@@ -451,20 +438,20 @@ describe('runPipeline with LLM analysis', () => {
 
       // Two attempts: the first analysis prompt fails, the retry
       // succeeds and the report is written with the completed analysis.
-      expect(startServer).toHaveBeenCalledTimes(2);
-      expect(close).toHaveBeenCalledTimes(2);
-      // The server of the failed attempt is fully stopped before the
+      expect(createLlmRuntime).toHaveBeenCalledTimes(2);
+      expect(dispose).toHaveBeenCalledTimes(2);
+      // The runtime of the failed attempt is fully disposed before the
       // retry starts a fresh one.
-      const startOrder = vi.mocked(startServer).mock.invocationCallOrder;
-      const closeOrder = close.mock.invocationCallOrder;
-      expect(closeOrder[0]).toBeLessThan(startOrder[1]!);
+      const startOrder = vi.mocked(createLlmRuntime).mock.invocationCallOrder;
+      const disposeOrder = dispose.mock.invocationCallOrder;
+      expect(disposeOrder[0]).toBeLessThan(startOrder[1]!);
       expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
     } finally {
       await removeFixtureRepo(repo);
     }
   });
 
-  it('gives up after the configured retries, closing each server', async () => {
+  it('gives up after the configured retries, disposing each runtime', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -474,7 +461,7 @@ describe('runPipeline with LLM analysis', () => {
       },
     ]);
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const { close } = stubServer({
+    const { dispose } = stubRuntime({
       callTool: true,
       payload: PAYLOAD,
       replyText: 'ok',
@@ -487,8 +474,8 @@ describe('runPipeline with LLM analysis', () => {
         /LLM analysis failed for .* after 2 attempts: .*analysis of Alice <alice@example.com>.*failed: fetch failed/,
       );
 
-      expect(startServer).toHaveBeenCalledTimes(2);
-      expect(close).toHaveBeenCalledTimes(2);
+      expect(createLlmRuntime).toHaveBeenCalledTimes(2);
+      expect(dispose).toHaveBeenCalledTimes(2);
       // The startup block goes to stderr through the logger; a failed
       // run writes no report, so stdout stays untouched.
       expect(stdout).not.toHaveBeenCalled();
@@ -498,7 +485,7 @@ describe('runPipeline with LLM analysis', () => {
     }
   });
 
-  it('retries when the server cannot start', async () => {
+  it('retries when the runtime cannot be created', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -507,14 +494,14 @@ describe('runPipeline with LLM analysis', () => {
         files: [{ path: 'a.txt', content: 'a\n' }],
       },
     ]);
-    vi.mocked(startServer).mockRejectedValueOnce(new Error('opencode binary missing'));
-    const { close } = stubServer({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
+    vi.mocked(createLlmRuntime).mockRejectedValueOnce(new Error('pi runtime unavailable'));
+    const { dispose } = stubRuntime({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
     try {
       const report = await runPipeline(options({ repos: [repo.url], cacheDir }));
 
-      expect(startServer).toHaveBeenCalledTimes(2);
-      // Only the second (successful) server needs closing.
-      expect(close).toHaveBeenCalledTimes(1);
+      expect(createLlmRuntime).toHaveBeenCalledTimes(2);
+      // Only the second (successful) runtime needs disposing.
+      expect(dispose).toHaveBeenCalledTimes(1);
       expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
     } finally {
       await removeFixtureRepo(repo);

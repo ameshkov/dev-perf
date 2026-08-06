@@ -5,8 +5,9 @@ repositories and produces a JSON report of per-user metrics. The
 analysis is two-layered: deterministic metrics straight from git
 history (commits, lines, files, churn, languages) plus an LLM-based
 agentic layer that assesses what cannot be counted (work types,
-complexity, impact areas, quality signals). The LLM layer uses
-opencode as a library (`@opencode-ai/sdk`).
+complexity, impact areas, quality signals). The LLM layer runs fully
+in-process via the `@earendil-works/pi-coding-agent` library (no
+spawned server).
 
 ## Table of Contents
 
@@ -34,11 +35,11 @@ user**:
 2. **Deterministic analysis** — commits, added/removed lines, files
    touched, churn, active days, and per-language contribution sizes,
    counted straight from git history.
-3. **LLM analysis** (optional, `--no-llm` to skip) — an opencode agent
-   with read access to the repository inspects the actual commits and
-   diffs and assesses the dimensions that cannot be counted. Provider,
-   model, and API key are always passed explicitly; the user's global
-   opencode configuration is never read.
+3. **LLM analysis** (optional, `--no-llm` to skip) — an in-process pi
+   agent with read access to the repository inspects the actual
+   commits and diffs and assesses the dimensions that cannot be
+   counted. Provider, model, and API key are always passed explicitly;
+   the user's global configuration is never read.
 4. **Assembly** — the two layers are merged into a single JSON report,
    per repository and per user.
 5. **Compile** (optional) — `dev-perf compile <report>` turns the JSON
@@ -48,12 +49,12 @@ user**:
 
 Both analysis layers are implemented: the deterministic path —
 `dev-perf report --no-llm <repo>` clones the repository and produces
-the JSON report — and the LLM agentic layer, which starts an opencode
-server per repository, generates the `devperf_report` tool, drives
-per-user sessions and prompts, enforces the report tool call, and
-caches LLM results. The `compile` command renders the JSON report into
-a markdown report with charts. The full design lives in
-[docs/design.md](./docs/design.md).
+the JSON report — and the LLM agentic layer, which creates one
+in-process pi runtime per repository, registers the `devperf_report`
+tool in code, drives per-user sessions and prompts, enforces the
+report tool call, and caches LLM results. The `compile` command
+renders the JSON report into a markdown report with charts. The full
+design lives in [docs/design.md](./docs/design.md).
 
 ## Technical Context
 
@@ -84,7 +85,7 @@ dev-perf/
 │   ├── version.ts             # Application version from package.json
 │   ├── repo/                  # Clone/cache management
 │   ├── deterministic/         # Deterministic analysis (commits, identity, metrics, languages)
-│   ├── llm/                   # LLM agentic layer (server, tools, prompts, sessions, orchestration)
+│   ├── llm/                   # LLM agentic layer (runtime, tools, prompts, sessions, orchestration)
 │   ├── compile/               # Compile layer: JSON report → markdown report with charts
 │   ├── trend/                 # Time-based period splitting
 │   ├── util/                  # Shared helpers
@@ -94,9 +95,17 @@ dev-perf/
 ├── scripts/                   # Build-time asset copying and the knip exclude bootstrap
 ├── docs/
 │   └── design.md              # Full design document
+├── Dockerfile                 # Multi-stage image: Node.js + git + bash runtime
 └── Root config: package.json, tsconfig*.json, vitest.config.ts,
-    oxlint.config.ts, knip.config.ts, .env.example
+    oxlint.config.ts, knip.config.ts, .env.example, .dockerignore
 ```
+
+Publishing is split across two workflows: `.github/workflows/ci.yml`
+runs the quality gate and publishes to npm on `v*` tags;
+`.github/workflows/docker.yml` builds and pushes the multi-arch Docker
+image (`linux/amd64`, `linux/arm64`) to
+`ghcr.io/ameshkov/dev-perf` on the same tags and on every `master`
+push.
 
 Each `src/` module is self-contained and exposes its public API through
 a barrel `index.ts`; tests are co-located as `*.test.ts`. When the
@@ -184,7 +193,8 @@ Universal design principles this codebase follows:
   (`src/run-config.ts`), with the API key masked. Long-running
   operations log their start as well as their outcome: a verbose
   `info` line right before the work (e.g. `cloning "repo"`, `reading
-  commits`, `LLM server: starting ...`, `compile: rendering N charts`)
+  commits`, `LLM runtime: creating the in-process pi runtime ...`,
+  `compile: rendering N charts`)
   paired with the existing outcome line, so a long wait stays visible
   as what dev-perf is doing right now instead of a silent gap. Clone
   lines name the cache entry directory (`.dev-cache/<hash>`), so a
@@ -192,24 +202,30 @@ Universal design principles this codebase follows:
   message strings are formatted per the **Log string formatting**
   guideline below.
 - **Guaranteed CLI exit** — the CLI must terminate once the report is
-  written: the entry point forces a clean exit (waiting for stdout to
-  flush first) instead of relying on the event loop draining, because
-  the opencode server's child process and its stdio pipes can outlive
-  the pipeline. Server teardown additionally waits (bounded) for the
-  process to exit and then force-kills the listener with its whole
-  process tree when it ignores SIGTERM (escalation is unconditional —
-  a no-op when the server already exited), so a stuck server can
-  neither hang the CLI nor leak a process.
+  written. The LLM layer runs fully in-process, so nothing keeps the
+  event loop alive after the pipeline settles: the entry point lets
+  the process exit naturally on success and sets a non-zero exit code
+  on failure. No spawned subprocess, force-kill, or forced exit is
+  needed — a stuck pi session is aborted by the session layer, and a
+  stuck provider call surfaces as an error that ends the run.
 - **Keep It Boring** — prefer well-understood patterns over clever or
   novel solutions.
 - **Prompts as template files** — LLM prompt text lives in dedicated
   markdown template files (this project: `src/llm/prompts/*.md`),
   never inline in source code; code only renders the templates with
-  values. LLM-driven analysis runs through a dedicated agent defined
-  by an opencode agent file (`src/llm/agents/devperf-analyst.md` —
-  YAML frontmatter with description, mode, and permissions, prompt as
-  the body) that is copied into the analyzed clone's
-  `.opencode/agents/`, where the opencode server discovers it.
+  values. LLM-driven analysis runs through per-session system prompts
+  (`orientation-system.md`, `user-system.md`) injected into the pi
+  session via `DefaultResourceLoader.systemPrompt`, and per-session
+  user prompts (`orientation.md`, `user.md`) rendered by
+  `src/llm/prompts.ts`; the analysis agent is defined entirely by
+  these templates plus the `devperf_report` custom tool. The session
+  tool allowlist (`SESSION_TOOLS`) includes pi's built-in `bash`,
+  which is **not** hardened against a hostile repository — it can run
+  arbitrary shell commands in the clone and is only kept to read-only
+  use through the system-prompt text. Because it cannot be reliably
+  shielded, LLM analysis is expected to run in the published Docker
+  container, which sandboxes the analysis away from the host (see the
+  README).
 
 The easiest way to achieve these principles is **layered architecture**.
 This project's layers, from top to bottom:
@@ -241,7 +257,7 @@ Utilities (util/)
 
 The analysis pipeline receives everything it needs through explicit
 parameters (repos, date range, cache dir, provider configuration) —
-never through globals or the user's global opencode configuration.
+never through globals or the user's global configuration.
 The report schema (zod) is shared between the CLI, the deterministic
 layer, and the LLM structured-output tool schema so nothing can drift.
 
@@ -428,7 +444,7 @@ Configuration and documentation MUST stay synchronized with code:
   environment (`resolveRawOptions`) and `src/compile/options.ts` the
   compile environment (`resolveCompileOptions`) before validating the
   options. The user's
-  global opencode configuration is NEVER read — provider, model, and
+  global configuration is NEVER read — provider, model, and
   API key are always passed explicitly via
   `--provider-url`/`DEV_PERF_PROVIDER_URL`,
   `--model`/`DEV_PERF_MODEL`, and `--api-key`/`DEV_PERF_API_KEY`.

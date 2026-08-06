@@ -14,6 +14,16 @@
          alt="MCP Compress Router" width="600"/>
 </p>
 
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Usage](#usage)
+    - [Building a report](#building-a-report)
+    - [Compiling a markdown report with charts](#compiling-a-markdown-report-with-charts)
+    - [Docker](#docker)
+- [Configuration](#configuration)
+- [Additional Resources](#additional-resources)
+
 ## What it does
 
 Given one or more repositories (any git URL) and a date range, `dev-perf`:
@@ -23,11 +33,12 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 2. **Counts deterministically** — straight from git history — commits, lines
    added/removed, files touched, churn, active days, and per-language contribution
    sizes (cloc-style counting applied to contributions).
-3. **Analyzes with an LLM agent** — using [opencode](https://opencode.ai) as a
-   library (`@opencode-ai/sdk`). For each contributor, an agent with read access to
-   the repository inspects the actual commits and diffs and assesses the dimensions
-   that cannot be counted: the type of work (feature, bug fix, refactoring, docs…),
-   complexity, areas of impact, and quality signals.
+3. **Analyzes with an LLM agent** — fully in-process via
+   [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi)
+   (no spawned server). For each contributor, an agent with read access to
+   the repository inspects the actual commits and diffs and assesses the
+   dimensions that cannot be counted: the type of work (feature, bug fix,
+   refactoring, docs…), complexity, areas of impact, and quality signals.
 4. **Merges** the deterministic and LLM results into a single JSON report, per
    repository and per user.
 
@@ -37,6 +48,8 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 `compile` renders it into a markdown report with charts, and `version`
 prints the application version (same as `--version`/`-V`). Running
 `dev-perf` without a command prints the command list.
+
+### Building a report
 
 ```text
 dev-perf report [options] [repo...]
@@ -64,7 +77,7 @@ Options:
   --limit-context <n>    Max context tokens for LLM analysis (default: 262144)
   --limit-output <n>     Max output tokens for LLM analysis (default: 65536)
   --llm-retries <n>      Retry a failed LLM analysis up to <n> more times,
-                         restarting the opencode server between attempts
+                         recreating the LLM runtime between attempts
                          (default: 2)
   --parallel <n>         Analyze up to <n> repositories in parallel
                          (default: 1)
@@ -79,11 +92,21 @@ the beginning of the `until` day, so `--since 2026-01-01 --until 2026-03-01`
 covers exactly two months. Bounds with an explicit time keep that time.
 
 `--model`, `--provider-url` and `--api-key` are required for the LLM analysis.
-`dev-perf` does not read your global opencode configuration — provider, model and
+`dev-perf` does not read your global configuration — provider, model and
 API key are always specified explicitly. `--limit-context` and `--limit-output`
 optionally cap the model window (defaults: 256k context / 64k output tokens).
-The `opencode` CLI must be installed and on `PATH` (the analysis runs opencode
-as a library, scoped to each cloned repository).
+The LLM layer runs fully in-process via the
+`@earendil-works/pi-coding-agent` library — no external LLM binary is needed.
+
+*Security*: the analysis agent gets a `bash` tool that can execute commands
+in the cloned repository. It is *not* hardened against a hostile repository
+— the prompt only instructs the agent to use it for read-only inspection, and
+git's hooks, aliases, and config-driven execution cannot be reliably
+defended against, so a repository under analysis must be treated as
+untrusted. To sandbox the analysis away from the host, run the LLM analysis
+in the published Docker container instead of on your machine
+(see [Docker](#docker)); the container starts fresh each run and isolates
+the cloned repositories from your host filesystem.
 
 LLM analysis results are cached in the cache directory
 (`<tmpdir>/.dev-cache/<hash>/llm/`), keyed by repo, user, date range, model and
@@ -91,24 +114,21 @@ limits — a rerun with the same parameters reuses them and makes no new calls.
 `--refresh` forces a re-clone and invalidates the cached LLM results.
 
 A failed LLM analysis is retried automatically instead of failing the run:
-`--llm-retries <n>` (default 2) restarts the failed repository's opencode
-server — fully stopped, and force-killed with its whole process tree when it
-ignores SIGTERM — and re-runs the analysis with a fresh server, reusing the
+`--llm-retries <n>` (default 2) recreates the failed repository's in-process
+LLM runtime and re-runs the analysis with the fresh runtime, reusing the
 already-cached per-user results so only the failed sessions run again.
 `--llm-retries 0` fails fast on the first failure.
 
 Multiple repositories are analyzed sequentially by default.
 `--parallel <n>` analyzes up to `n` repositories at once — with LLM
-analysis enabled this runs up to `n` opencode servers concurrently
-(bounded by `--parallel`; server startup is serialized so concurrent
-servers never share the wrong clone or the user's global opencode
-configuration). The analyzed range is resolved once from the first
+analysis enabled this runs up to `n` in-process runtimes concurrently
+(bounded by `--parallel`; nothing is spawned, so no shared global
+configuration can leak in). The analyzed range is resolved once from the first
 clone before the parallel phase. Duplicate repository specs are
 analyzed once, with a warning; the report lists each repository once.
 
-Cost visibility: the report records, per user, the `tokenUsage` (input/output
-tokens) and the `estimatedCostUsd` from the provider's event stream, so runaway
-costs are visible in the report itself.
+Token usage: the report records, per user, the `tokenUsage` (input,
+prompt-cache reads, and output tokens) reported by the provider.
 
 stdout carries the report JSON only. Every `report` run starts by
 logging the application version and the full resolved configuration to
@@ -121,8 +141,8 @@ and even when the run fails before the report is written. Every
 
 `--verbose` additionally prints progress to stderr — the start of
 long-running operations so it stays clear what dev-perf is doing right
-now (cloning a repository, reading the commit history, starting the
-opencode server, rendering compile charts), cache reuse vs a fresh
+now (cloning a repository, reading the commit history, creating the
+LLM runtime, rendering compile charts), cache reuse vs a fresh
 clone (with duration), the resolved author-date range, and per-repo
 commit counts. Clone lines name the cache entry directory
 (`.dev-cache/<hash>`), so a repository can be matched to its cache
@@ -161,7 +181,8 @@ Deterministic stats only (no LLM analysis — no provider configuration
 needed):
 
 ```console
-dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 /path/to/repo
+dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
+  --output report.json /path/to/repo
 ```
 
 Example output (abridged):
@@ -212,8 +233,7 @@ Example output (abridged):
                     "areas": ["src/cli"]
                   }
                 ],
-                "tokenUsage": { "input": 102400, "output": 5120 },
-                "estimatedCostUsd": 0.0031
+                "tokenUsage": { "input": 102400, "output": 5120 }
               }
             }
           ]
@@ -224,7 +244,7 @@ Example output (abridged):
 }
 ```
 
-## Compiling a markdown report with charts
+### Compiling a markdown report with charts
 
 ```text
 dev-perf compile [options] <report>
@@ -270,7 +290,7 @@ line, lines added vs removed, active users, top languages — the
 per-repository comparison (with multiple repositories), per-user
 dynamics (per-period points and contributions, or commits and lines
 without LLM analysis), and the LLM summary (work-type/size/complexity
-pies, quality and risk tallies, per-user cost). Tables carry the
+pies, quality and risk tallies, per-user token usage). Tables carry the
 totals, per-repository and
 per-contributor rankings, contributions, and the appendix documents
 parameters, applied filters, email mappings, and size weights
@@ -298,6 +318,77 @@ The markdown report references the charts by relative path
 (`![...](assets/team-commits-per-period.svg)`), so the output
 directory is portable as a unit — open `report.md` in GitHub, VS
 Code, or any markdown viewer that renders local images.
+
+### Docker
+
+A Docker image is published to the
+[GitHub Container Registry](https://ghcr.io/ameshkov/dev-perf) on every
+release tag (`latest` plus version tags) and on every push to `master`
+(the `master` tag). The image runs the same `dev-perf` CLI, ships
+Node.js, git and the shell utilities, and supports `linux/amd64` and
+`linux/arm64`. Use it to run dev-perf in a sandbox without installing
+Node.js:
+
+```console
+docker run --rm ghcr.io/ameshkov/dev-perf --help
+```
+
+`dev-perf report` runs the LLM analysis by default. The full command
+passes the model provider explicitly — `--model`, `--provider-url`
+and `--api-key` (or the `DEV_PERF_*` environment variables). Every
+`docker run` starts with a fresh container, so anything written inside
+it is lost on exit: mount a host directory at `/tmp/.dev-cache` to
+reuse cloned repositories and cached LLM results across runs, and
+mount a directory at `/work` (the image's working directory) so the
+`--output` report file lands on the host:
+
+```console
+docker run --rm \
+  -v "$PWD":/work \
+  -v "$HOME/.dev-perf-cache":/tmp/.dev-cache \
+  ghcr.io/ameshkov/dev-perf report \
+  --since 2026-01-01 --until 2026-06-30 \
+  --output report.json \
+  --model gpt-4.1 \
+  --provider-url https://api.openai.com/v1 \
+  --api-key "$DEV_PERF_API_KEY" \
+  https://github.com/org/repo.git
+```
+
+The example above needs network access from the container to the
+repository (fine for a public repo). Pass `--no-llm` for deterministic
+stats only — no provider configuration needed:
+
+```console
+docker run --rm \
+  -v "$PWD":/work \
+  -v "$HOME/.dev-perf-cache":/tmp/.dev-cache \
+  ghcr.io/ameshkov/dev-perf report --no-llm \
+  --since 2026-01-01 --until 2026-06-30 \
+  --output report.json https://github.com/org/repo.git
+```
+
+To analyze a *local* repository, mount it into the container
+read-only and pass the mount path (the path is cloned into the
+container's cache, so the working tree is never modified):
+
+```console
+docker run --rm \
+  -v /path/to/repo:/repo:ro \
+  -v "$PWD":/work \
+  ghcr.io/ameshkov/dev-perf report --no-llm \
+  --output report.json /repo
+```
+
+The `compile` command works the same way — mount the directory with the
+JSON report and the output directory into `/work`, then read the
+markdown report back from the host:
+
+```console
+docker run --rm \
+  -v "$PWD":/work \
+  ghcr.io/ameshkov/dev-perf compile report.json --output dev-perf-report
+```
 
 ## Configuration
 
@@ -350,33 +441,17 @@ no positional arguments):
 ```console
 DEV_PERF_REPOS=https://github.com/org/repo.git \
 DEV_PERF_NO_LLM=true \
+DEV_PERF_OUTPUT=report.json \
 dev-perf report
 ```
 
-## Status
+## Additional Resources
 
-Both analysis layers are implemented: the deterministic path and the
-LLM agentic layer. `dev-perf report --no-llm
-<repo>` clones the repository (into the cache, reusing it on later
-runs) and produces the JSON report — commits, lines, files, active
-days, and per-language contributions, per user and per repository. A
-run without `--no-llm` additionally starts an opencode server per
-repository and produces per-user `llm` entries: `status: "completed"`
-with the assessed work types, complexity, areas, quality signals and
-risk flags, plus token usage and estimated cost. LLM failures (e.g. a
-provider rejecting the key, or a session that never calls the report
-tool) are retried with a restarted server (`--llm-retries`, default 2)
-and fail the run fast with a clear message and no report is written
-only when every attempt fails.
-`dev-perf compile <report>` renders the JSON report into a markdown
-report with Vega-Lite SVG charts, with repo/user selection and email
-mapping. See [docs/design.md](docs/design.md) for the full design.
-
-## Development
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup, build
-commands, manual testing, and release process. The project uses the
-same tooling as
-[mcp-compress-router](https://github.com/ameshkov/mcp-compress-router):
-pnpm, TypeScript, Vitest, oxlint, Knip, Prettier, Markdownlint, and
-Husky pre-commit checks.
+- [Design document](docs/design.md) — the full design of the
+  deterministic analysis, the in-process LLM layer, the report schema,
+  and the compile layer.
+- [Development guide](DEVELOPMENT.md) — local setup, build, manual
+  testing, and the release process.
+- [Contributor guide](AGENTS.md) — coding conventions and contribution
+  instructions.
+- [Changelog](CHANGELOG.md) — the version history.

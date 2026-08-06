@@ -1,11 +1,11 @@
 /**
  * Per-repository analysis: clone/cache reuse, commit reading and author
  * grouping for the run's whole range, the LLM phase when enabled (one
- * opencode server per repo, shared by all its periods, restarted with a
- * fresh server when an attempt fails), and per-period report assembly.
- * `analyzeRepository` is the single entry; the pipeline runs it once
- * per repository — in parallel up to `--parallel` — with the run's
- * resolved range and periods.
+ * in-process pi runtime per repo, shared by all its periods, replaced
+ * with a fresh runtime when an attempt fails), and per-period report
+ * assembly. `analyzeRepository` is the single entry; the pipeline runs
+ * it once per repository — in parallel up to `--parallel` — with the
+ * run's resolved range and periods.
  */
 import path from 'node:path';
 import type { CliOptions } from './config.js';
@@ -13,10 +13,10 @@ import { readCommits } from './deterministic/commits.js';
 import type { AuthorGroup } from './deterministic/identity.js';
 import { groupByAuthor } from './deterministic/identity.js';
 import { analyzeRepositoryLLM } from './llm/analyze.js';
+import { createLlmRuntime } from './llm/runtime.js';
+import type { LlmRuntime, LlmRuntimeConfig } from './llm/runtime.js';
 import { createSessionService } from './llm/session.js';
 import type { SessionService } from './llm/session.js';
-import { startServer } from './llm/server.js';
-import type { LlmServerConfig, LlmServerHandle } from './llm/server.js';
 import { assembleRepository } from './report/index.js';
 import type { AnalyzedRange, LlmAnalysis, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
@@ -36,11 +36,11 @@ interface RepoAnalysis {
   repositories: Repository[];
 }
 
-/** The repo's LLM phase: one opencode server and its session service. */
+/** The repo's LLM phase: one pi runtime and its session service. */
 interface LlmPhase {
-  /** The running server, closed by the caller. */
-  server: LlmServerHandle;
-  /** The session service bound to the server. */
+  /** The in-process runtime, disposed by the caller. */
+  runtime: LlmRuntime;
+  /** The session service bound to the runtime. */
   service: SessionService;
 }
 
@@ -48,8 +48,8 @@ interface LlmPhase {
  * Analyzes one repository across the run's periods: ensures the clone
  * (reusing the cache when possible), reads the commits of the whole
  * range once, groups them by author, and runs the LLM phase when
- * enabled (`runLlmPhase` — one opencode server per attempt, restarted
- * between retries). Each period gets the groups' commits filtered to
+ * enabled (`runLlmPhase` — one in-process pi runtime per attempt,
+ * recreated between retries). Each period gets the groups' commits filtered to
  * its bounds, an LLM analysis for its active users, and an assembled
  * repository entry. The range and periods come from the run — the
  * pipeline resolved them from the first clone before the parallel
@@ -98,16 +98,15 @@ export async function analyzeRepository(
 
 /**
  * Runs a repository's LLM phase with automatic retries: the analysis
- * (server start plus per-period sessions) is attempted up to
+ * (runtime creation plus per-period sessions) is attempted up to
  * `1 + llmRetries` times, and every failed attempt is retried with a
- * fully restarted opencode server — the server is stopped and its
- * whole process tree force-killed when it does not exit, so the next
- * attempt starts from a clean slate. Completed per-user analyses are
- * cached and reused across attempts, so a retry only re-runs the
- * sessions that failed. The analysis succeeds as soon as one attempt
- * completes; when every attempt fails, the error names the repository
- * and the attempt count. With `llmRetries: 0` the original error is
- * rethrown unchanged (fail fast).
+ * fresh in-process runtime, so the next attempt starts from a clean
+ * slate. Completed per-user analyses are cached and reused across
+ * attempts, so a retry only re-runs the sessions that failed. The
+ * analysis succeeds as soon as one attempt completes; when every
+ * attempt fails, the error names the repository and the attempt count.
+ * With `llmRetries: 0` the original error is rethrown unchanged (fail
+ * fast).
  *
  * @param repo - Repository URL or local path as given on the command line.
  * @param clone - The clone the analysis runs in.
@@ -134,20 +133,19 @@ async function runLlmPhase(
     if (attempt > 1) {
       log.warn(
         `LLM: attempt ${attempt - 1} of ${attempts} failed; ` +
-          `restarting the opencode server and retrying: ${errorDetail(lastError)}`,
+          `recreating the LLM runtime and retrying: ${errorDetail(lastError)}`,
       );
     }
     let llm: LlmPhase | undefined;
     try {
-      llm = await startLlmServer(repo, clone, groups, options, log);
+      llm = await startLlmRuntime(repo, clone, groups, options, log);
       return await assemblePeriods(repo, clone, periods, groups, llm, options, log);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(errorDetail(error));
     } finally {
-      // Fully stop the server — SIGTERM, a bounded wait, and a
-      // force-kill of its whole process tree when it ignores SIGTERM —
-      // so the next attempt starts from a clean slate.
-      await closeLlmServer(llm, log);
+      // Fully dispose the runtime and its sessions so the next attempt
+      // starts from a clean slate.
+      await closeLlmPhase(llm, log);
     }
   }
   if (attempts === 1) {
@@ -162,20 +160,20 @@ async function runLlmPhase(
 
 /**
  * Starts the repo's LLM phase when enabled and the range has authors:
- * one opencode server with its session service, shared by all of the
- * repo's periods. Returns `undefined` when LLM analysis is disabled or
- * the repo has no authors in the range.
+ * one in-process pi runtime with its session service, shared by all of
+ * the repo's periods. Returns `undefined` when LLM analysis is
+ * disabled or the repo has no authors in the range.
  *
  * @param repo - Repository URL or local path as given on the command line.
  * @param clone - The clone the analysis runs in.
  * @param groups - The author groups of the whole range.
  * @param options - Validated CLI options.
  * @param log - The repository's scoped logger.
- * @returns The server and its session service, or `undefined`.
- * @throws {Error} When the server cannot start; the message names the
- * repo and the underlying cause.
+ * @returns The runtime and its session service, or `undefined`.
+ * @throws {Error} When the runtime cannot be created; the message names
+ * the repo and the underlying cause.
  */
-async function startLlmServer(
+async function startLlmRuntime(
   repo: string,
   clone: CloneResult,
   groups: AuthorGroup[],
@@ -189,12 +187,13 @@ async function startLlmServer(
     return undefined;
   }
   try {
-    const server = await startServer(clone.repoDir, llmServerConfig(options), log);
-    return { server, service: createSessionService(server.client, log) };
+    const runtime = await createLlmRuntime(clone.repoDir, llmRuntimeConfig(options), log);
+    return {
+      runtime,
+      service: createSessionService(runtime, path.dirname(clone.repoDir), log),
+    };
   } catch (error) {
-    // errorDetail walks the cause chain: a bare `fetch failed` from
-    // the opencode SDK gets its real reason (e.g. `connect ECONNREFUSED
-    // 127.0.0.1:50664`) appended.
+    // errorDetail walks the cause chain.
     throw new Error(`LLM analysis failed for ${repo}: ${errorDetail(error)}`, { cause: error });
   }
 }
@@ -265,29 +264,36 @@ async function assemblePeriods(
 }
 
 /**
- * Shuts the repo's LLM server down. A shutdown failure is logged but
- * does not mask an analysis error.
+ * Shuts the repo's LLM phase down. Both steps run independently, each
+ * guarded by its own try/catch, so a session-shutdown failure never
+ * skips runtime disposal (which removes the in-memory API key). A
+ * shutdown failure is logged but does not mask an analysis error.
  *
  * @param llm - The repo's LLM phase, or `undefined` when none started.
  * @param log - The repository's scoped logger.
  */
-async function closeLlmServer(llm: LlmPhase | undefined, log: ScopedLog): Promise<void> {
+async function closeLlmPhase(llm: LlmPhase | undefined, log: ScopedLog): Promise<void> {
   if (llm === undefined) {
     return;
   }
   try {
-    await llm.server.close();
+    await llm.service.close();
   } catch (error) {
-    log.warn(`LLM server shutdown failed: ${errorDetail(error)}`);
+    log.warn(`LLM session shutdown failed: ${errorDetail(error)}`);
+  }
+  try {
+    await llm.runtime.dispose();
+  } catch (error) {
+    log.warn(`LLM runtime shutdown failed: ${errorDetail(error)}`);
   }
 }
 
 /**
  * Runs the LLM phase for one period of a repository: the repo's
- * opencode server is reused, and `analyzeRepositoryLLM` produces one
- * analysis per user with commits in the period (cached results reused
- * unless `--refresh`). Users without commits in the period get no
- * analysis — their report entries stay skipped. Returns `undefined`
+ * in-process runtime is reused, and `analyzeRepositoryLLM` produces
+ * one analysis per user with commits in the period (cached results
+ * reused unless `--refresh`). Users without commits in the period get
+ * no analysis — their report entries stay skipped. Returns `undefined`
  * when no user has commits in the period.
  *
  * @param repo - Repository URL or local path as given on the command line.
@@ -295,7 +301,7 @@ async function closeLlmServer(llm: LlmPhase | undefined, log: ScopedLog): Promis
  * @param period - The period bounds (UTC instants).
  * @param groups - The period's author groups (zero-commit groups kept).
  * @param options - Validated CLI options.
- * @param service - The session service bound to the repo's server.
+ * @param service - The session service bound to the repo's runtime.
  * @param log - The repository's scoped logger.
  * @returns Completed analyses keyed by lowercased author email, or
  * `undefined` when the period has no active users.
@@ -322,7 +328,7 @@ async function analyzePeriodLlm(
     repo,
     cloneDir: clone.repoDir,
     entryDir: path.dirname(clone.repoDir),
-    config: llmServerConfig(options),
+    config: llmRuntimeConfig(options),
     range: period,
     groups: active,
     service,
@@ -336,19 +342,19 @@ async function analyzePeriodLlm(
 }
 
 /**
- * Builds the LLM server configuration from the validated CLI options.
+ * Builds the pi runtime configuration from the validated CLI options.
  * `parseCliOptions` guarantees `model`, `providerUrl` and `apiKey`
  * (the key may come from `DEV_PERF_API_KEY`, resolved by
  * `resolveRawOptions`) whenever LLM analysis is enabled; the guard is
  * defensive for direct pipeline callers.
  *
  * @param options - Validated CLI options (LLM enabled).
- * @returns The server configuration.
+ * @returns The runtime configuration.
  * @throws {Error} When a required LLM option is missing — unreachable
  * after `parseCliOptions`, possible only when options are constructed
  * by hand.
  */
-function llmServerConfig(options: CliOptions): LlmServerConfig {
+function llmRuntimeConfig(options: CliOptions): LlmRuntimeConfig {
   if (
     options.model === undefined ||
     options.providerUrl === undefined ||
@@ -362,8 +368,5 @@ function llmServerConfig(options: CliOptions): LlmServerConfig {
     apiKey: options.apiKey,
     limitContext: options.limitContext,
     limitOutput: options.limitOutput,
-    // --verbose makes the opencode server log at DEBUG, so the cache's
-    // opencode.log carries the server-side detail for a failed attempt.
-    logLevel: options.verbose === true ? 'DEBUG' : undefined,
   };
 }

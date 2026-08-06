@@ -73,7 +73,6 @@ function validReport(): unknown {
                 },
               ],
               tokenUsage: { input: 12000, cacheRead: 8000, output: 3400 },
-              estimatedCostUsd: 0.05,
             },
           },
         ],
@@ -218,12 +217,6 @@ describe('reportSchema', () => {
         path: 'repositories.0.users.0.llm.status',
         mutate: (report) => {
           report.repositories[0].users[0].llm.status = 'pending';
-        },
-      },
-      {
-        path: 'repositories.0.users.0.llm.estimatedCostUsd',
-        mutate: (report) => {
-          report.repositories[0].users[0].llm.estimatedCostUsd = -0.1;
         },
       },
       {

@@ -1,12 +1,59 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { buildOrientationPrompt, buildToolCallReminder, buildUserPrompt } from './prompts.js';
+import {
+  buildOrientationPrompt,
+  buildOrientationSystemPrompt,
+  buildToolCallReminder,
+  buildUserPrompt,
+  buildUserSystemPrompt,
+} from './prompts.js';
 import type { UserPromptInput } from './prompts.js';
 
 /** The tool-call instruction every analysis prompt must carry. */
 const TOOL_CALL_FRAGMENT = 'call the devperf_report tool';
 
 const RANGE = { since: '2026-01-01T00:00:00.000Z', until: '2026-01-31T00:00:00.000Z' };
+
+describe('buildOrientationSystemPrompt', () => {
+  it('defines the read-only analyst agent and its tool surface', async () => {
+    const prompt = await buildOrientationSystemPrompt();
+    expect(prompt).toContain('repository analyst');
+    expect(prompt).toContain('read-only');
+    expect(prompt).toContain('delete files');
+    for (const tool of ['read', 'grep', 'find', 'ls', 'bash', 'devperf_report']) {
+      expect(prompt).toContain(tool);
+    }
+    expect(prompt).toContain('Work only from what you can observe');
+  });
+
+  it('is static: who the agent is, not the per-run task details', async () => {
+    const prompt = await buildOrientationSystemPrompt();
+    expect(prompt).not.toContain('{{');
+    expect(prompt).not.toContain('Tech stack');
+    expect(prompt).not.toContain('repository context covering');
+  });
+});
+
+describe('buildUserSystemPrompt', () => {
+  it('defines the read-only contributor analyst agent and its tool surface', async () => {
+    const prompt = await buildUserSystemPrompt();
+    expect(prompt).toContain('contributor analyst');
+    expect(prompt).toContain('read-only');
+    expect(prompt).toContain('delete files');
+    expect(prompt).toContain('never inferred');
+    for (const tool of ['read', 'grep', 'find', 'ls', 'bash', 'devperf_report']) {
+      expect(prompt).toContain(tool);
+    }
+  });
+
+  it('is static: identity, repository, and range live in the user prompt', async () => {
+    const prompt = await buildUserSystemPrompt();
+    expect(prompt).not.toContain('{{');
+    expect(prompt).not.toContain('Alice');
+    expect(prompt).not.toContain('alice@example.com');
+    expect(prompt).not.toContain('2026-');
+  });
+});
 
 describe('buildOrientationPrompt', () => {
   it('asks for tech stack, main modules, and conventions', async () => {
@@ -51,13 +98,22 @@ describe('buildUserPrompt', () => {
     };
   }
 
-  it('includes identity, date range, repo context, and the commit list', async () => {
+  it('carries the task details: identity, repository, range, context, and commits', async () => {
     const prompt = await buildUserPrompt(userInput());
     expect(prompt).toContain('Alice (alice@example.com)');
     expect(prompt).toContain('https://example.com/repo.git');
-    expect(prompt).toContain('2026-01-01T00:00:00.000Z to 2026-01-31T00:00:00.000Z');
+    expect(prompt).toContain('2026-01-01T00:00:00.000Z to 2026-01-31T00:00:00.000Z (UTC)');
     expect(prompt).toContain('TypeScript CLI; modules: src/, docs/; tests with Vitest.');
     expect(prompt).toContain('## Commits by Alice in the analyzed range (1)');
+  });
+
+  it('renders an unbounded range side as plain language', async () => {
+    const prompt = await buildUserPrompt(userInput({ range: { since: '', until: '' } }));
+    expect(prompt).toContain('the beginning to now (UTC)');
+  });
+
+  it('leaves no placeholder unrendered', async () => {
+    expect(await buildUserPrompt(userInput())).not.toMatch(/\{\{/u);
   });
 
   it('renders each commit with sha, date, subject, numstat totals, and files', async () => {
@@ -117,11 +173,6 @@ describe('buildUserPrompt', () => {
     expect(prompt).toContain('src/mod0.ts, src/mod1.ts, src/mod2.ts, src/mod3.ts, src/mod4.ts');
     expect(prompt).toContain(', and 5 more');
     expect(prompt).not.toContain('src/mod24.ts');
-  });
-
-  it('renders an unbounded range side as plain language', async () => {
-    const prompt = await buildUserPrompt(userInput({ range: { since: '', until: '' } }));
-    expect(prompt).toContain('the beginning to now');
   });
 
   it('ends with the required tool-call instruction', async () => {
