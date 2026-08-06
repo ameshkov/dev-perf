@@ -44,15 +44,16 @@ Given one or more repositories (any git URL) and a date range, `dev-perf`:
 
 ## Usage
 
-`dev-perf` is command-based: `report` builds the JSON report,
-`compile` renders it into a markdown report with charts, and `version`
-prints the application version (same as `--version`/`-V`). Running
-`dev-perf` without a command prints the command list.
+Run `dev-perf` with `npx` — no global install needed. The CLI is
+command-based: `report` builds the JSON report, `compile` renders it
+into a markdown report with charts, and `version` prints the
+application version (same as `--version`/`-V`). Running
+`npx dev-perf` without a command prints the command list.
 
 ### Building a report
 
 ```text
-dev-perf report [options] [repo...]
+npx dev-perf report [options] [repo...]
 
 Build a JSON report of per-user contribution metrics.
 
@@ -167,7 +168,7 @@ range — the report is the same content, nested one level deeper under
 Example:
 
 ```console
-dev-perf report --since 2026-01-01 --until 2026-06-30 \
+npx dev-perf report --since 2026-01-01 --until 2026-06-30 \
   --output report.json \
   --model gpt-4.1 \
   --provider-url https://api.openai.com/v1 \
@@ -181,7 +182,7 @@ Deterministic stats only (no LLM analysis — no provider configuration
 needed):
 
 ```console
-dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
+npx dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
   --output report.json /path/to/repo
 ```
 
@@ -247,7 +248,7 @@ Example output (abridged):
 ### Compiling a markdown report with charts
 
 ```text
-dev-perf compile [options] <report>
+npx dev-perf compile [options] <report>
 
 Compile a JSON report into a markdown report with charts.
 
@@ -307,9 +308,9 @@ Example — compile a monthly report for two repos, merging an email
 alias and excluding one user:
 
 ```console
-dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
+npx dev-perf report --no-llm --since 2026-01-01 --until 2026-06-30 \
   --unit month --output report.json https://github.com/org/repo-a.git
-dev-perf compile report.json --output ./team-report \
+npx dev-perf compile report.json --output ./team-report \
   --map "alice+work@example.com=Alice" \
   --exclude-user "ci-bot@example.com"
 ```
@@ -442,7 +443,7 @@ no positional arguments):
 DEV_PERF_REPOS=https://github.com/org/repo.git \
 DEV_PERF_NO_LLM=true \
 DEV_PERF_OUTPUT=report.json \
-dev-perf report
+npx dev-perf report
 ```
 
 ## Additional Resources

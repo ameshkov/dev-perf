@@ -216,6 +216,10 @@ binary on `PATH`:
   its parameter schema derived from the shared report schema (§6.5).
 - Progress and tool calls: `session.subscribe(...)` — the `tool_execution_start`
   event carries the parsed tool arguments (early report detection, §6.5).
+- Session-event debug logging: each session also feeds its event stream to the
+  debug log (`src/llm/session-events.ts`) — agent/message lifecycle
+  (`message_end` with truncated content), compaction, auto-retries, and every
+  tool execution — so a `--verbose` run can follow the analysis event by event.
 - Per-session token usage: `session.getSessionStats()` (no cost tracking).
 - System prompts: `DefaultResourceLoader.systemPrompt` injects the rendered
   per-session system prompt; sessions never read the user's global `~/.pi`.

@@ -16,7 +16,10 @@
  * reporting), falling back to reading the report file once the turn
  * ends. Long-running operations log a periodic "still waiting"
  * progress line (heartbeat), so a stuck model call is visible in
- * verbose output instead of an endless silent wait.
+ * verbose output instead of an endless silent wait. Every session also
+ * feeds its pi event stream (agent/message lifecycle, compaction,
+ * auto-retries, and tool executions) to the debug log via
+ * `subscribeSessionEventLog` (`src/llm/session-events.ts`).
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -34,6 +37,7 @@ import { readJsonFile } from '../util/json.js';
 import { createScopedLog } from '../util/log.js';
 import type { ScopedLog } from '../util/log.js';
 import type { LlmRuntime } from './runtime.js';
+import { subscribeSessionEventLog } from './session-events.js';
 import { REPORT_TOOL_NAME, buildReportTool } from './tools.js';
 
 /** One in-process session, scoped to the clone directory. */
@@ -192,6 +196,7 @@ async function createSessionWith(
     thinkingLevel: 'off',
   });
   session.setSessionName(title);
+  subscribeSessionEventLog(session, reportId, log);
   sessions.set(reportId, session);
   log.info(`LLM: session "${reportId}" created (${title})`);
   return { id: reportId, directory };
