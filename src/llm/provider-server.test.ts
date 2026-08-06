@@ -256,6 +256,7 @@ function toolCallChunks(): Record<string, unknown>[] {
 function group(email: string, name: string, sha: string): AuthorGroup {
   return {
     email,
+    emails: [email],
     name,
     isBot: false,
     commits: [

@@ -108,9 +108,9 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
 
 /**
  * Builds the user entry for one author group: display
- * name, the grouped email, bot flag, deterministic metrics, and the
+ * name, the grouped emails, bot flag, deterministic metrics, and the
  * LLM analysis — the completed result from the LLM phase when one
- * exists for the email, otherwise a skipped analysis.
+ * exists for the group's primary email, otherwise a skipped analysis.
  *
  * @param group - The author group.
  * @param llmResults - LLM analyses keyed by lowercased email, if the
@@ -120,7 +120,7 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
 function userEntry(group: AuthorGroup, llmResults?: ReadonlyMap<string, LlmAnalysis>): User {
   return {
     name: group.name,
-    emails: [group.email],
+    emails: group.emails,
     isBot: group.isBot,
     deterministic: userMetrics(group.commits),
     llm: llmResults?.get(group.email) ?? { status: 'skipped', contributions: [] },

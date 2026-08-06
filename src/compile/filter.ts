@@ -19,9 +19,7 @@ import type {
   TrendReport,
   User,
 } from '../report/index.js';
-
-/** Compiled `--map`/`--maps-file` mappings: lowercased email to name. */
-export type EmailMap = Record<string, string>;
+import type { EmailMap } from '../util/email-map.js';
 
 /** The user selection of a compile run. */
 export interface FilterOptions {

@@ -331,6 +331,44 @@ describe('resolveRawOptions', () => {
     expect(merged.parallel).toBe('2');
   });
 
+  it('fills map and maps-file from their environment variables', () => {
+    const merged = resolveRawOptions(
+      [],
+      {},
+      {
+        DEV_PERF_MAP: 'alice@example.com=Alice Smith, bob@example.com=Bob',
+        DEV_PERF_MAPS_FILE: 'maps.json',
+      },
+    );
+
+    expect(merged.map).toEqual(['alice@example.com=Alice Smith', 'bob@example.com=Bob']);
+    expect(merged.mapsFile).toBe('maps.json');
+  });
+
+  it('lets the map flag win over DEV_PERF_MAP', () => {
+    const merged = resolveRawOptions(
+      [],
+      { map: ['bob@example.com=Bob'] },
+      { DEV_PERF_MAP: 'alice@example.com=Alice' },
+    );
+
+    expect(merged.map).toEqual(['bob@example.com=Bob']);
+  });
+
+  it('fills the map from DEV_PERF_MAP when commander supplies an empty-array default', () => {
+    // Commander passes `[]` (its repeatable-option default) when the
+    // flag was not passed; an empty list must not count as flag-provided.
+    const merged = resolveRawOptions([], { map: [] }, { DEV_PERF_MAP: 'alice@example.com=Alice' });
+
+    expect(merged.map).toEqual(['alice@example.com=Alice']);
+  });
+
+  it('rejects a malformed DEV_PERF_MAP entry under the variable name', () => {
+    expect(() => resolveRawOptions([], {}, { DEV_PERF_MAP: 'not-an-email-name-pair' })).toThrow(
+      /DEV_PERF_MAP: expected 'email=name'/,
+    );
+  });
+
   it('parses boolean environment variables, inverting DEV_PERF_NO_LLM', () => {
     const merged = resolveRawOptions(
       [],
@@ -430,5 +468,61 @@ describe('parseCliOptions', () => {
     options.limitContext = 'abc';
 
     expect(() => parseCliOptions(options)).toThrow(/--limit-context: Invalid input/);
+  });
+
+  it('parses map entries into maps and keeps the maps file', () => {
+    const options = parseCliOptions({
+      ...validOptions(),
+      map: ['Alice@Example.com=Alice Smith', 'bob@example.com=Bob'],
+      mapsFile: 'maps.json',
+    });
+
+    expect(options.maps).toEqual([
+      { email: 'alice@example.com', name: 'Alice Smith' },
+      { email: 'bob@example.com', name: 'Bob' },
+    ]);
+    expect(options.mapsFile).toBe('maps.json');
+  });
+
+  it('splits comma-separated map occurrences like the environment lists', () => {
+    const options = parseCliOptions({
+      ...validOptions(),
+      map: ['alice@example.com=Alice, bob@example.com=Bob'],
+    });
+
+    expect(options.maps).toEqual([
+      { email: 'alice@example.com', name: 'Alice' },
+      { email: 'bob@example.com', name: 'Bob' },
+    ]);
+  });
+
+  it('keeps maps absent when no map is given', () => {
+    expect(parseCliOptions(validOptions()).maps).toBeUndefined();
+  });
+
+  it('rejects duplicate mapped emails, naming the --map flag', () => {
+    expect(() =>
+      parseCliOptions({
+        ...validOptions(),
+        map: ['a@example.com=One', 'a@example.com=Two'],
+      }),
+    ).toThrow(/--map: email 'a@example\.com' is mapped more than once/);
+  });
+
+  it('reports every duplicated email in one pass', () => {
+    expect(() =>
+      parseCliOptions({
+        ...validOptions(),
+        map: ['a@example.com=One', 'a@example.com=Two', 'b@example.com=One', 'b@example.com=Two'],
+      }),
+    ).toThrow(/email 'a@example\.com' is mapped more than once[\s\S]*email 'b@example\.com'/);
+  });
+
+  it('reports a clean validation error for a null or undefined input', () => {
+    for (const input of [null, undefined]) {
+      // A missing input must not raise a raw TypeError; the schema
+      // reports the missing repository as a formatted option error.
+      expect(() => parseCliOptions(input)).toThrow(/Invalid options:\nrepos: /);
+    }
   });
 });

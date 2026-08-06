@@ -8,6 +8,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- `report` now merges author identities at report time through
+  `--map <email=name>` (repeatable) and `--maps-file <path>` (or
+  `DEV_PERF_MAP` / `DEV_PERF_MAPS_FILE`, the flag winning over the
+  file): emails mapping to the same display name merge into one identity
+  during analysis, so deterministic metrics are exact, the LLM layer
+  runs one session per merged person (naming every email of the
+  identity, so a merged person's commits are analyzed as one
+  contributor), and the JSON report carries the full `emails` list for
+  each identity.
+
 ## [v1.0.0] - 2026-08-06
 
 ### Added

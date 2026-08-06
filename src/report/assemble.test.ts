@@ -89,6 +89,30 @@ describe('assembleRepository', () => {
     expect(repository.users[1].llm).toEqual({ status: 'skipped', contributions: [] });
   });
 
+  it('emits every email of an identity merged through the email map', () => {
+    const repository = assembleRepository(
+      repoInput({
+        groups: groupByAuthor(
+          [
+            commit({ sha: '1' }),
+            commit({
+              sha: '2',
+              authorName: 'Alice Smith',
+              authorEmail: 'alice@work.com',
+            }),
+          ],
+          { 'alice@example.com': 'Alice Smith', 'alice@work.com': 'Alice Smith' },
+        ),
+      }),
+    );
+
+    expect(repository.users).toHaveLength(1);
+    expect(repository.users[0].name).toBe('Alice Smith');
+    expect(repository.users[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+    expect(repository.users[0].deterministic.commits).toBe(2);
+    expect(repository.stats.totalUsers).toBe(1);
+  });
+
   it('records empty users and zeroed stats for no groups', () => {
     const repository = assembleRepository(repoInput({ groups: [] }));
     expect(repository.users).toEqual([]);

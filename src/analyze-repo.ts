@@ -22,6 +22,7 @@ import type { AnalyzedRange, LlmAnalysis, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
 import { filterGroupsForPeriod } from './trend/periods.js';
+import type { EmailMap } from './util/email-map.js';
 import { errorDetail } from './util/error.js';
 import { pluralize, rangeBound } from './util/format.js';
 import type { ScopedLog } from './util/log.js';
@@ -60,6 +61,7 @@ interface LlmPhase {
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
  * @param log - The repository's scoped logger.
+ * @param emailMap - The compiled email mappings for identity merging.
  * @returns The resolved range, the period bounds, and the per-period
  * entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
@@ -73,6 +75,7 @@ export async function analyzeRepository(
   range: AnalyzedRange,
   periods: AnalyzedRange[],
   log: ScopedLog,
+  emailMap: EmailMap,
 ): Promise<RepoAnalysis> {
   const startedAt = Date.now();
   const clone = await ensureClone(repo, {
@@ -89,7 +92,7 @@ export async function analyzeRepository(
   // (`N commits from M authors`) is logged once this returns.
   log.info(`reading commits`);
   const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
-  const groups = groupByAuthor(commits);
+  const groups = groupByAuthor(commits, emailMap);
   log.info(`${pluralize(commits.length, 'commit')} from ${pluralize(groups.length, 'author')}`);
 
   const repositories = await runLlmPhase(repo, clone, periods, groups, options, log);

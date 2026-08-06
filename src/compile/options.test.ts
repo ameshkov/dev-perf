@@ -76,6 +76,13 @@ describe('resolveCompileOptions', () => {
     expect(() => resolveCompileOptions(undefined, {})).toThrow(/DEV_PERF_VERBOSE/);
   });
 
+  it('rejects a malformed DEV_PERF_COMPILE_MAP entry under the variable name', () => {
+    vi.stubEnv('DEV_PERF_COMPILE_MAP', 'not-an-email-name-pair');
+    expect(() => resolveCompileOptions(undefined, {})).toThrow(
+      /DEV_PERF_COMPILE_MAP: expected 'email=name'/,
+    );
+  });
+
   it('ignores empty environment values', () => {
     vi.stubEnv('DEV_PERF_COMPILE_OUTPUT', '');
     const resolved = resolveCompileOptions(undefined, {});
@@ -149,6 +156,15 @@ describe('parseCompileOptions', () => {
         map: ['a@example.com=One', 'a@example.com=Two'],
       }),
     ).toThrow(/a@example\.com' is mapped more than once/);
+  });
+
+  it('reports every duplicated email in one pass', () => {
+    expect(() =>
+      parseCompileOptions({
+        report: 'r.json',
+        map: ['a@example.com=One', 'a@example.com=Two', 'b@example.com=One', 'b@example.com=Two'],
+      }),
+    ).toThrow(/email 'a@example\.com' is mapped more than once[\s\S]*email 'b@example\.com'/);
   });
 
   it('rejects combining --include-user with --exclude-user', () => {

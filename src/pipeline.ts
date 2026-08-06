@@ -22,6 +22,8 @@ import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import { runConfigLines } from './run-config.js';
 import { splitPeriods } from './trend/periods.js';
+import { loadEmailMap } from './util/email-map.js';
+import type { EmailMap } from './util/email-map.js';
 import { errorDetail } from './util/error.js';
 import { pluralize, rangeBound } from './util/format.js';
 import { createScopedLog, logConfig, logInfo, logWarn, setVerbose } from './util/log.js';
@@ -86,7 +88,12 @@ export async function runPipeline(options: CliOptions): Promise<TrendReport> {
   for (const line of runConfigLines(options, repos)) {
     logConfig(line);
   }
-  const analyzed = await analyzeAllRepos(options, repos);
+  // The email mappings are loaded once per run (the maps file is read
+  // here) and applied at the author-grouping stage of every repository,
+  // so deterministic metrics merge exactly and the LLM phase runs one
+  // session per merged identity.
+  const emailMap = await loadEmailMap(options.mapsFile, options.maps ?? []);
+  const analyzed = await analyzeAllRepos(options, repos, emailMap);
   const report = assembleTrendReport({
     repos,
     range: analyzed.range,
@@ -120,13 +127,18 @@ export async function runPipeline(options: CliOptions): Promise<TrendReport> {
  *
  * @param options - Validated CLI options.
  * @param repos - The deduplicated repository specs, in input order.
+ * @param emailMap - The compiled email mappings for identity merging.
  * @returns The run range, periods, and per-period repository entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
  * cannot be parsed.
  * @throws {Error} When the LLM phase fails; the message names the repo
  * — and the period when `--unit` is set — plus the underlying cause.
  */
-async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<RunAnalysis> {
+async function analyzeAllRepos(
+  options: CliOptions,
+  repos: string[],
+  emailMap: EmailMap,
+): Promise<RunAnalysis> {
   const logs = scopedLogs(repos);
   const first = repos[0];
   const firstLog = logs[0];
@@ -160,7 +172,7 @@ async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<Ru
     );
   }
 
-  const repositories = await analyzeReposInParallel(options, repos, logs, range, periods);
+  const repositories = await analyzeReposInParallel(options, repos, logs, range, periods, emailMap);
   return { range, periods, repositories };
 }
 
@@ -178,6 +190,7 @@ async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<Ru
  * @param logs - The per-repository scoped loggers, aligned with `repos`.
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
+ * @param emailMap - The compiled email mappings for identity merging.
  * @returns The per-period repository entries.
  * @throws {GitError} When a clone or git log fails.
  * @throws {Error} When the LLM phase fails; the message names the repo
@@ -189,13 +202,16 @@ async function analyzeReposInParallel(
   logs: readonly ScopedLog[],
   range: AnalyzedRange,
   periods: AnalyzedRange[],
+  emailMap: EmailMap,
 ): Promise<Repository[][]> {
   const failures: unknown[] = [];
   const analyzed = await mapLimit(repos, options.parallel, (repo, index) =>
-    analyzeRepository(repo, options, range, periods, logs[index]).catch((error: unknown) => {
-      failures.push(error);
-      throw error;
-    }),
+    analyzeRepository(repo, options, range, periods, logs[index], emailMap).catch(
+      (error: unknown) => {
+        failures.push(error);
+        throw error;
+      },
+    ),
   ).catch((error: unknown) => {
     for (const failure of failures) {
       if (failure !== error) {

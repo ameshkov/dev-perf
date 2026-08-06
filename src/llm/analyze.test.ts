@@ -131,9 +131,16 @@ class StubSessions implements SessionService {
 }
 
 /** Builds one author group with a single commit. */
-function group(email: string, name: string, sha: string, subject: string): AuthorGroup {
+function group(
+  email: string,
+  name: string,
+  sha: string,
+  subject: string,
+  emails: string[] = [email],
+): AuthorGroup {
   return {
     email,
+    emails,
     name,
     isBot: false,
     commits: [
@@ -324,6 +331,7 @@ describe('analyzeRepositoryLLM', () => {
       cacheVersion: number;
       repo: string;
       email: string;
+      emails: string[];
       since: string;
       until: string;
       model: string;
@@ -332,9 +340,10 @@ describe('analyzeRepositoryLLM', () => {
     };
     // The key parts the filename hash is derived from, self-described.
     expect(cached.payload.overview).toBe(PAYLOAD_A.overview);
-    expect(cached.cacheVersion).toBe(1);
+    expect(cached.cacheVersion).toBe(3);
     expect(cached.repo).toBe('https://example.com/repo.git');
     expect(cached.email).toBe('alice@example.com');
+    expect(cached.emails).toEqual(['alice@example.com']);
     expect(cached.since).toBe(RANGE.since);
     expect(cached.until).toBe(RANGE.until);
     expect(cached.model).toBe(CONFIG.model);
@@ -398,6 +407,27 @@ describe('analyzeRepositoryLLM', () => {
     const results = await analyzeRepositoryLLM(inputFor(refreshed, groups, true));
 
     expect(refreshed.prompts.length).toBeGreaterThan(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+  });
+
+  it('keys cached results by the identity email set, not the primary email alone', async () => {
+    // Alice's result is cached as a single-email identity.
+    const single = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM(inputFor(single, [alice]));
+    expect(single.prompts.length).toBeGreaterThan(0);
+
+    // A merged identity with the same primary email but a wider email
+    // set must not reuse the single-email result — its analysis covers
+    // a different commit pool.
+    const merged = stub(true, PAYLOAD_B);
+    const mergedGroup = group('alice@example.com', 'Alice', 'cafebabe', 'Rework pipeline', [
+      'alice@example.com',
+      'alice@work.com',
+    ]);
+    const results = await analyzeRepositoryLLM(inputFor(merged, [mergedGroup]));
+
+    expect(merged.prompts.length).toBeGreaterThan(0);
     expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
   });
 

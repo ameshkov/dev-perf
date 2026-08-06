@@ -31,8 +31,11 @@ export interface UserPromptInput {
   repo: string;
   /** Display name of the analyzed user. */
   name: string;
-  /** Lowercased author email of the analyzed user. */
+  /** Lowercased primary author email of the analyzed user. */
   email: string;
+  /** Every lowercased email of the analyzed identity, sorted; one
+   * email when the identity was not merged. */
+  emails: string[];
   /** Analyzed author-date range (UTC instants; `''` means unbounded). */
   range: AnalyzedRange;
   /** Repository context from the orientation session. */
@@ -101,9 +104,16 @@ export async function buildUserPrompt(input: UserPromptInput): Promise<string> {
   const lines = input.commits.map((commit) => `- ${commitLine(commit)}`).join('\n');
   const since = input.range.since === '' ? 'the beginning' : input.range.since;
   const until = input.range.until === '' ? 'now' : input.range.until;
+  const identityNote =
+    input.emails.length <= 1
+      ? ''
+      : `; treat commits from all of the email addresses ${input.emails.join(
+          ', ',
+        )} as this contributor's work`;
   return renderTemplate(await loadTemplate('user'), {
     name: input.name,
     email: input.email,
+    identityNote,
     repo: input.repo,
     since,
     until,

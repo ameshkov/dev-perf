@@ -493,8 +493,13 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     try {
       const repos = [first.url, second.url];
-      const serial = await runPipeline(options({ repos, cacheDir, parallel: 1 }));
-      const parallel = await runPipeline(options({ repos, cacheDir, parallel: 2 }));
+      // Explicit bounds keep the two runs' resolved ranges identical:
+      // the default `until: today` resolves to the current wall-clock
+      // instant, so back-to-back runs could disagree by a second and
+      // spuriously fail the comparison.
+      const range = { since: '2026-01-01T00:00:00Z', until: '2026-01-31T23:59:59Z' };
+      const serial = await runPipeline(options({ repos, cacheDir, parallel: 1, ...range }));
+      const parallel = await runPipeline(options({ repos, cacheDir, parallel: 2, ...range }));
 
       expect(parallel.parameters.repos).toEqual(repos);
       expect(parallel.periods).toHaveLength(1);

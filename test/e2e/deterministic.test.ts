@@ -467,6 +467,72 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
+  it('merges identities through --map at report build time', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'feat: add app',
+        files: [{ path: 'src/app.ts', content: 'line1\nline2\n' }],
+      },
+      {
+        author: { name: 'Alice Work', email: 'alice@work.com' },
+        date: '2026-01-02T11:00:00Z',
+        message: 'docs: extend readme',
+        files: [{ path: 'README.md', content: 'hello\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    try {
+      const { stdout, stderr } = await execa(
+        'node',
+        [
+          BUILD_ENTRY,
+          'report',
+          '--no-llm',
+          '--since',
+          '2026-01-01T00:00:00Z',
+          '--until',
+          '2026-01-31T23:59:59Z',
+          '--cache-dir',
+          cacheDir,
+          '--map',
+          'alice@example.com=Alice Smith',
+          '--map',
+          'alice@work.com=Alice Smith',
+          repo.url,
+        ],
+        { ...spawnOptions(cacheDir) },
+      );
+
+      // Both emails merge into one identity at the grouping stage.
+      const report = JSON.parse(stdout) as {
+        periods: Array<{
+          repositories: Array<{
+            users: Array<{
+              name: string;
+              emails: string[];
+              deterministic: { commits: number };
+            }>;
+          }>;
+        }>;
+      };
+      expect(trendReportSchema.safeParse(report).success).toBe(true);
+      const users = report.periods[0].repositories[0].users;
+      expect(users).toHaveLength(1);
+      expect(users[0].name).toBe('Alice Smith');
+      expect(users[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+      expect(users[0].deterministic.commits).toBe(2);
+      // The startup dump lists the applied mappings.
+      expect(stderr).toContain('  maps:');
+      expect(stderr).toContain('    - alice@example.com=Alice Smith');
+      expect(stderr).toContain('    - alice@work.com=Alice Smith');
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
   it('prints the application version for --version and the version command', async () => {
     // The version commands need no repository; a bare temp cwd keeps
     // the developer's .env out.

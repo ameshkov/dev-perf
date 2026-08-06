@@ -75,6 +75,10 @@ Options:
                          and LLM analysis results (§4, §6.6)
   --refresh              Force re-clone and re-analysis even if cache is present
   --no-llm               Deterministic stats only
+  --map <email=name>     Map an author email to a display name, merging identities
+                         (repeatable; §5.3)
+  --maps-file <path>     JSON file with email-to-name mappings
+                         ({ "email": "Name" })
   --model <model>        Model id, e.g. gpt-4.1 (required for LLM analysis)
   --provider-url <url>   OpenAI-compatible provider base URL (required for LLM)
   --api-key <key>        Provider API key (required for LLM; DEV_PERF_API_KEY env
@@ -89,6 +93,12 @@ explicitly — dev-perf never falls back to the user's global configuration
 (see §6.2). `--limit-context` and `--limit-output` are optional caps for the model
 window (defaults: 256k context / 64k output tokens), registered as the model's
 `contextWindow` / `maxTokens` (§6.2).
+
+`--map <email=name>` (repeatable) and `--maps-file <path>` merge author emails
+that belong to the same person into one identity during analysis (§5.3),
+mirroring the `compile` command's mapping options; the `--map` flag wins over
+the file. Both map to `DEV_PERF_MAP` / `DEV_PERF_MAPS_FILE` for the `report`
+command.
 
 With `--unit`, the analyzed range is split into UTC-aligned periods and the report
 carries one full per-repository report per period (`src/trend/periods.ts`):
@@ -181,8 +191,17 @@ contribution.
 
 - Commits are grouped by **lowercased author email**; the display name is the most
   frequent author name for that email.
-- v1 keeps this simple: everything (and everyone, bots included) is counted as-is,
-  no email merging. `.mailmap`-aware identity resolution is a candidate v2 feature.
+- `--map`/`--maps-file` merge identities at the **grouping stage**: a commit whose
+  email is in the mapping joins the mapped-name identity, otherwise its lowercased
+  email. Identity keys are prefixed so mapped-name and email key spaces can never
+  collide, and mapped identities take the user-supplied name (verbatim, so the
+  merge is case-sensitive like the `compile` command's). Merging happens before
+  any metrics are computed, so a merged person's deterministic metrics are exact,
+  the LLM phase runs one session per merged identity, and the report's
+  `emails` list carries every lowercased email of the identity (the first-seen
+  email stays the stable primary key, reused everywhere downstream).
+- An empty map is the v1 behavior: everything (and everyone, bots included) is
+  counted as-is, no email merging.
 
 ### 5.4 Filtering
 
@@ -268,7 +287,9 @@ binary on `PATH`:
   environment (the tool surface) — no per-run task details; the user
   prompt carries the analysis task — identity, date range, and repo — together
   with the repo context and the user's commit list (sha, date, subject, numstat
-  totals, files). The agent then decides what to look at (via tools) and
+  totals, files). A merged identity (§5.3) is introduced to the agent by all of
+  its emails, so it treats commits authored under any of them as one
+  contributor's work. The agent then decides what to look at (via tools) and
   finishes by calling the report tool with its analysis (§6.5). The context
   lives in the same turn — no separate no-reply injection.
 - Auto-compaction and auto-retry are enabled explicitly via
@@ -348,12 +369,16 @@ rather than averaged into one description.
 ### 6.6 Caching and token usage
 
 - LLM analysis results are cached in the cache directory
-  (`<cache-dir>/<hash>/llm/`), keyed by (repo, user, since, until, model, context
-  and output limits). A rerun with the same parameters reuses them; `--refresh`
+  (`<cache-dir>/<hash>/llm/`), keyed by (repo, identity, since, until, model,
+  context and output limits) — the identity is the full lowercased email set, not
+  just the primary email, so a newly merged identity (§5.3) can never reuse a
+  stale result cached for one of its constituent emails. The cache version is
+  bumped whenever the analysis behavior changes, invalidating entries written by
+  older versions. A rerun with the same parameters reuses them; `--refresh`
   invalidates the cache and re-runs everything. The cached file stores all
-  cache-key components (repo, email, range, model, limits) next to the payload,
-  so each file is self-describing; the filename hash encodes the same
-  components.
+  cache-key components (repo, primary email, email set, range, model, limits)
+  next to the payload, so each file is self-describing; the filename hash
+  encodes the same components.
 - `--no-llm` produces the deterministic-only report (also the CI mode).
 - The report includes `tokenUsage` (non-cached input, cached read, and output
   tokens, read from the pi session's `getSessionStats()`). There is no cost
@@ -414,6 +439,10 @@ empty.
   ]
 }
 ```
+
+The report carries no schema change for identity merging: a user's `emails` field
+already lists every lowercased email of the identity (§5.3) — one email per
+identity without `--map`, the full set when emails merge.
 
 Period splitting (`src/trend/periods.ts`): bounds are UTC instants (day =
 midnight, week = Monday, month = 1st, quarter = Jan/Apr/Jul/Oct, year = Jan 1);
@@ -499,8 +528,9 @@ dev-perf/
 - **Session/directory scoping** — each session is created with the clone as
   `cwd` and the isolated `agentDir`, so tools and prompts are scoped to the
   analyzed repo.
-- **Identity is hard** — plain email-based grouping is the v1 contract (no
-  merging, bots included); `.mailmap`-aware identity resolution is a candidate v2
-  feature.
+- **Identity is hard** — plain email-based grouping is the v1 contract (bots
+  included); `--map`/`--maps-file` merge identities at report time (§3, §5.3),
+  and `.mailmap`-aware identity resolution remains a candidate for automatic
+  merging.
 - **Date semantics** — author date in UTC is the v1 contract; document that commit
   date filtering would produce different results.

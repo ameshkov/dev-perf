@@ -80,6 +80,10 @@ Options:
   --llm-retries <n>      Retry a failed LLM analysis up to <n> more times,
                          recreating the LLM runtime between attempts
                          (default: 2)
+  --map <email=name>     Map an author email to a display name, merging
+                         identities (repeatable)
+  --maps-file <path>     JSON file with email-to-name mappings
+                         ({ "email": "Name" })
   --parallel <n>         Analyze up to <n> repositories in parallel
                          (default: 1)
   --verbose              Verbose logging
@@ -164,6 +168,21 @@ the users active in it. `--since` is required with `--unit` (an unbounded
 range cannot be split). Without `--unit`, a single period covers the whole
 range — the report is the same content, nested one level deeper under
 `periods`.
+
+Identity merging at report time: `--map "email=Name"` (repeatable) and
+`--maps-file` merge author emails that belong to the same person into one
+identity **during analysis**, so the person's deterministic metrics are
+exact (commits, lines, files summed from every email) and the LLM runs one
+session per merged identity. Pass one `--map` per email; emails mapping to
+the same display name merge, and the `--map` flag wins over the maps file.
+The JSON report then carries the full `emails` list for that identity.
+Without `--map`, every distinct email is its own identity.
+
+```console
+npx dev-perf report --no-llm \
+  --map "jane.doe@example.com=Jane Doe" --map "jane@work.com=Jane Doe" \
+  --since 2026-01-01 --until 2026-06-30 /path/to/repo
+```
 
 Example:
 
@@ -416,6 +435,8 @@ exported in the shell are never overridden by `.env`.
 | `--limit-context <n>` | `DEV_PERF_LIMIT_CONTEXT` | Default: 262144 |
 | `--limit-output <n>` | `DEV_PERF_LIMIT_OUTPUT` | Default: 65536 |
 | `--llm-retries <n>` | `DEV_PERF_LLM_RETRIES` | Retries for a failed LLM analysis; default 2 |
+| `--map <email=name>` | `DEV_PERF_MAP` | Comma-separated list; merging identities |
+| `--maps-file <path>` | `DEV_PERF_MAPS_FILE` | JSON `{ "email": "Name" }` |
 | `--parallel <n>` | `DEV_PERF_PARALLEL` | Repositories analyzed concurrently; default 1 |
 | `--verbose` | `DEV_PERF_VERBOSE` | Boolean |
 

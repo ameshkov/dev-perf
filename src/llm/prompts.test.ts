@@ -77,6 +77,7 @@ describe('buildUserPrompt', () => {
       repo: 'https://example.com/repo.git',
       name: 'Alice',
       email: 'alice@example.com',
+      emails: ['alice@example.com'],
       range: RANGE,
       repoContext: 'TypeScript CLI; modules: src/, docs/; tests with Vitest.',
       commits: [
@@ -105,6 +106,26 @@ describe('buildUserPrompt', () => {
     expect(prompt).toContain('2026-01-01T00:00:00.000Z to 2026-01-31T00:00:00.000Z (UTC)');
     expect(prompt).toContain('TypeScript CLI; modules: src/, docs/; tests with Vitest.');
     expect(prompt).toContain('## Commits by Alice in the analyzed range (1)');
+  });
+
+  it('names every email of a merged identity in the prompt', async () => {
+    const prompt = await buildUserPrompt(
+      userInput({
+        email: 'alice@example.com',
+        emails: ['alice@example.com', 'alice@work.com'],
+      }),
+    );
+
+    expect(prompt).toContain(
+      'Alice (alice@example.com); treat commits from all of the email addresses ' +
+        "alice@example.com, alice@work.com as this contributor's work",
+    );
+  });
+
+  it('keeps the single-email identity line free of the merge note', async () => {
+    const prompt = await buildUserPrompt(userInput());
+    expect(prompt).toContain('Alice (alice@example.com) in');
+    expect(prompt).not.toContain('treat commits from all of the email addresses');
   });
 
   it('renders an unbounded range side as plain language', async () => {

@@ -3,20 +3,18 @@ import { parseCliOptions, resolveRawOptions } from '../config.js';
 import type { RawCliOptions } from '../config.js';
 import { runPipeline } from '../pipeline.js';
 import type { TrendReport } from '../report/index.js';
+import { collectOptionValues } from '../util/list.js';
 
 /**
- * Registers the `report` command on the program: it builds the JSON
- * report of per-user contribution metrics for the given repositories
- * and date range. All report options have a `DEV_PERF_*` environment
- * variable equivalent; the flag wins when both are set.
+ * Registers every `report` option on the command, in help order. The
+ * email-mapping options merge author identities at report time
+ * (`--map`/`--maps-file`); the rest configure the analysis.
  *
- * @param program - The commander program to register the command on.
+ * @param command - The `report` command.
+ * @returns The command, for chaining.
  */
-export function registerReportCommand(program: Command): void {
-  program
-    .command('report')
-    .description('Build a JSON report of per-user contribution metrics')
-    .argument('[repo...]', 'Git repository URL or local path (repeatable; default: DEV_PERF_REPOS)')
+function addReportOptions(command: Command): Command {
+  return command
     .option('--since <date>', 'Start date, e.g. 2026-01-01 (any git date format)')
     .option('--until <date>', 'End date (default: today)')
     .option(
@@ -42,8 +40,34 @@ export function registerReportCommand(program: Command): void {
       '--llm-retries <n>',
       'Retry a failed LLM analysis up to <n> more times, recreating the LLM runtime between attempts (default: 2)',
     )
+    .option(
+      '--map <email=name>',
+      'Map an author email to a display name, merging identities (repeatable)',
+      collectOptionValues,
+      [],
+    )
+    .option('--maps-file <path>', 'JSON file with email-to-name mappings ({ "email": "Name" })')
     .option('--parallel <n>', 'Analyze up to <n> repositories in parallel (default: 1)')
-    .option('--verbose', 'Verbose logging')
+    .option('--verbose', 'Verbose logging');
+}
+
+/**
+ * Registers the `report` command on the program: it builds the JSON
+ * report of per-user contribution metrics for the given repositories
+ * and date range. All report options have a `DEV_PERF_*` environment
+ * variable equivalent; the flag wins when both are set.
+ *
+ * @param program - The commander program to register the command on.
+ */
+export function registerReportCommand(program: Command): void {
+  const command = program
+    .command('report')
+    .description('Build a JSON report of per-user contribution metrics')
+    .argument(
+      '[repo...]',
+      'Git repository URL or local path (repeatable; default: DEV_PERF_REPOS)',
+    );
+  addReportOptions(command)
     .addHelpText(
       'after',
       '\nEvery option can also be set through a DEV_PERF_* environment variable; ' +

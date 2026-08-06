@@ -97,6 +97,30 @@ describe('runConfig', () => {
 
     expect(config.repos).toEqual(['a']);
   });
+
+  it('surfaces email mappings and the maps file when set', () => {
+    const config = runConfig(
+      options({
+        repos: ['r'],
+        maps: [
+          { email: 'alice@example.com', name: 'Alice Smith' },
+          { email: 'alice@work.com', name: 'Alice Smith' },
+        ],
+        mapsFile: 'maps.json',
+      }),
+      ['r'],
+    );
+
+    expect(config.maps).toEqual(['alice@example.com=Alice Smith', 'alice@work.com=Alice Smith']);
+    expect(config.mapsFile).toBe('maps.json');
+  });
+
+  it('omits maps and the maps file when they were not given', () => {
+    const config = runConfig(options({ repos: ['r'] }), ['r']);
+
+    expect('maps' in config).toBe(false);
+    expect('mapsFile' in config).toBe(false);
+  });
 });
 
 describe('maskSecret', () => {
@@ -161,6 +185,23 @@ describe('runConfigLines', () => {
     const lines = runConfigLines(options({ repos: ['a', 'b'] }), ['a', 'b']);
 
     expect(lines.slice(0, 4)).toEqual(['configuration:', '  repos:', '    - a', '    - b']);
+  });
+
+  it('lists the email mappings as nested dash items', () => {
+    const lines = runConfigLines(
+      options({
+        repos: ['r'],
+        maps: [
+          { email: 'alice@example.com', name: 'Alice Smith' },
+          { email: 'alice@work.com', name: 'Alice Smith' },
+        ],
+      }),
+      ['r'],
+    );
+
+    expect(lines).toContain('  maps:');
+    expect(lines).toContain('    - alice@example.com=Alice Smith');
+    expect(lines).toContain('    - alice@work.com=Alice Smith');
   });
 
   it('shows the resolved defaults and omits unset optional fields', () => {

@@ -9,6 +9,8 @@
  * unique email on the left side.
  */
 import { z } from 'zod';
+import { emailMapEntrySchema, parseEmailMapEntry } from '../util/email-map.js';
+import { splitList } from '../util/list.js';
 
 /**
  * Raw options as parsed by commander before validation: repeatable
@@ -69,17 +71,6 @@ const LIST_OPTIONS: ReadonlySet<keyof RawCompileOptions> = new Set([
 ]);
 
 /**
- * One email-to-name mapping entry as parsed from `--map` or the
- * environment: the lowercased email and the display name it maps to.
- */
-interface EmailMapEntry {
-  /** Lowercased author email. */
-  email: string;
-  /** Display name the email is mapped to. */
-  name: string;
-}
-
-/**
  * zod schema for the parsed compile options. List options default to
  * empty arrays; `output` defaults to `dev-perf-report`.
  *
@@ -93,12 +84,7 @@ export const compileOptionsSchema = z
     /** Output directory for `report.md` and the `assets/` charts. */
     output: z.string().default('dev-perf-report'),
     /** Email-to-name mappings parsed from `--map` / the environment. */
-    maps: z.array(
-      z.object({
-        email: z.string().min(1),
-        name: z.string().min(1),
-      }),
-    ),
+    maps: z.array(emailMapEntrySchema),
     /** JSON file with email-to-name mappings. */
     mapsFile: z.string().optional(),
     /** Keep only users matching one of these names or emails. */
@@ -130,6 +116,8 @@ export const compileOptionsSchema = z
         message: 'cannot be combined with --repo; choose one selection direction',
       });
     }
+    // Each email may map to only one identity; report every duplicated
+    // email in one pass instead of stopping at the first.
     const seen = new Set<string>();
     for (const entry of options.maps) {
       if (seen.has(entry.email)) {
@@ -138,7 +126,7 @@ export const compileOptionsSchema = z
           path: ['map'],
           message: `email '${entry.email}' is mapped more than once`,
         });
-        break;
+        continue;
       }
       seen.add(entry.email);
     }
@@ -161,7 +149,8 @@ export type CompileOptions = z.infer<typeof compileOptionsSchema>;
  * pass a controlled object.
  * @returns The merged raw options, ready for `parseCompileOptions`.
  * @throws {Error} When a boolean environment variable holds an
- * unrecognized value.
+ * unrecognized value, or a `DEV_PERF_COMPILE_MAP` entry is not an
+ * `email=name` pair.
  */
 export function resolveCompileOptions(
   report: string | undefined,
@@ -186,7 +175,15 @@ export function resolveCompileOptions(
     if (BOOLEAN_OPTIONS.has(key)) {
       merged[key] = parseBoolean(value, OPTION_ENV[key]);
     } else if (LIST_OPTIONS.has(key)) {
-      merged[key] = splitList(value);
+      const entries = splitList(value);
+      if (key === 'map') {
+        // Validate now so a malformed environment entry is reported
+        // under its own variable name, not the `--map` flag.
+        for (const entry of entries) {
+          parseEmailMapEntry(entry, OPTION_ENV.map);
+        }
+      }
+      merged[key] = entries;
     } else {
       merged[key] = value;
     }
@@ -218,43 +215,6 @@ function parseBoolean(value: string, envVar: string): boolean {
   throw new Error(
     `Invalid options:\n${envVar}: expected a boolean ('true' or 'false'), got '${value}'`,
   );
-}
-
-/**
- * Parses a comma-separated environment list, trimming each entry and
- * dropping empty ones.
- *
- * @param value - The raw environment value.
- * @returns The list entries.
- */
-function splitList(value: string): string[] {
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '');
-}
-
-/**
- * Parses one `email=name` mapping entry, lowercasing the email side.
- *
- * @param entry - The raw `email=name` text.
- * @param source - Where the entry came from, for error messages.
- * @returns The parsed mapping entry.
- * @throws {Error} When the entry is not a `email=name` pair with
- * non-empty sides.
- *
- * @internal Exported for tests only (`src/compile/options.test.ts`);
- * production code parses through `parseCompileOptions`. Not part of
- * the public module API.
- */
-export function parseEmailMapEntry(entry: string, source: string): EmailMapEntry {
-  const separator = entry.indexOf('=');
-  const email = separator === -1 ? '' : entry.slice(0, separator).trim().toLowerCase();
-  const name = separator === -1 ? '' : entry.slice(separator + 1).trim();
-  if (email === '' || name === '') {
-    throw new Error(`Invalid options:\n${source}: expected 'email=name', got '${entry}'`);
-  }
-  return { email, name };
 }
 
 /**
@@ -310,7 +270,7 @@ function normalizeList(entries: string[] | undefined): string[] {
  * failing option and why.
  */
 export function parseCompileOptions(input: unknown): CompileOptions {
-  const raw = input as RawCompileOptions & { report: string | undefined };
+  const raw = (input ?? {}) as RawCompileOptions & { report: string | undefined };
   if (raw.report === undefined || raw.report === '') {
     throw new Error('Invalid options:\nreport: the report file is required');
   }

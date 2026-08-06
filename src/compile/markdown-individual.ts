@@ -11,7 +11,7 @@ import type { ChartAsset } from './chart-util.js';
 import { userSlug } from './chart-util.js';
 import type { ChartData, CountRow, UserSeries } from './chart-data.js';
 import { SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
-import type { EmailMap } from './filter.js';
+import type { EmailMap } from '../util/email-map.js';
 import { bullets, chartAsset, chartBlock, formatInt, table } from './markdown-util.js';
 import { statisticsTable, userSummaryLine } from './markdown-user.js';
 import type { CompileOptions } from './options.js';

@@ -52,7 +52,7 @@ const CACHE_KEY_LENGTH = 16;
  * the cached-result layout — so stale entries written by an older
  * version are never silently reused after an upgrade.
  */
-const LLM_CACHE_VERSION = 1 as const;
+const LLM_CACHE_VERSION = 3 as const;
 
 /**
  * The persisted LLM result for one user: the
@@ -71,8 +71,10 @@ const cachedResultSchema = z.object({
   cacheVersion: z.literal(LLM_CACHE_VERSION),
   /** Repository URL or local path the analysis ran on. */
   repo: z.string(),
-  /** Lowercased author email the analysis belongs to. */
+  /** Lowercased author email the analysis belongs to (the identity's primary email). */
   email: z.string(),
+  /** Every lowercased email of the identity, sorted. */
+  emails: z.array(z.string()).min(1),
   /** Analyzed author-date range start (ISO 8601, UTC; `''` unbounded). */
   since: z.string(),
   /** Analyzed author-date range end (ISO 8601, UTC; `''` unbounded). */
@@ -229,6 +231,7 @@ async function analyzeUser(
       repo: input.repo,
       name: group.name,
       email: group.email,
+      emails: group.emails,
       range: input.range,
       repoContext: orientation.context,
       commits: group.commits,
@@ -241,7 +244,7 @@ async function analyzeUser(
     const result: CachedResult = {
       payload,
       tokenUsage: usage,
-      ...llmCacheKeyParts(input, group.email),
+      ...llmCacheKeyParts(input, group),
     };
     await writeJsonFile(cachedResultPath(input, group), result);
     return { email: group.email, llm: completedLlm(result) };
@@ -338,28 +341,31 @@ async function loadCached(
  * @returns The cache file path.
  */
 function cachedResultPath(input: AnalyzeRepoInput, group: AuthorGroup): string {
-  return path.join(llmDir(input.entryDir), `${llmCacheKey(input, group.email)}.json`);
+  return path.join(llmDir(input.entryDir), `${llmCacheKey(input, group)}.json`);
 }
 
 /**
  * The cache-key components of one user's LLM result — the exact
- * parameters that change the analysis: cache version, repo, user
- * email, resolved since/until, model, and context/output limits. They
- * are hashed into the cache filename (`llmCacheKey`) and persisted in
- * the cache file itself, so the two can never drift. The cache version
- * invalidates stale entries when prompt templates, the tool schema, or
- * the result layout change.
+ * parameters that change the analysis: cache version, repo, the user's
+ * identity (primary email and the full lowercased email set), resolved
+ * since/until, model, and context/output limits. They are hashed into
+ * the cache filename (`llmCacheKey`) and persisted in the cache file
+ * itself, so the two can never drift. Keying by the identity's email
+ * set — not just the primary email — stops a newly merged identity from
+ * reusing a stale result cached for one of its constituent emails. The
+ * cache version invalidates stale entries when prompt templates, the
+ * tool schema, or the result layout change.
  *
  * @param input - Repo-level analysis input.
- * @param email - The user's lowercased author email.
- * @returns The key components, keyed for the cache file and ordered
- * for the hash.
+ * @param group - The user's author group.
+ * @returns The key components, ordered for the hash.
  */
-function llmCacheKeyParts(input: AnalyzeRepoInput, email: string) {
+function llmCacheKeyParts(input: AnalyzeRepoInput, group: AuthorGroup) {
   return {
     cacheVersion: LLM_CACHE_VERSION,
     repo: input.repo,
-    email,
+    email: group.email,
+    emails: group.emails,
     since: input.range.since,
     until: input.range.until,
     model: input.config.model,
@@ -374,12 +380,12 @@ function llmCacheKeyParts(input: AnalyzeRepoInput, email: string) {
  * parameters that change the analysis.
  *
  * @param input - Repo-level analysis input.
- * @param email - The user's lowercased author email.
+ * @param group - The user's author group.
  * @returns The 16-character hex key.
  */
-function llmCacheKey(input: AnalyzeRepoInput, email: string): string {
+function llmCacheKey(input: AnalyzeRepoInput, group: AuthorGroup): string {
   return createHash('sha256')
-    .update(JSON.stringify(llmCacheKeyParts(input, email)))
+    .update(JSON.stringify(llmCacheKeyParts(input, group)))
     .digest('hex')
     .slice(0, CACHE_KEY_LENGTH);
 }

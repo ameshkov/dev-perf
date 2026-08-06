@@ -49,6 +49,108 @@ describe('groupByAuthor', () => {
     expect(groups.map((group) => group.email)).toEqual(['alice@example.com', 'alice@work.com']);
   });
 
+  it('merges emails mapping to the same name into one identity', () => {
+    const groups = groupByAuthor(
+      [
+        commit('Alice', 'alice@example.com'),
+        commit('Alice', 'alice@work.com'),
+        commit('Alice', 'alice@example.com'),
+      ],
+      { 'alice@example.com': 'Alice Smith', 'alice@work.com': 'Alice Smith' },
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].email).toBe('alice@example.com');
+    expect(groups[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+    expect(groups[0].name).toBe('Alice Smith');
+    expect(groups[0].commits).toHaveLength(3);
+  });
+
+  it('keeps emails mapping to different names in separate groups', () => {
+    const groups = groupByAuthor(
+      [commit('Alice', 'alice@example.com'), commit('Alice', 'alice@work.com')],
+      { 'alice@example.com': 'Alice', 'alice@work.com': 'Bob' },
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.name)).toEqual(['Alice', 'Bob']);
+    expect(groups.map((group) => group.emails)).toEqual([
+      ['alice@example.com'],
+      ['alice@work.com'],
+    ]);
+  });
+
+  it('sorts the merged email list while keeping the first-seen primary email', () => {
+    const groups = groupByAuthor(
+      [commit('Alice', 'alice@work.com'), commit('Alice', 'alice@example.com')],
+      { 'alice@example.com': 'Alice', 'alice@work.com': 'Alice' },
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].email).toBe('alice@work.com');
+    expect(groups[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+  });
+
+  it('keeps a mapped identity separate from an emailed author whose email is the mapped name', () => {
+    // The mapped-name and emailed-author key spaces are disjoint: an
+    // email mapped to the string "bob@example.com" must not merge with
+    // the author bob@example.com.
+    const groups = groupByAuthor(
+      [commit('Alice', 'alice@example.com'), commit('Bob', 'bob@example.com')],
+      { 'alice@example.com': 'bob@example.com' },
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].name).toBe('bob@example.com');
+    expect(groups[0].emails).toEqual(['alice@example.com']);
+    expect(groups[1].name).toBe('Bob');
+    expect(groups[1].emails).toEqual(['bob@example.com']);
+  });
+
+  it('treats mapped names case-sensitively, matching the compile layer', () => {
+    // Mapped names are used verbatim as identity keys, so "Alice" and
+    // "alice" stay separate identities — deliberate, matching how the
+    // `compile` command merges through the same mapping table.
+    const groups = groupByAuthor(
+      [commit('Alice', 'alice@example.com'), commit('Alice', 'alice@work.com')],
+      { 'alice@example.com': 'Alice', 'alice@work.com': 'alice' },
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.emails)).toEqual([
+      ['alice@example.com'],
+      ['alice@work.com'],
+    ]);
+  });
+
+  it('falls back to the most frequent name when a mapped name is blank', () => {
+    // The loaders reject blank mapped names; this guards against a
+    // directly-constructed map with an empty value.
+    const groups = groupByAuthor(
+      [commit('Alice', 'alice@example.com'), commit('Alice', 'alice@work.com')],
+      { 'alice@example.com': '', 'alice@work.com': '' },
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+    expect(groups[0].name).toBe('Alice');
+  });
+
+  it('backs off an inherited Object.prototype member as an email mapping', () => {
+    // `toString` is not an own property of a plain `{}` map, so an
+    // author email that happens to be such a name must not be read as a
+    // mapped name or merged into a bogus identity.
+    const groups = groupByAuthor(
+      [commit('Alice', 'toString'), commit('Bob', 'bob@example.com')],
+      {},
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].email).toBe('tostring');
+    expect(groups[0].name).toBe('Alice');
+    expect(groups[1].email).toBe('bob@example.com');
+  });
+
   it('picks the most frequent author name as the display name', () => {
     const groups = groupByAuthor([
       commit('Alice Smith', 'alice@example.com'),

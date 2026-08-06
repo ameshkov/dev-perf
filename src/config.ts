@@ -10,6 +10,8 @@
  * defaults 262144 / 65536.
  */
 import { z } from 'zod';
+import { emailMapEntrySchema, parseEmailMapEntry } from './util/email-map.js';
+import { splitList } from './util/list.js';
 import { periodUnitSchema } from './report/index.js';
 
 /**
@@ -44,6 +46,10 @@ export interface RawCliOptions {
   limitOutput?: string;
   /** Retries for a failed LLM analysis (default: 2). */
   llmRetries?: string;
+  /** Email-to-name mappings, one `email=name` per entry. */
+  map?: string[];
+  /** JSON file with email-to-name mappings (`{ "email": "Name" }`). */
+  mapsFile?: string;
   /** Analyze up to this many repositories in parallel (default: 1). */
   parallel?: string;
   /** Verbose logging. */
@@ -69,6 +75,8 @@ const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
   limitContext: 'DEV_PERF_LIMIT_CONTEXT',
   limitOutput: 'DEV_PERF_LIMIT_OUTPUT',
   llmRetries: 'DEV_PERF_LLM_RETRIES',
+  map: 'DEV_PERF_MAP',
+  mapsFile: 'DEV_PERF_MAPS_FILE',
   parallel: 'DEV_PERF_PARALLEL',
   verbose: 'DEV_PERF_VERBOSE',
 };
@@ -87,6 +95,9 @@ const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off']);
 
 /** Raw-option keys whose environment values are booleans. */
 const BOOLEAN_OPTIONS: ReadonlySet<keyof RawCliOptions> = new Set(['refresh', 'llm', 'verbose']);
+
+/** Raw-option keys whose environment values are comma-separated lists. */
+const LIST_OPTIONS: ReadonlySet<keyof RawCliOptions> = new Set(['map']);
 
 /**
  * zod schema for the parsed CLI options. `llm` defaults to `true`
@@ -127,6 +138,10 @@ export const cliOptionsSchema = z
     limitOutput: z.coerce.number().int().positive().default(65536),
     /** Retries for a failed LLM analysis (default: 2). */
     llmRetries: z.coerce.number().int().min(0).default(2),
+    /** Email-to-name mappings parsed from `--map` / the environment. */
+    maps: z.array(emailMapEntrySchema).optional(),
+    /** JSON file with email-to-name mappings. */
+    mapsFile: z.string().optional(),
     /** Analyze up to this many repositories in parallel (default: 1). */
     parallel: z.coerce.number().int().min(1).default(1),
     /** Verbose logging. */
@@ -141,6 +156,20 @@ export const cliOptionsSchema = z
         path: ['since'],
         message: 'required when --unit is set (an unbounded range cannot be split)',
       });
+    }
+    // Each email may map to only one identity; report every duplicated
+    // email in one pass instead of stopping at the first.
+    const seen = new Set<string>();
+    for (const entry of options.maps ?? []) {
+      if (seen.has(entry.email)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['map'],
+          message: `email '${entry.email}' is mapped more than once`,
+        });
+        continue;
+      }
+      seen.add(entry.email);
     }
     if (!options.llm) {
       return;
@@ -186,15 +215,23 @@ export type CliOptions = z.infer<typeof cliOptionsSchema>;
  * pass a controlled object.
  * @returns The merged raw options.
  * @throws {Error} When a boolean environment variable holds an
- * unrecognized value.
+ * unrecognized value, or a `DEV_PERF_MAP` entry is not an
+ * `email=name` pair.
  */
 function applyEnvOptions(raw: RawCliOptions, env: NodeJS.ProcessEnv = process.env): RawCliOptions {
   const merged: Record<string, unknown> = { ...raw };
   for (const key of Object.keys(OPTION_ENV) as Array<keyof RawCliOptions>) {
     // `--no-llm` is a negated commander flag, so `llm` is `true` by
     // default even when the flag was not passed; only an explicit
-    // `false` (the flag itself) counts as flag-provided.
-    const providedByFlag = key === 'llm' ? merged.llm === false : merged[key] !== undefined;
+    // `false` (the flag itself) counts as flag-provided. Repeatable
+    // options default to `[]` in commander, so an empty list also does
+    // not count as flag-provided — the environment fills it.
+    const providedByFlag =
+      key === 'llm'
+        ? merged.llm === false
+        : Array.isArray(merged[key])
+          ? (merged[key] as unknown[]).length > 0
+          : merged[key] !== undefined;
     if (providedByFlag) {
       continue;
     }
@@ -202,7 +239,21 @@ function applyEnvOptions(raw: RawCliOptions, env: NodeJS.ProcessEnv = process.en
     if (value === undefined || value === '') {
       continue;
     }
-    merged[key] = BOOLEAN_OPTIONS.has(key) ? booleanValue(key, value, OPTION_ENV[key]) : value;
+    if (BOOLEAN_OPTIONS.has(key)) {
+      merged[key] = booleanValue(key, value, OPTION_ENV[key]);
+    } else if (LIST_OPTIONS.has(key)) {
+      const entries = splitList(value);
+      if (key === 'map') {
+        // Validate now so a malformed environment entry is reported
+        // under its own variable name, not the `--map` flag.
+        for (const entry of entries) {
+          parseEmailMapEntry(entry, OPTION_ENV.map);
+        }
+      }
+      merged[key] = entries;
+    } else {
+      merged[key] = value;
+    }
   }
   return merged as RawCliOptions;
 }
@@ -257,10 +308,7 @@ function envRepos(env: NodeJS.ProcessEnv): string[] | undefined {
   if (value === undefined || value.trim() === '') {
     return undefined;
   }
-  return value
-    .split(',')
-    .map((repo) => repo.trim())
-    .filter((repo) => repo !== '');
+  return splitList(value);
 }
 
 /**
@@ -274,7 +322,8 @@ function envRepos(env: NodeJS.ProcessEnv): string[] | undefined {
  * pass a controlled object.
  * @returns The merged raw options, ready for `parseCliOptions`.
  * @throws {Error} When a boolean environment variable holds an
- * unrecognized value.
+ * unrecognized value, or a `DEV_PERF_MAP` entry is not an
+ * `email=name` pair.
  */
 export function resolveRawOptions(
   repos: string[],
@@ -312,7 +361,11 @@ function flagName(path: PropertyKey[]): string {
 /**
  * Validates raw CLI options (as parsed by commander) against
  * `cliOptionsSchema` and returns the validated options with defaults
- * applied.
+ * applied. The `map` raw option is normalized to the schema's `maps`
+ * field: each occurrence is split on commas, trimmed, emptied entries
+ * are dropped — so `--map ""` selects nothing — and each entry is
+ * parsed into an email-name pair. The parsed field stays absent when
+ * no mappings were given.
  *
  * @param input - Raw options, including the `repos` list.
  * @returns The validated options.
@@ -320,7 +373,13 @@ function flagName(path: PropertyKey[]): string {
  * failing option and why.
  */
 export function parseCliOptions(input: unknown): CliOptions {
-  const result = cliOptionsSchema.safeParse(input);
+  const raw = (input ?? {}) as RawCliOptions;
+  const maps = normalizeList(raw.map).map((entry) => parseEmailMapEntry(entry, '--map'));
+  const normalized = {
+    ...raw,
+    ...(maps.length > 0 ? { maps } : {}),
+  };
+  const result = cliOptionsSchema.safeParse(normalized);
   if (!result.success) {
     const details = result.error.issues
       .map((issue) => `${flagName(issue.path)}: ${issue.message}`)
@@ -328,4 +387,18 @@ export function parseCliOptions(input: unknown): CliOptions {
     throw new Error(`Invalid options:\n${details}`);
   }
   return result.data;
+}
+
+/**
+ * Normalizes one raw list option into its entries: the option is
+ * repeatable, and each occurrence may carry a comma-separated list
+ * (mirroring the environment-variable form); entries are trimmed and
+ * empty ones are dropped, so an empty or whitespace-only occurrence
+ * contributes nothing.
+ *
+ * @param entries - The raw occurrences of the option.
+ * @returns The non-empty list entries.
+ */
+function normalizeList(entries: string[] | undefined): string[] {
+  return (entries ?? []).flatMap((entry) => splitList(entry));
 }

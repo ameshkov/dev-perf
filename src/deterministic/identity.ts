@@ -1,36 +1,60 @@
 /**
- * Author identity resolution: commits are
- * grouped by lowercased author email; the display name is the most
- * frequent author name for that email. v1 does no email merging —
- * every distinct email is its own identity. Bots are flagged by a
- * heuristic but never filtered: they are counted like everyone
- * else.
+ * Author identity resolution: commits are grouped by lowercased author
+ * email; the display name is the most frequent author name for that
+ * email. An optional email map (`--map`/`--maps-file`) merges distinct
+ * emails that map to the same display name into one identity, so a
+ * person's metrics are exact across their emails. Without a map,
+ * v1 behavior holds — every distinct email is its own identity. Bots
+ * are flagged by a heuristic but never filtered: they are counted like
+ * everyone else.
  */
+import type { EmailMap } from '../util/email-map.js';
 import type { Commit } from './commits.js';
 
 /**
- * One author identity: the commits grouped by a lowercased email.
- * Consumed by the deterministic metrics layer.
+ * One author identity: commits grouped by a lowercased email, or by the
+ * display name the emails map to when `--map` merges them. Consumed by
+ * the deterministic metrics layer.
  */
 export interface AuthorGroup {
-  /** Lowercased email the commits are grouped by. */
+  /** Stable primary key: the first-seen lowercased email of the identity. */
   email: string;
-  /** Display name: the most frequent author name for the email. */
+  /** Every lowercased email of the identity, sorted. */
+  emails: string[];
+  /** Display name: the mapped name, else the most frequent author name. */
   name: string;
-  /** The author's commits, newest first as parsed. */
+  /** The identity's commits, newest first as parsed. */
   commits: Commit[];
   /** Heuristic bot flag; bots are counted like everyone else. */
   isBot: boolean;
 }
 
 /**
- * Accumulation state for one email while grouping commits.
+ * Prefix of identity keys derived from a mapped display name, so a name
+ * key can never collide with an email key.
+ */
+const MAPPED_KEY_PREFIX = 'name:';
+
+/**
+ * Prefix of identity keys derived from a lowercased email, so an email
+ * key can never collide with a mapped-name key.
+ */
+const EMAIL_KEY_PREFIX = 'mail:';
+
+/**
+ * Accumulation state for one identity while grouping commits.
  */
 interface AuthorAccumulator {
-  /** Author names seen for the email, and how often. */
+  /** The first-seen lowercased email of the identity. */
+  email: string;
+  /** The mapped display name, when the identity was merged via the map. */
+  mappedName: string | undefined;
+  /** Author names seen for the identity, and how often. */
   nameCounts: Map<string, number>;
   /** Names in first-seen order, for deterministic tie-breaking. */
   nameOrder: string[];
+  /** The identity's lowercased emails, in first-seen order. */
+  emails: string[];
   /** The grouped commits, in input order. */
   commits: Commit[];
   /** Whether any commit matched the bot heuristic. */
@@ -38,26 +62,48 @@ interface AuthorAccumulator {
 }
 
 /**
- * Groups commits by lowercased author email. The display
- * name is the most frequent author name; ties break by first-seen
- * order in the commit list. Groups appear in first-encounter order
- * (newest author first for the usual newest-first input). Bots are
- * flagged but never removed.
+ * Groups commits by identity: a commit whose email is in the map joins
+ * the mapped-name identity, otherwise its lowercased email. The two key
+ * spaces are prefixed so they can never collide, and mapped identities
+ * take the user-supplied name while unmapped ones keep the most
+ * frequent author name (ties break by first-seen order). Identities
+ * appear in first-encounter order (newest author first for the usual
+ * newest-first input). Bots are flagged but never removed. An empty map
+ * reproduces the v1 behavior exactly: one identity per email.
  *
  * @param commits - Commits to group, typically newest first.
- * @returns One group per distinct lowercased email.
+ * @param emailMap - Lowercased-email-to-name mappings merging
+ * identities; empty by default.
+ * @returns One group per identity.
  */
-export function groupByAuthor(commits: Commit[]): AuthorGroup[] {
-  const byEmail = new Map<string, AuthorAccumulator>();
+export function groupByAuthor(commits: Commit[], emailMap: EmailMap = {}): AuthorGroup[] {
+  const byKey = new Map<string, AuthorAccumulator>();
   for (const commit of commits) {
     const email = commit.authorEmail.toLowerCase();
-    let group = byEmail.get(email);
+    // Only an own property is a mapping: an inherited Object.prototype
+    // member (e.g. an author email literally `toString`) must not be
+    // read as a mapped name.
+    const mapped = Object.hasOwn(emailMap, email) ? emailMap[email] : undefined;
+    const key =
+      mapped !== undefined ? `${MAPPED_KEY_PREFIX}${mapped}` : `${EMAIL_KEY_PREFIX}${email}`;
+    let group = byKey.get(key);
     if (group === undefined) {
-      group = { nameCounts: new Map(), nameOrder: [], commits: [], isBot: false };
-      byEmail.set(email, group);
+      group = {
+        email,
+        mappedName: mapped,
+        nameCounts: new Map(),
+        nameOrder: [],
+        emails: [],
+        commits: [],
+        isBot: false,
+      };
+      byKey.set(key, group);
     }
     group.commits.push(commit);
     group.isBot = group.isBot || isBotAuthor(commit.authorName, commit.authorEmail);
+    if (!group.emails.includes(email)) {
+      group.emails.push(email);
+    }
     const seen = group.nameCounts.get(commit.authorName);
     if (seen === undefined) {
       group.nameCounts.set(commit.authorName, 1);
@@ -66,9 +112,13 @@ export function groupByAuthor(commits: Commit[]): AuthorGroup[] {
       group.nameCounts.set(commit.authorName, seen + 1);
     }
   }
-  return [...byEmail.entries()].map(([email, group]) => ({
-    email,
-    name: mostFrequentName(group),
+  return [...byKey.values()].map((group) => ({
+    email: group.email,
+    emails: [...group.emails].sort(),
+    // `||` (not `??`) guards against a blank mapped name: mapped names
+    // are validated non-empty on load, but a blank one must not reach
+    // the report as the display name.
+    name: group.mappedName || mostFrequentName(group),
     commits: group.commits,
     isBot: group.isBot,
   }));

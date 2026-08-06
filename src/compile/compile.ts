@@ -9,9 +9,9 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { z } from 'zod';
 import type { TrendReport } from '../report/index.js';
 import { trendReportSchema } from '../report/index.js';
+import { loadEmailMap } from '../util/email-map.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile } from '../util/json.js';
 import { logConfig, logInfo, setVerbose } from '../util/log.js';
@@ -22,7 +22,6 @@ import { buildChartAssets } from './charts.js';
 import type { ChartAsset } from './chart-util.js';
 import { userSlug } from './chart-util.js';
 import { filterReport } from './filter.js';
-import type { EmailMap } from './filter.js';
 import { assembleIndividualMarkdown } from './markdown-individual.js';
 import { assemblePersonMarkdown } from './markdown-person.js';
 import { assembleTeamMarkdown } from './markdown.js';
@@ -37,9 +36,6 @@ const ASSETS_DIR = 'assets';
 
 /** The name of the per-person reports directory inside the output directory. */
 const PEOPLE_DIR = 'people';
-
-/** JSON shape of an `--maps-file`: a flat email-to-name object. */
-const mapsFileSchema = z.record(z.string(), z.string());
 
 /** The outcome of a compile run. */
 export interface CompileResult {
@@ -78,36 +74,6 @@ async function loadReport(reportFile: string): Promise<TrendReport> {
     throw new Error(`Invalid report (${reportFile}):\n${details}`);
   }
   return result.data;
-}
-
-/**
- * The compiled email mappings: the `--maps-file` entries merged with
- * the `--map` entries, with the `--map` entries winning on conflict
- * (the flag wins over the file, mirroring the env resolution).
- *
- * @param options - The validated compile options.
- * @returns The email-to-name mapping.
- * @throws {Error} When the maps file is missing or not a flat
- * email-to-name object.
- */
-async function loadEmailMap(options: CompileOptions): Promise<EmailMap> {
-  const emailMap: EmailMap = {};
-  if (options.mapsFile !== undefined) {
-    const raw = await readJsonFile(options.mapsFile);
-    const result = mapsFileSchema.safeParse(raw);
-    if (!result.success) {
-      throw new Error(
-        `Invalid maps file (${options.mapsFile}): expected an object of { "email": "Name" } entries`,
-      );
-    }
-    for (const [email, name] of Object.entries(result.data)) {
-      emailMap[email.toLowerCase()] = name;
-    }
-  }
-  for (const entry of options.maps) {
-    emailMap[entry.email] = entry.name;
-  }
-  return emailMap;
 }
 
 /**
@@ -167,7 +133,7 @@ export async function runCompile(
   logConfig(`dev-perf ${appVersion}`);
   const report = await loadReport(reportFile);
   logInfo(`compile: report "${reportFile}" (${report.periods.length} periods)`);
-  const emailMap = await loadEmailMap(options);
+  const emailMap = await loadEmailMap(options.mapsFile, options.maps);
   const filtered = filterReport(report, {
     repos: options.repos,
     excludeRepos: options.excludeRepos,

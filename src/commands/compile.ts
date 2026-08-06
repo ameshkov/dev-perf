@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { parseCompileOptions, resolveCompileOptions, runCompile } from '../compile/index.js';
 import type { CompileResult, RawCompileOptions } from '../compile/index.js';
+import { collectOptionValues } from '../util/list.js';
 
 /** One option definition of the compile command. */
 interface CompileOption {
@@ -51,18 +52,6 @@ const COMPILE_OPTIONS: CompileOption[] = [
 ];
 
 /**
- * Collects repeated option values into a list: commander calls the
- * collector with the previous list, so each occurrence appends.
- *
- * @param value - The option value of this occurrence.
- * @param previous - The values collected so far.
- * @returns The extended list.
- */
-function collect(value: string, previous: string[]): string[] {
-  return [...previous, value];
-}
-
-/**
  * Registers the `compile` command on the program: it turns a JSON
  * report (as written by `report`) into a markdown report with charts,
  * writing `report.md` and the chart SVGs into an output directory.
@@ -83,7 +72,7 @@ export function registerCompileCommand(program: Command): void {
     );
   for (const option of COMPILE_OPTIONS) {
     if (option.repeatable) {
-      command.option(option.flags, option.description, collect, []);
+      command.option(option.flags, option.description, collectOptionValues, []);
     } else {
       command.option(option.flags, option.description);
     }

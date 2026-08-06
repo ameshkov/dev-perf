@@ -51,6 +51,10 @@ interface RunConfig {
   limitOutput: number;
   /** Retries for a failed LLM analysis. */
   llmRetries: number;
+  /** Email-to-name mappings (`email=name`), when any were given. */
+  maps?: string[];
+  /** Email mapping file, when `--maps-file` is set. */
+  mapsFile?: string;
   /** Repositories analyzed in parallel. */
   parallel: number;
   /** Verbose logging. */
@@ -107,6 +111,10 @@ export function runConfig(options: CliOptions, repos: readonly string[]): RunCon
     limitContext: options.limitContext,
     limitOutput: options.limitOutput,
     llmRetries: options.llmRetries,
+    ...(options.maps === undefined || options.maps.length === 0
+      ? {}
+      : { maps: options.maps.map((entry) => `${entry.email}=${entry.name}`) }),
+    ...(options.mapsFile === undefined ? {} : { mapsFile: options.mapsFile }),
     parallel: options.parallel,
     verbose: options.verbose ?? false,
   };
