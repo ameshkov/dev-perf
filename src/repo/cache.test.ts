@@ -10,6 +10,7 @@ import {
   entryHash,
   llmDir,
   opencodeDir,
+  opencodeHomeDir,
   readCloneInfo,
   repoDir,
   resolveCacheDir,
@@ -58,6 +59,7 @@ describe('layout path builders', () => {
     expect(cloneJsonPath(entry)).toBe(path.join(entry, 'clone.json'));
     expect(llmDir(entry)).toBe(path.join(entry, 'llm'));
     expect(opencodeDir(entry)).toBe(path.join(entry, 'opencode'));
+    expect(opencodeHomeDir(entry)).toBe(path.join(entry, 'opencode', 'home'));
   });
 });
 

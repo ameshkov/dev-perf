@@ -35,6 +35,10 @@ export interface EnsureCloneOptions {
 
 /** Result of `ensureClone`. */
 export interface CloneResult {
+  /** Absolute path of the clone's cache entry directory
+   * (`<cacheDir>/<hash>`); its basename is the entry hash that maps a
+   * repository to its cache entry. */
+  entryDir: string;
   /** Absolute path of the cloned repository working tree. */
   repoDir: string;
   /** Branch the clone was checked out on. */
@@ -98,6 +102,9 @@ export function cloneTarget(repo: string): string {
  * (removing the old `repo/`) on `--refresh` or when the cache is stale;
  * clones with `--filter=blob:none` and falls back to a full clone when
  * the hosting rejects partial clones. Writes `clone.json` after cloning.
+ * The clone start, naming the cache entry directory, is logged through
+ * the scoped logger (verbose); the caller logs the outcome with its
+ * duration.
  *
  * @param url - Repository URL or local path as given on the command line.
  * @param options - Cache directory, refresh flag, and git overrides.
@@ -119,6 +126,7 @@ export async function ensureClone(
     const existingStat = await stat(existing).catch(() => undefined);
     if (existingStat?.isDirectory()) {
       return {
+        entryDir,
         repoDir: existing,
         branch: cached.branch,
         head: cached.head,
@@ -133,6 +141,12 @@ export async function ensureClone(
   await mkdir(entryDir, { recursive: true });
 
   const target = cloneTarget(url);
+  // A clone can take a long time; log that it started so the user sees
+  // what dev-perf is doing instead of a silent wait. Naming the cache
+  // entry directory lets the user match the repository to its cache
+  // entry from the log. The caller logs the outcome (`cloned "..." in
+  // N ms (cache "...")`) once this returns.
+  log.info(`cloning "${url}" (cache "${entryDir}")`);
   try {
     await gitClone(entryDir, ['--filter=blob:none', target, 'repo'], gitOptions);
   } catch (error) {
@@ -155,7 +169,7 @@ export async function ensureClone(
   const clonedAt = new Date().toISOString();
   await writeCloneInfo(entryDir, { url, clonedAt, branch, head });
 
-  return { repoDir: cloneDir, branch, head, clonedAt, reused: false };
+  return { entryDir, repoDir: cloneDir, branch, head, clonedAt, reused: false };
 }
 
 /**

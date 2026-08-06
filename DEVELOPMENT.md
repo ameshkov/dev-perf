@@ -153,8 +153,8 @@ node build/index.js report --no-llm --since 2026-01-01 --until 2026-12-31 \
 # Argument validation (should fail with a clear error)
 node build/index.js report
 
-# Verbose run: progress (clone vs cache reuse, range, commit counts)
-# goes to stderr; stdout carries the report JSON only
+# Verbose run: progress (operation starts + outcomes, range, commit
+# counts) goes to stderr; stdout carries the report JSON only
 node build/index.js report --no-llm --verbose /tmp/fixture
 ```
 

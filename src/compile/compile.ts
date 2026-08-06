@@ -124,6 +124,11 @@ async function renderCharts(
   assetsDir: string,
 ): Promise<Map<string, ChartAsset>> {
   await mkdir(assetsDir, { recursive: true });
+  // Rendering every chart is the long step of a compile (each one is a
+  // Vega compile plus render); log that the batch started so the user
+  // sees what dev-perf is doing instead of a silent wait. Each finished
+  // chart is logged as `rendered "<file>"`.
+  logInfo(`compile: rendering ${assets.length} charts`);
   const byFile = new Map<string, ChartAsset>();
   for (const asset of assets) {
     try {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '../../test/helpers/temp-dir.js';
 import { fixtureContribution, trendReportJson } from '../../test/fixtures/trend-report-builder.js';
+import { setVerbose } from '../util/log.js';
 import { appVersion } from '../version.js';
 import { runCompile } from './compile.js';
 import { parseCompileOptions } from './options.js';
@@ -250,6 +251,32 @@ describe('runCompile', () => {
         expect(result.userCount).toBe(2);
       } finally {
         stderrWrite.mockRestore();
+      }
+    });
+  });
+
+  it('logs the chart rendering batch start before rendering, in verbose mode', async () => {
+    await withTempDir(async (dir) => {
+      const reportFile = path.join(dir, 'report.json');
+      await writeFile(reportFile, llmReport());
+      const output = path.join(dir, 'out');
+      const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        await runCompile(
+          reportFile,
+          parseCompileOptions({ report: reportFile, output, verbose: true }),
+        );
+
+        const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+        // The batch start line precedes the per-chart completion lines.
+        const renderStart = stderr.indexOf('compile: rendering ');
+        const rendered = stderr.indexOf('compile: rendered ');
+        expect(renderStart).toBeGreaterThanOrEqual(0);
+        expect(stderr).toMatch(/compile: rendering \d+ charts/);
+        expect(renderStart).toBeLessThan(rendered);
+      } finally {
+        stderrWrite.mockRestore();
+        setVerbose(false);
       }
     });
   });

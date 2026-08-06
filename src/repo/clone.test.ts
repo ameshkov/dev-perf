@@ -2,12 +2,13 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildFixtureRepo,
   removeFixtureRepo,
   type FixtureRepo,
 } from '../../test/fixtures/repo-builder.js';
+import { setVerbose } from '../util/log.js';
 import { cacheEntryDir, entryHash, readCloneInfo } from './cache.js';
 import { cloneTarget, ensureClone, isRemoteUrl } from './clone.js';
 import { gitRevParse, runGit } from './git.js';
@@ -230,6 +231,66 @@ describe('ensureClone', () => {
         /git clone/,
       );
     } finally {
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ensureClone logging', () => {
+  afterEach(() => {
+    setVerbose(false);
+    vi.restoreAllMocks();
+  });
+
+  it('logs the clone start line in verbose mode', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    setVerbose(true);
+    try {
+      await ensureClone(fixture.dir, { cacheDir });
+
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).toContain(`cloning "${fixture.dir}"`);
+      // The cache entry directory (with its hash) is named so a
+      // repository can be matched to its cache entry from the log.
+      expect(stderr).toContain(`(cache "${path.join(cacheDir, entryHash(fixture.dir))}")`);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('does not log a clone start when the cached clone is reused', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    setVerbose(true);
+    try {
+      const first = await ensureClone(fixture.dir, { cacheDir });
+      stderrWrite.mockClear();
+
+      const second = await ensureClone(fixture.dir, { cacheDir });
+      expect(second.reused).toBe(true);
+      expect(second.clonedAt).toBe(first.clonedAt);
+      expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringMatching(/cloning "/));
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('hides the clone start line in quiet mode', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await ensureClone(fixture.dir, { cacheDir });
+
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).not.toContain('cloning "');
+    } finally {
+      await removeFixtureRepo(fixture);
       await rm(path.dirname(cacheDir), { recursive: true, force: true });
     }
   });

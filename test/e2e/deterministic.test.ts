@@ -261,12 +261,15 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       // stdout carries the same pure report JSON as a quiet run.
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
       // stderr carries the startup block plus the progress lines:
-      // fresh clone (with duration), the resolved range, and per-repo
-      // commit counts.
+      // the clone start and its completion (with duration), both
+      // naming the cache entry directory, the resolved range, the
+      // commit read, and per-repo commit counts.
       expect(stderr).toContain(`dev-perf ${appVersion}`);
       expect(stderr).toContain('configuration:');
-      expect(stderr).toMatch(/cloned .* in \d+ ms/);
+      expect(stderr).toMatch(/cloning ".+" \(cache ".+"\)/);
+      expect(stderr).toMatch(/cloned .* in \d+ ms \(cache ".+"\)/);
       expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to 2026-01-31T23:59:59.000Z');
+      expect(stderr).toContain('reading commits');
       expect(stderr).toContain('3 commits from 2 authors');
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -301,7 +304,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain('configuration:');
       expect(stderr).toContain('  verbose: false');
       // …but nothing else: progress lines stay hidden in quiet mode.
-      expect(stderr).not.toMatch(/cloned|range:|commit/);
+      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit/);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);

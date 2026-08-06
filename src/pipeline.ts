@@ -147,7 +147,7 @@ async function analyzeAllRepos(options: CliOptions, repos: string[]): Promise<Ru
     log: firstLog,
   });
   firstLog.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first}" in ${Date.now() - startedAt} ms`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   const range = await resolveRange(clone.repoDir, options.since, options.until);
   const periods = splitPeriods(range, options.unit);

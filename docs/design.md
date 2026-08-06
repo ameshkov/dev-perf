@@ -119,6 +119,7 @@ layer, and the LLM structured-output schema so nothing can drift.
     ├── clone.json   # { url, clonedAt, branch, head }
     ├── llm/         # cached LLM analysis results (§6.6)
     └── opencode/    # generated .opencode/tools/devperf_report.ts + opencode.json (§6.2, §6.5)
+        └── home/    # opencode's isolated HOME — server state and logs, kept (§6.2)
 ```
 
 - Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
@@ -222,6 +223,17 @@ agent loops, tool schemas, retries, and multi-provider support. `@opencode-ai/sd
 - The API key from `--api-key` is set programmatically on the spawned server via
   `client.auth.set({ path: { id: <provider> }, body: { type: "api", key } })`
   rather than stored in any file.
+- The server runs with an **isolated HOME**: `HOME`/`XDG_CONFIG_HOME` point at the
+  cache entry's `opencode/home/` directory (a dev-perf-owned directory, created
+  per entry — the user's real home is never read). Unlike the generated files
+  beside it, this home is **kept** after the run, so opencode's state and log
+  files persist there (e.g. `opencode/home/.local/share/opencode/log/`) and can
+  be inspected to diagnose a failed analysis.
+- With `--verbose` the server is started at **DEBUG log level** (the SDK forwards
+  the generated config's `logLevel` as `--log-level=DEBUG` to `opencode serve`),
+  so the cache's `opencode.log` records server-side detail — per-part updates,
+  tool calls, provider round-trips — for diagnosing a stuck or failed attempt.
+  Without `--verbose` the server stays at its default INFO level.
 - Before starting the server, the tool writes into the clone:
     - `opencode.json` — provider (base URL) + model, permissions (read-only for
       the repo, deny writes), and a `limit` block;

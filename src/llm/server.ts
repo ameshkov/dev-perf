@@ -16,20 +16,22 @@
  * `opencode.json`, `OPENCODE_CONFIG_CONTENT` — the highest priority).
  * To guarantee the user's global opencode configuration never reaches
  * the analysis, the spawn runs with `HOME`/`XDG_CONFIG_HOME` pointed at
- * an empty temp directory (so no global config, plugins, or stored
- * auth can be found) and with `OPENCODE_CONFIG*` / server-auth vars
- * cleared; `enabled_providers` additionally pins the provider set.
- * Both the environment and the process cwd (the server's project
- * directory is fixed at spawn time) are restored immediately after the
- * server is up.
+ * the cache entry's `opencode/home/` directory (a dev-perf-owned
+ * directory, so no global config or plugins can be found) and with
+ * `OPENCODE_CONFIG*` / server-auth vars cleared; `enabled_providers`
+ * additionally pins the provider set. Unlike the generated files
+ * beside it, this home is deliberately kept in the cache entry after
+ * the run, so the server's own state and log files persist and can be
+ * inspected (e.g. to diagnose a failed analysis). Both the environment
+ * and the process cwd (the server's project directory is fixed at
+ * spawn time) are restored immediately after the server is up.
  */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createOpencode } from '@opencode-ai/sdk';
 import type { Config as OpencodeConfig } from '@opencode-ai/sdk';
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { llmDir, opencodeDir } from '../repo/cache.js';
+import { llmDir, opencodeDir, opencodeHomeDir } from '../repo/cache.js';
 import { waitForServerExit } from './shutdown.js';
 import { buildReportToolSource } from './tools.js';
 import { errorDetail } from '../util/error.js';
@@ -59,6 +61,13 @@ const PROVIDER_NPM = '@ai-sdk/openai-compatible';
 const SERVER_START_TIMEOUT_MS = 30_000;
 
 /**
+ * The opencode server log levels (`opencode serve --log-level`), as
+ * accepted by the SDK's `Config.logLevel`. Not exported: it is named
+ * only as the type of `LlmServerConfig.logLevel`.
+ */
+type OpencodeLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+/**
  * Environment variables that must not reach the spawned server: config
  * file overrides and server-auth settings (the SDK sets its own
  * `OPENCODE_CONFIG_CONTENT`; the rest would load user config or lock
@@ -86,11 +95,17 @@ export interface LlmServerConfig {
   limitContext: number;
   /** Max output tokens (`--limit-output`), the model's `limit.output`. */
   limitOutput: number;
+  /**
+   * opencode server log level, written to the server's log file
+   * (`opencode/home/.local/share/opencode/log/opencode.log`). `DEBUG`
+   * when the run is verbose; `undefined` keeps the server default
+   * (`INFO`) and no `--log-level` flag is passed.
+   */
+  logLevel?: OpencodeLogLevel;
 }
 
 /**
- * A running LLM server; `close` shuts it down and removes its isolated
- * state directory.
+ * A running LLM server; `close` shuts it down.
  */
 export interface LlmServerHandle {
   /** Type-safe client for the running server. */
@@ -98,8 +113,9 @@ export interface LlmServerHandle {
   /** Server base URL, e.g. `http://127.0.0.1:4096`. */
   url: string;
   /**
-   * Stops the server and cleans up its isolated state directory: the
-   * SDK sends SIGTERM; a server that does not exit is force-killed.
+   * Stops the server: the SDK sends SIGTERM; a server that does not
+   * exit is force-killed. The isolated home under the cache entry's
+   * `opencode/home/` is intentionally left in place.
    */
   close(): Promise<void>;
 }
@@ -171,6 +187,9 @@ export function generateOpencodeConfig(config: LlmServerConfig): OpencodeConfig 
       webfetch: 'deny',
       external_directory: 'deny',
     },
+    // The SDK forwards this as `--log-level=<level>` to `opencode serve`;
+    // `undefined` drops the key, leaving the server's default (INFO).
+    logLevel: config.logLevel,
   };
 }
 
@@ -242,11 +261,10 @@ export async function startServer(
  * Spawns the opencode server for one clone: writes the generated files,
  * spawns `opencode serve` with the isolated environment and cwd = the
  * clone, injects the API key, and returns a handle. The server is the
- * caller's to close (`handle.close()`); on startup failure the temp
- * isolation state is removed and the error is rethrown with a hint
- * about the `opencode` binary. Only called through `startServer`'s
- * serialization, because the spawn mutates process-global state (cwd
- * and the isolation environment).
+ * caller's to close (`handle.close()`); on startup failure the error is
+ * rethrown with a hint about the `opencode` binary. Only called through
+ * `startServer`'s serialization, because the spawn mutates
+ * process-global state (cwd and the isolation environment).
  *
  * @param cloneDir - The clone's working tree (`<cache>/<hash>/repo`).
  * @param config - LLM server configuration.
@@ -262,10 +280,14 @@ async function spawnServer(
 ): Promise<LlmServerHandle> {
   const generated = generateOpencodeConfig(config);
   await writeServerFiles(cloneDir, generated);
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-opencode-'));
-  const restoreEnvironment = isolateEnvironment(tempHome);
+  const opencodeHome = opencodeHomeDir(path.dirname(cloneDir));
+  await mkdir(opencodeHome, { recursive: true });
+  const restoreEnvironment = isolateEnvironment(opencodeHome);
   const cwd = process.cwd();
-  let started = false;
+  // Server startup (spawn plus auth) is logged as it starts so the user
+  // sees what dev-perf is doing instead of a silent wait; the running
+  // server's URL is logged once `createOpencode` succeeds.
+  log.info(`LLM server: starting the opencode server (model "${config.model}")`);
   try {
     // The SDK spawns the server inheriting our cwd, and the server's
     // project directory is fixed at spawn time — so chdir into the
@@ -278,7 +300,6 @@ async function spawnServer(
       timeout: SERVER_START_TIMEOUT_MS,
       config: generated,
     });
-    started = true;
     await client.auth.set({
       path: { id: PROVIDER_ID },
       body: { type: 'api', key: config.apiKey },
@@ -294,7 +315,6 @@ async function spawnServer(
         // force-kill it when it does not — a stuck server would
         // otherwise keep this process alive through its stdio pipes.
         await waitForServerExit(server.url, { log });
-        await rm(tempHome, { recursive: true, force: true });
       },
     };
   } catch (error) {
@@ -307,9 +327,6 @@ async function spawnServer(
   } finally {
     restoreEnvironment();
     process.chdir(cwd);
-    if (!started) {
-      await rm(tempHome, { recursive: true, force: true });
-    }
   }
 }
 
@@ -326,15 +343,15 @@ async function writeText(dir: string, name: string, content: string): Promise<vo
 }
 
 /**
- * Points `HOME`/`XDG_CONFIG_HOME` at an empty temp directory (so no
- * global opencode config can be found) and clears the blocked
- * opencode environment variables for the upcoming spawn. Returns a
- * restore function that puts every touched variable back.
+ * Points `HOME`/`XDG_CONFIG_HOME` at the cache entry's opencode home
+ * directory (so no global opencode config can be found) and clears the
+ * blocked opencode environment variables for the upcoming spawn.
+ * Returns a restore function that puts every touched variable back.
  *
- * @param tempHome - The empty temp directory to use as `HOME`.
+ * @param home - The opencode home directory under `opencode/home/`.
  * @returns A function restoring the previous environment.
  */
-function isolateEnvironment(tempHome: string): () => void {
+function isolateEnvironment(home: string): () => void {
   const saved = new Map<string, string | undefined>();
   for (const name of [...BLOCKED_ENV_VARS, 'HOME', 'XDG_CONFIG_HOME']) {
     saved.set(name, process.env[name]);
@@ -342,8 +359,8 @@ function isolateEnvironment(tempHome: string): () => void {
   for (const name of BLOCKED_ENV_VARS) {
     delete process.env[name];
   }
-  process.env.HOME = tempHome;
-  process.env.XDG_CONFIG_HOME = path.join(tempHome, '.config');
+  process.env.HOME = home;
+  process.env.XDG_CONFIG_HOME = path.join(home, '.config');
   return () => {
     for (const [name, value] of saved) {
       if (value === undefined) {

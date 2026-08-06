@@ -259,9 +259,14 @@ describe('runPipeline', () => {
       expect(stderr).toContain('    - ' + repo.url);
       expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
       expect(stderr).toContain('  verbose: true');
-      // Then the verbose progress lines.
-      expect(stderr).toMatch(/cloned .* in \d+ ms/);
+      // Then the verbose progress lines: the clone start is logged
+      // before the clone runs, the outcome with its duration after;
+      // both name the cache entry directory (its hash).
+      expect(stderr).toMatch(/cloning ".+" \(cache ".+"\)/);
+      expect(stderr).toMatch(/cloned .* in \d+ ms \(cache ".+"\)/);
+      expect(stderr).toContain('(cache "');
       expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to');
+      expect(stderr).toContain('reading commits');
       expect(stderr).toContain('1 commit from 1 author');
 
       // Stdout carries the report JSON alone — the configuration never
@@ -296,7 +301,7 @@ describe('runPipeline', () => {
       expect(stderr).toContain('  verbose: false');
       // …but nothing else: progress lines stay hidden without
       // `--verbose`.
-      expect(stderr).not.toMatch(/cloned|range:|commit/);
+      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit/);
     } finally {
       vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });

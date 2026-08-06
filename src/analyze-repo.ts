@@ -81,8 +81,13 @@ export async function analyzeRepository(
     log,
   });
   log.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo}" in ${Date.now() - startedAt} ms`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
+  // Reading the whole-range commit history is the dominant git cost on
+  // a large repository; log that it started so the user sees what
+  // dev-perf is doing instead of a silent wait. The aggregated count
+  // (`N commits from M authors`) is logged once this returns.
+  log.info(`reading commits`);
   const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
   const groups = groupByAuthor(commits);
   log.info(`${pluralize(commits.length, 'commit')} from ${pluralize(groups.length, 'author')}`);
@@ -357,5 +362,8 @@ function llmServerConfig(options: CliOptions): LlmServerConfig {
     apiKey: options.apiKey,
     limitContext: options.limitContext,
     limitOutput: options.limitOutput,
+    // --verbose makes the opencode server log at DEBUG, so the cache's
+    // opencode.log carries the server-side detail for a failed attempt.
+    logLevel: options.verbose === true ? 'DEBUG' : undefined,
   };
 }

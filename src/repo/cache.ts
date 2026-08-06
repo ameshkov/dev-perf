@@ -11,7 +11,8 @@
  *     ├── repo/        # the git clone
  *     ├── clone.json   # { url, clonedAt, branch, head }
  *     ├── llm/         # cached LLM analysis results
- *     └── opencode/    # generated opencode config and tool
+ *     └── opencode/    # generated opencode config, tool, and agent
+ *         └── home/    # the spawned server's isolated home (state, logs)
  * ```
  */
 import { createHash } from 'node:crypto';
@@ -114,6 +115,21 @@ export function llmDir(entryDir: string): string {
  */
 export function opencodeDir(entryDir: string): string {
   return path.join(entryDir, 'opencode');
+}
+
+/**
+ * Returns the opencode server home directory inside a cache entry
+ * (`opencode/home`): the isolated `HOME`/`XDG_CONFIG_HOME` passed to
+ * the spawned opencode server. It is deliberately kept in the cache
+ * entry (not removed after the run), so the server's own state and log
+ * files persist and can be inspected after an analysis while the
+ * user's real home is still never read.
+ *
+ * @param entryDir - The cache entry directory.
+ * @returns The opencode home directory path.
+ */
+export function opencodeHomeDir(entryDir: string): string {
+  return path.join(opencodeDir(entryDir), 'home');
 }
 
 /**

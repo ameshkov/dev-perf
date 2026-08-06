@@ -119,9 +119,14 @@ verbose — so the effective settings are visible before the analysis,
 and even when the run fails before the report is written. Every
 `compile` run logs the version line as well.
 
-`--verbose` additionally prints progress to stderr — cache reuse vs a
-fresh clone (with duration), the resolved author-date range, and
-per-repo commit counts. Each line carries a millisecond timestamp and a
+`--verbose` additionally prints progress to stderr — the start of
+long-running operations so it stays clear what dev-perf is doing right
+now (cloning a repository, reading the commit history, starting the
+opencode server, rendering compile charts), cache reuse vs a fresh
+clone (with duration), the resolved author-date range, and per-repo
+commit counts. Clone lines name the cache entry directory
+(`.dev-cache/<hash>`), so a repository can be matched to its cache
+entry from the log. Each line carries a millisecond timestamp and a
 `[LEVEL]` tag (`[ERROR]`/`[WARN]`/`[INFO]`/`[DEBUG]`), and
 per-repository lines are prefixed with the repository's label
 (`[repo]`), so the progress of a parallel run stays traceable.

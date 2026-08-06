@@ -181,8 +181,16 @@ Universal design principles this codebase follows:
   logs an always-visible startup line to stderr with the application
   version (`dev-perf <version>`); `report` runs follow it with the
   full resolved configuration as one indented line per config field
-  (`src/run-config.ts`), with the API key masked. Log message strings
-  are formatted per the **Log string formatting** guideline below.
+  (`src/run-config.ts`), with the API key masked. Long-running
+  operations log their start as well as their outcome: a verbose
+  `info` line right before the work (e.g. `cloning "repo"`, `reading
+  commits`, `LLM server: starting ...`, `compile: rendering N charts`)
+  paired with the existing outcome line, so a long wait stays visible
+  as what dev-perf is doing right now instead of a silent gap. Clone
+  lines name the cache entry directory (`.dev-cache/<hash>`), so a
+  repository can be matched to its cache entry from the log. Log
+  message strings are formatted per the **Log string formatting**
+  guideline below.
 - **Guaranteed CLI exit** — the CLI must terminate once the report is
   written: the entry point forces a clean exit (waiting for stdout to
   flush first) instead of relying on the event loop draining, because

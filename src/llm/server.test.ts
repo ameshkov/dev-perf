@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,7 +6,8 @@ import { createOpencode } from '@opencode-ai/sdk';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
-import { llmDir, opencodeDir } from '../repo/cache.js';
+import { setVerbose } from '../util/log.js';
+import { llmDir, opencodeDir, opencodeHomeDir } from '../repo/cache.js';
 import { buildReportToolSource } from './tools.js';
 import {
   ANALYST_AGENT_ID,
@@ -105,6 +106,17 @@ describe('generateOpencodeConfig', () => {
   it('does not declare the agent in the config (it lives in .opencode/agents)', () => {
     const config = generateOpencodeConfig(CONFIG);
     expect(config.agent).toBeUndefined();
+  });
+
+  it('forwards the opencode log level into the config when set', () => {
+    const config = generateOpencodeConfig({ ...CONFIG, logLevel: 'DEBUG' });
+    // The SDK translates this into `--log-level=DEBUG` for the spawn.
+    expect(config.logLevel).toBe('DEBUG');
+  });
+
+  it('leaves the log level unset for default (INFO) runs', () => {
+    const config = generateOpencodeConfig(CONFIG);
+    expect(config.logLevel).toBeUndefined();
   });
 });
 
@@ -233,6 +245,57 @@ describe('startServer close', () => {
     // The SDK SIGTERM path runs first; `waitForServerExit` finds the
     // port closed (nothing listens on the free port) and returns.
     expect(closeServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates the isolated opencode home in the cache entry and keeps it on close', async () => {
+    const closeServer = vi.fn();
+    const port = await freePort();
+    vi.mocked(createOpencode).mockResolvedValueOnce({
+      client: {
+        auth: { set: vi.fn(async () => undefined) },
+      } as unknown as OpencodeClient,
+      server: { url: `http://127.0.0.1:${port}`, close: closeServer },
+    });
+
+    const cloneDir = path.join(tmpRoot, 'entry', 'repo');
+    const handle = await startServer(cloneDir, CONFIG);
+    await handle.close();
+
+    // The server's isolated home lives under the cache entry's
+    // opencode/ directory and survives shutdown (its state and logs
+    // are kept in the cache for inspection after the run).
+    const homeDir = opencodeHomeDir(path.dirname(cloneDir));
+    expect((await stat(homeDir)).isDirectory()).toBe(true);
+  });
+
+  it('logs the server start line before the spawn, in verbose mode only', async () => {
+    const closeServer = vi.fn();
+    const port = await freePort();
+    vi.mocked(createOpencode).mockResolvedValueOnce({
+      client: {
+        auth: { set: vi.fn(async () => undefined) },
+      } as unknown as OpencodeClient,
+      server: { url: `http://127.0.0.1:${port}`, close: closeServer },
+    });
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    setVerbose(true);
+    try {
+      const handle = await startServer(path.join(tmpRoot, 'entry', 'repo'), CONFIG);
+      try {
+        const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+        expect(stderr).toContain(
+          `LLM server: starting the opencode server (model "${CONFIG.model}")`,
+        );
+        expect(stderr).toContain(
+          `LLM server: "http://127.0.0.1:${port}" (model "${CONFIG.model}")`,
+        );
+      } finally {
+        await handle.close();
+      }
+    } finally {
+      setVerbose(false);
+      stderrWrite.mockRestore();
+    }
   });
 });
 
