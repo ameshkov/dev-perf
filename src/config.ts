@@ -1,25 +1,32 @@
 /**
- * Resolution and validation of the parsed CLI options. `resolveRawOptions`
- * fills options that were not passed as flags from their `DEV_PERF_*`
- * environment variables (the flag always wins), and `parseCliOptions`
- * validates the merged options against `cliOptionsSchema`. The
- * cross-field rules: when LLM analysis is enabled, `model`,
- * `providerUrl` and `apiKey` are required; `--since` is required when
- * `--unit` is set (an unbounded range cannot be split into periods).
- * `limitContext` / `limitOutput` are positive integers with the
- * defaults 262144 / 65536.
+ * Resolution and validation of the report options from the YAML config
+ * file. `resolveReportOptions` maps the kebab-case config keys to the
+ * camelCase validated shape (repos from the `repos` key, numbers pass
+ * through typed, `users-map` parsed into mapping entries), and
+ * `parseReportOptions` validates them against `reportOptionsSchema`.
+ * The config file is the single source of options — the CLI carries no
+ * flags beyond `--config`. The cross-field rules: when LLM analysis is
+ * enabled, `model`, `providerUrl` and `apiKey` are required; `since` is
+ * required when `unit` is set (an unbounded range cannot be split into
+ * periods); each email may map to only one display name. `limitContext`
+ * / `limitOutput` are positive integers with the defaults 262144 /
+ * 65536.
  */
 import { z } from 'zod';
-import { emailMapEntrySchema, parseEmailMapEntry } from './util/email-map.js';
-import { splitList } from './util/list.js';
+import type { DevPerfConfig } from './config-file.js';
+import { emailMapEntrySchema, usersMapToEntries } from './util/email-map.js';
+import type { EmailMapEntry } from './util/email-map.js';
 import { periodUnitSchema } from './report/index.js';
 
 /**
- * Raw options as parsed by commander before validation: limit options
- * are strings, and unset options are `undefined`. The validated,
- * defaulted shape is `CliOptions` from this module.
+ * The report options as resolved from the config file before
+ * validation: optional kebab-case config keys mapped to the camelCase
+ * fields of the validated shape. The config file is the only source of
+ * options, so this is the input to `parseReportOptions`.
  */
-export interface RawCliOptions {
+export interface ResolvedReportOptions {
+  /** Repositories to analyze (URLs or local paths). */
+  repos: string[];
   /** Start date (author date, UTC; any git date format). */
   since?: string;
   /** End date (author date, UTC; any git date format; default: today). */
@@ -32,83 +39,42 @@ export interface RawCliOptions {
   cacheDir?: string;
   /** Force re-clone and re-analysis even if the cache is present. */
   refresh?: boolean;
-  /** LLM analysis enabled (default: true; `--no-llm` disables it). */
+  /** LLM analysis enabled (default: true; `llm: false` disables it). */
   llm?: boolean;
   /** Model id, e.g. gpt-4.1. Required when LLM analysis is enabled. */
   model?: string;
   /** OpenAI-compatible provider base URL. Required when LLM is enabled. */
   providerUrl?: string;
-  /** Provider API key; `DEV_PERF_API_KEY` is an alternative. Required for LLM. */
+  /** Provider API key. Required for LLM analysis. */
   apiKey?: string;
   /** Max context tokens for LLM analysis (default: 262144). */
-  limitContext?: string;
+  limitContext?: number;
   /** Max output tokens for LLM analysis (default: 65536). */
-  limitOutput?: string;
+  limitOutput?: number;
   /** Retries for a failed LLM analysis (default: 2). */
-  llmRetries?: string;
-  /** Email-to-name mappings, one `email=name` per entry. */
-  map?: string[];
-  /** JSON file with email-to-name mappings (`{ "email": "Name" }`). */
-  mapsFile?: string;
+  llmRetries?: number;
+  /** Email-to-name mappings parsed from the `users-map` config key. */
+  maps?: EmailMapEntry[];
   /** Analyze up to this many repositories in parallel (default: 1). */
-  parallel?: string;
+  parallel?: number;
   /** Verbose logging. */
   verbose?: boolean;
+  /** Config file the options were resolved from, when one was used. */
+  configFile?: string;
 }
 
 /**
- * Environment variable backing each raw option. `DEV_PERF_NO_LLM`
- * backs `llm` with inverted meaning: `true` disables LLM analysis,
- * like `--no-llm`.
- */
-const OPTION_ENV: Readonly<Record<keyof RawCliOptions, string>> = {
-  since: 'DEV_PERF_SINCE',
-  until: 'DEV_PERF_UNTIL',
-  unit: 'DEV_PERF_UNIT',
-  output: 'DEV_PERF_OUTPUT',
-  cacheDir: 'DEV_PERF_CACHE_DIR',
-  refresh: 'DEV_PERF_REFRESH',
-  llm: 'DEV_PERF_NO_LLM',
-  model: 'DEV_PERF_MODEL',
-  providerUrl: 'DEV_PERF_PROVIDER_URL',
-  apiKey: 'DEV_PERF_API_KEY',
-  limitContext: 'DEV_PERF_LIMIT_CONTEXT',
-  limitOutput: 'DEV_PERF_LIMIT_OUTPUT',
-  llmRetries: 'DEV_PERF_LLM_RETRIES',
-  map: 'DEV_PERF_MAP',
-  mapsFile: 'DEV_PERF_MAPS_FILE',
-  parallel: 'DEV_PERF_PARALLEL',
-  verbose: 'DEV_PERF_VERBOSE',
-};
-
-/** Environment variable accepted as an alternative to `--api-key`. */
-const API_KEY_ENV_VAR = OPTION_ENV.apiKey;
-
-/** Environment variable backing the positional `<repo...>` argument. */
-const REPOS_ENV_VAR = 'DEV_PERF_REPOS';
-
-/** True spellings accepted for boolean environment variables. */
-const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
-
-/** False spellings accepted for boolean environment variables. */
-const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off']);
-
-/** Raw-option keys whose environment values are booleans. */
-const BOOLEAN_OPTIONS: ReadonlySet<keyof RawCliOptions> = new Set(['refresh', 'llm', 'verbose']);
-
-/** Raw-option keys whose environment values are comma-separated lists. */
-const LIST_OPTIONS: ReadonlySet<keyof RawCliOptions> = new Set(['map']);
-
-/**
- * zod schema for the parsed CLI options. `llm` defaults to `true`
- * (LLM analysis is on unless `--no-llm` is passed), and the limit
- * options are coerced from the string values commander produces.
+ * zod schema for the report options. `llm` defaults to `true` (LLM
+ * analysis is on unless the config sets `llm: false`), and the limit
+ * options hold the numeric config values directly. `configFile` is
+ * internal metadata — the config file the options were resolved from —
+ * never an option itself.
  *
  * @internal Exported for tests only (`src/config.test.ts`); production
- * code validates through `parseCliOptions`. Remove the tag when a
+ * code validates through `parseReportOptions`. Remove the tag when a
  * production importer exists.
  */
-export const cliOptionsSchema = z
+export const reportOptionsSchema = z
   .object({
     /** Repositories to analyze (URLs or local paths); at least one. */
     repos: z.array(z.string()).min(1, 'at least one repository is required'),
@@ -124,37 +90,37 @@ export const cliOptionsSchema = z
     cacheDir: z.string().optional(),
     /** Force re-clone and re-analysis even if the cache is present. */
     refresh: z.boolean().optional(),
-    /** LLM analysis enabled (default: true; `--no-llm` disables it). */
+    /** LLM analysis enabled (default: true; `llm: false` disables it). */
     llm: z.boolean().default(true),
     /** Model id, e.g. gpt-4.1. Required when LLM analysis is enabled. */
     model: z.string().optional(),
     /** OpenAI-compatible provider base URL. Required when LLM is enabled. */
     providerUrl: z.string().optional(),
-    /** Provider API key; DEV_PERF_API_KEY is an alternative. Required for LLM. */
+    /** Provider API key. Required for LLM analysis. */
     apiKey: z.string().optional(),
     /** Max context tokens for LLM analysis (default: 262144). */
-    limitContext: z.coerce.number().int().positive().default(262144),
+    limitContext: z.number().int().positive().default(262144),
     /** Max output tokens for LLM analysis (default: 65536). */
-    limitOutput: z.coerce.number().int().positive().default(65536),
+    limitOutput: z.number().int().positive().default(65536),
     /** Retries for a failed LLM analysis (default: 2). */
-    llmRetries: z.coerce.number().int().min(0).default(2),
-    /** Email-to-name mappings parsed from `--map` / the environment. */
+    llmRetries: z.number().int().min(0).default(2),
+    /** Email-to-name mappings parsed from the `users-map` config key. */
     maps: z.array(emailMapEntrySchema).optional(),
-    /** JSON file with email-to-name mappings. */
-    mapsFile: z.string().optional(),
     /** Analyze up to this many repositories in parallel (default: 1). */
-    parallel: z.coerce.number().int().min(1).default(1),
+    parallel: z.number().int().min(1).default(1),
     /** Verbose logging. */
     verbose: z.boolean().optional(),
+    /** Config file the options were resolved from, when one was used. */
+    configFile: z.string().optional(),
   })
   .superRefine((options, ctx) => {
-    // An unbounded range cannot be split into periods: --since must be
-    // given whenever --unit is set.
+    // An unbounded range cannot be split into periods: `since` must be
+    // given whenever `unit` is set.
     if (options.unit !== undefined && options.since === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['since'],
-        message: 'required when --unit is set (an unbounded range cannot be split)',
+        message: 'required when unit is set (an unbounded range cannot be split)',
       });
     }
     // Each email may map to only one identity; report every duplicated
@@ -164,7 +130,7 @@ export const cliOptionsSchema = z
       if (seen.has(entry.email)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['map'],
+          path: ['users-map'],
           message: `email '${entry.email}' is mapped more than once`,
         });
         continue;
@@ -178,227 +144,139 @@ export const cliOptionsSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['model'],
-        message: 'required when LLM analysis is enabled (or pass --no-llm)',
+        message: 'required when LLM analysis is enabled (or set llm: false)',
       });
     }
     if (options.providerUrl === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['providerUrl'],
-        message: 'required when LLM analysis is enabled (or pass --no-llm)',
+        message: 'required when LLM analysis is enabled (or set llm: false)',
       });
     }
     if (options.apiKey === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['apiKey'],
-        message: `required when LLM analysis is enabled (or set ${API_KEY_ENV_VAR})`,
+        message: 'required when LLM analysis is enabled (or set llm: false)',
       });
     }
   });
 
-/**
- * Parsed and validated CLI options: defaults applied, limits coerced
- * to numbers, LLM and period-split requirements enforced.
- */
-export type CliOptions = z.infer<typeof cliOptionsSchema>;
+/** Parsed and validated report options: defaults applied, limits
+ * typed, LLM and period-split requirements enforced. */
+export type ReportOptions = z.infer<typeof reportOptionsSchema>;
 
 /**
- * Fills raw options that were not passed as flags from their
- * `DEV_PERF_*` environment variables; a CLI flag always wins over the
- * environment. Boolean options (`refresh`, `llm`, `verbose`) accept
- * `1`/`true`/`yes`/`on` for on and `0`/`false`/`no`/`off` for off;
- * empty values are treated as unset.
+ * Maps the validated config file to the report options shape: kebab-case
+ * config keys become the camelCase fields of the validated shape, repos
+ * come from the `repos` config key, numbers pass through typed, and the
+ * `users-map` key is parsed straight into mapping entries (display names
+ * pass through verbatim, so a comma in a name survives). The `maps`
+ * field stays absent when no mapping was given, and the config file
+ * path, when one was in effect, is recorded for the run-config dump.
  *
- * @param raw - Raw options as parsed by commander.
- * @param env - Environment source; defaults to `process.env`. Tests
- * pass a controlled object.
- * @returns The merged raw options.
- * @throws {Error} When a boolean environment variable holds an
- * unrecognized value, or a `DEV_PERF_MAP` entry is not an
- * `email=name` pair.
+ * @param config - The validated config file (see `loadDevPerfConfig`);
+ * empty when no file is in effect.
+ * @param configFile - The config file path, when one was in effect.
+ * @returns The resolved report options, ready for `parseReportOptions`.
  */
-function applyEnvOptions(raw: RawCliOptions, env: NodeJS.ProcessEnv = process.env): RawCliOptions {
-  const merged: Record<string, unknown> = { ...raw };
-  for (const key of Object.keys(OPTION_ENV) as Array<keyof RawCliOptions>) {
-    // `--no-llm` is a negated commander flag, so `llm` is `true` by
-    // default even when the flag was not passed; only an explicit
-    // `false` (the flag itself) counts as flag-provided. Repeatable
-    // options default to `[]` in commander, so an empty list also does
-    // not count as flag-provided — the environment fills it.
-    const providedByFlag =
-      key === 'llm'
-        ? merged.llm === false
-        : Array.isArray(merged[key])
-          ? (merged[key] as unknown[]).length > 0
-          : merged[key] !== undefined;
-    if (providedByFlag) {
-      continue;
-    }
-    const value = env[OPTION_ENV[key]];
-    if (value === undefined || value === '') {
-      continue;
-    }
-    if (BOOLEAN_OPTIONS.has(key)) {
-      merged[key] = booleanValue(key, value, OPTION_ENV[key]);
-    } else if (LIST_OPTIONS.has(key)) {
-      const entries = splitList(value);
-      if (key === 'map') {
-        // Validate now so a malformed environment entry is reported
-        // under its own variable name, not the `--map` flag.
-        for (const entry of entries) {
-          parseEmailMapEntry(entry, OPTION_ENV.map);
-        }
-      }
-      merged[key] = entries;
-    } else {
-      merged[key] = value;
-    }
-  }
-  return merged as RawCliOptions;
-}
-
-/**
- * Parses one boolean environment value for an option. `DEV_PERF_NO_LLM`
- * backs `llm` with inverted meaning: `true` disables LLM analysis,
- * like `--no-llm`.
- *
- * @param key - The option the value belongs to.
- * @param value - The raw environment value.
- * @param envVar - The variable name, for error messages.
- * @returns The parsed boolean.
- * @throws {Error} When the value is not a recognized boolean spelling.
- */
-function booleanValue(key: keyof RawCliOptions, value: string, envVar: string): boolean {
-  const parsed = parseBoolean(value, envVar);
-  return key === 'llm' ? !parsed : parsed;
-}
-
-/**
- * Parses a boolean environment value: `1`/`true`/`yes`/`on` are true,
- * `0`/`false`/`no`/`off` are false.
- *
- * @param value - The raw environment value.
- * @param envVar - The variable name, for error messages.
- * @returns The parsed boolean.
- * @throws {Error} When the value is not a recognized boolean spelling.
- */
-function parseBoolean(value: string, envVar: string): boolean {
-  const normalized = value.toLowerCase();
-  if (TRUE_ENV_VALUES.has(normalized)) {
-    return true;
-  }
-  if (FALSE_ENV_VALUES.has(normalized)) {
-    return false;
-  }
-  throw new Error(
-    `Invalid options:\n${envVar}: expected a boolean ('true' or 'false'), got '${value}'`,
-  );
-}
-
-/**
- * Parses `DEV_PERF_REPOS`: a comma-separated repository list with each
- * entry trimmed; `undefined` when the variable is unset or empty.
- *
- * @param env - Environment source.
- * @returns The repositories, or `undefined`.
- */
-function envRepos(env: NodeJS.ProcessEnv): string[] | undefined {
-  const value = env[REPOS_ENV_VAR];
-  if (value === undefined || value.trim() === '') {
-    return undefined;
-  }
-  return splitList(value);
-}
-
-/**
- * Resolves the raw options for validation: environment variables fill
- * every option whose flag was not passed, and `DEV_PERF_REPOS`
- * supplies the repositories when no positional arguments were given.
- *
- * @param repos - Repositories passed on the command line.
- * @param options - Raw commander options for this invocation.
- * @param env - Environment source; defaults to `process.env`. Tests
- * pass a controlled object.
- * @returns The merged raw options, ready for `parseCliOptions`.
- * @throws {Error} When a boolean environment variable holds an
- * unrecognized value, or a `DEV_PERF_MAP` entry is not an
- * `email=name` pair.
- */
-export function resolveRawOptions(
-  repos: string[],
-  options: RawCliOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): RawCliOptions & { repos: string[] } {
+export function resolveReportOptions(
+  config: DevPerfConfig = {},
+  configFile?: string,
+): ResolvedReportOptions {
+  const maps = usersMapToEntries(config['users-map'] ?? {});
   return {
-    ...applyEnvOptions(options, env),
-    repos: repos.length > 0 ? repos : (envRepos(env) ?? []),
+    repos: config.repos ?? [],
+    since: config.since,
+    until: config.until,
+    unit: config.unit,
+    output: config.output,
+    cacheDir: config['cache-dir'],
+    refresh: config.refresh,
+    llm: config.llm,
+    model: config.model,
+    providerUrl: config['provider-url'],
+    apiKey: config['api-key'],
+    limitContext: config['limit-context'],
+    limitOutput: config['limit-output'],
+    llmRetries: config['llm-retries'],
+    ...(maps.length > 0 ? { maps } : {}),
+    parallel: config.parallel,
+    verbose: config.verbose,
+    ...(configFile === undefined ? {} : { configFile }),
   };
 }
 
 /**
- * Renders an issue path as the CLI flag the user would pass, e.g.
- * `limitContext` → `--limit-context`; the `repos` path renders as
- * `repos` (a positional argument, not a flag), and an empty path
- * renders as `options`.
+ * Config key backing each report option, for error labels: the schema
+ * fields are camelCase, while the values always come from the config
+ * file, so a validation error names the config key
+ * (`provider-url`, `users-map`, ...) — never a CLI flag.
+ */
+const CONFIG_KEY: Readonly<Record<string, string>> = {
+  repos: 'repos',
+  since: 'since',
+  until: 'until',
+  unit: 'unit',
+  output: 'output',
+  cacheDir: 'cache-dir',
+  refresh: 'refresh',
+  llm: 'llm',
+  model: 'model',
+  providerUrl: 'provider-url',
+  apiKey: 'api-key',
+  limitContext: 'limit-context',
+  limitOutput: 'limit-output',
+  llmRetries: 'llm-retries',
+  maps: 'users-map',
+  parallel: 'parallel',
+  verbose: 'verbose',
+};
+
+/**
+ * Renders an issue path as the config key the user set, e.g.
+ * `providerUrl` → `provider-url`; the `repos` path renders as `repos`,
+ * the `maps` field renders as `users-map` (its config key), and an
+ * empty path renders as `options`. Unknown fields fall back to their
+ * kebab-case name, so a config key is still named even for future
+ * options.
  *
  * @param path - Issue path from a zod validation error.
- * @returns The flag name for error messages.
+ * @returns The config key for error messages.
  */
-function flagName(path: PropertyKey[]): string {
+function optionKey(path: PropertyKey[]): string {
   if (path.length === 0) {
     return 'options';
   }
-  if (path.length === 1 && path[0] === 'repos') {
-    return 'repos';
-  }
-  const flag = path
-    .map((segment) => String(segment).replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`))
-    .join('.');
-  return `--${flag}`;
+  const first = String(path[0]);
+  const base = CONFIG_KEY[first] ?? first.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+  const rest = path
+    .slice(1)
+    .map((segment) => `.${String(segment)}`)
+    .join('');
+  return base + rest;
 }
 
 /**
- * Validates raw CLI options (as parsed by commander) against
- * `cliOptionsSchema` and returns the validated options with defaults
- * applied. The `map` raw option is normalized to the schema's `maps`
- * field: each occurrence is split on commas, trimmed, emptied entries
- * are dropped — so `--map ""` selects nothing — and each entry is
- * parsed into an email-name pair. The parsed field stays absent when
- * no mappings were given.
+ * Validates the report options (as resolved from the config file)
+ * against `reportOptionsSchema` and returns the validated options with
+ * defaults applied. The `maps` field is already parsed into email-name
+ * pairs by `resolveReportOptions`, so the schema sees the parsed shape;
+ * the parsed field stays absent when no mappings were given.
  *
- * @param input - Raw options, including the `repos` list.
+ * @param input - The resolved report options.
  * @returns The validated options.
  * @throws {Error} When the options are invalid; the message lists each
  * failing option and why.
  */
-export function parseCliOptions(input: unknown): CliOptions {
-  const raw = (input ?? {}) as RawCliOptions;
-  const maps = normalizeList(raw.map).map((entry) => parseEmailMapEntry(entry, '--map'));
-  const normalized = {
-    ...raw,
-    ...(maps.length > 0 ? { maps } : {}),
-  };
-  const result = cliOptionsSchema.safeParse(normalized);
+export function parseReportOptions(input: unknown): ReportOptions {
+  const result = reportOptionsSchema.safeParse(input ?? {});
   if (!result.success) {
     const details = result.error.issues
-      .map((issue) => `${flagName(issue.path)}: ${issue.message}`)
+      .map((issue) => `${optionKey(issue.path)}: ${issue.message}`)
       .join('\n');
     throw new Error(`Invalid options:\n${details}`);
   }
   return result.data;
-}
-
-/**
- * Normalizes one raw list option into its entries: the option is
- * repeatable, and each occurrence may carry a comma-separated list
- * (mirroring the environment-variable form); entries are trimmed and
- * empty ones are dropped, so an empty or whitespace-only occurrence
- * contributes nothing.
- *
- * @param entries - The raw occurrences of the option.
- * @returns The non-empty list entries.
- */
-function normalizeList(entries: string[] | undefined): string[] {
-  return (entries ?? []).flatMap((entry) => splitList(entry));
 }

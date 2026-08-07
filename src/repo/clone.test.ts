@@ -65,15 +65,25 @@ exec git "$@"
 async function addCommit(fixture: FixtureRepo, message: string, date: string): Promise<void> {
   await writeFile(path.join(fixture.dir, `${message}.txt`), 'content\n');
   await runGit(fixture.dir, ['add', '-A']);
-  await runGit(fixture.dir, [
-    'commit',
-    '--author',
-    'Alice <alice@example.com>',
-    '--date',
-    date,
-    '-m',
-    message,
-  ]);
+  await runGit(
+    fixture.dir,
+    ['commit', '--author', 'Alice <alice@example.com>', '--date', date, '-m', message],
+    { env: { GIT_COMMITTER_DATE: date } },
+  );
+}
+
+/**
+ * Creates a branch in a fixture repo and commits to it, leaving the
+ * working tree on that branch.
+ */
+async function addBranchCommit(
+  fixture: FixtureRepo,
+  branch: string,
+  message: string,
+  date: string,
+): Promise<void> {
+  await runGit(fixture.dir, ['checkout', '-b', branch]);
+  await addCommit(fixture, message, date);
 }
 
 describe('isRemoteUrl', () => {
@@ -232,6 +242,87 @@ describe('ensureClone', () => {
       );
     } finally {
       await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('clones the requested branch and records it in clone.json', async () => {
+    const fixture = await buildFixture();
+    // main has two commits; dev branches from main with one extra commit.
+    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
+    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
+    await runGit(fixture.dir, ['checkout', 'main']);
+    const mainHead = await gitRevParse(fixture.dir, ['HEAD']);
+    const cacheDir = await tempCacheDir();
+    try {
+      const dev = await ensureClone(fixture.dir, { cacheDir, branch: 'dev' });
+      expect(dev.reused).toBe(false);
+      expect(dev.branch).toBe('dev');
+      expect(dev.head).toBe(devHead);
+      expect(dev.head).not.toBe(mainHead);
+
+      const info = await readCloneInfo(dev.entryDir);
+      expect(info?.branch).toBe('dev');
+      expect(info?.head).toBe(devHead);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('caches each branch in its own entry, so switching branches never reuses the wrong clone', async () => {
+    const fixture = await buildFixture();
+    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
+    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
+    await runGit(fixture.dir, ['checkout', 'main']);
+    const cacheDir = await tempCacheDir();
+    try {
+      // Two clones of the same URL: the branches land in different
+      // cache entries with distinct heads.
+      const dev = await ensureClone(fixture.dir, { cacheDir, branch: 'dev' });
+      expect(dev.reused).toBe(false);
+      expect(dev.head).toBe(devHead);
+      const main = await ensureClone(fixture.dir, { cacheDir, branch: 'main' });
+      expect(main.reused).toBe(false);
+      expect(main.branch).toBe('main');
+      expect(main.head).not.toBe(devHead);
+      expect(dev.entryDir).not.toBe(main.entryDir);
+      // A default (no-branch) run does not collide with the branch
+      // entries either and reuses the default-branch clone.
+      const prefixed = await ensureClone(fixture.dir, { cacheDir });
+      expect(prefixed.reused).toBe(false);
+      expect(prefixed.branch).toBe('main');
+      const defaultAgain = await ensureClone(fixture.dir, { cacheDir });
+      expect(defaultAgain.reused).toBe(true);
+      expect(defaultAgain.head).toBe(prefixed.head);
+      // The branch clone reuses its own entry on the next run.
+      const devAgain = await ensureClone(fixture.dir, { cacheDir, branch: 'dev' });
+      expect(devAgain.reused).toBe(true);
+      expect(devAgain.head).toBe(devHead);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the requested branch when falling back to a full clone', async () => {
+    const fixture = await buildFixture();
+    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
+    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
+    const cacheDir = await tempCacheDir();
+    const tmp = path.dirname(cacheDir);
+    try {
+      const { shim, marker } = await writeFilterRejectingGit(tmp);
+
+      const result = await ensureClone(fixture.dir, { cacheDir, branch: 'dev', gitBinary: shim });
+
+      // The partial-clone attempt happened and failed; the full-clone
+      // fallback still checked out the requested branch.
+      expect(await readFile(marker, 'utf8')).toBe('attempted\n');
+      expect(result.branch).toBe('dev');
+      expect(result.head).toBe(devHead);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(tmp, { recursive: true, force: true });
     }
   });
 });

@@ -192,7 +192,7 @@ function teamDynamics(data: ChartData, assets: ReadonlyMap<string, ChartAsset>):
   if (data.periods.length === 1) {
     sections.push(
       'Time-based dynamics charts are skipped: the report has a single period. ' +
-        'Run `dev-perf report --unit month` (or week/day/quarter/year) for per-period dynamics.',
+        'Set `unit: month` (or week/day/quarter/year) in the config for per-period dynamics.',
     );
     return sections.join('\n\n');
   }

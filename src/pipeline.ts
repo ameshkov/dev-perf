@@ -1,11 +1,11 @@
 /**
  * Analysis pipeline orchestration: for each repository — clone/cache,
  * deterministic analysis, the LLM phase when enabled — then assemble
- * the report and write it to stdout or the `--output` file. The run's
+ * the report and write it to stdout or the `output` file. The run's
  * range is resolved once from the first clone (git date parsing is
  * repo-independent) before the repositories are analyzed — in parallel
- * up to `--parallel`; each repository's progress lines carry a scoped
- * label. With `--unit`, the analyzed range is split into UTC-aligned
+ * up to `parallel`; each repository's progress lines carry a scoped
+ * label. With `unit`, the analyzed range is split into UTC-aligned
  * periods and the report carries one full per-repository report per
  * period. LLM failures are retried (`llmRetries`, each attempt with a
  * fresh in-process runtime) and remain fatal when every attempt fails:
@@ -14,12 +14,14 @@
  * completion (each disposes its LLM runtime in `finally`), the
  * first failure is rethrown, and any additional failures are logged.
  */
-import type { CliOptions } from './config.js';
+import type { ReportOptions } from './config.js';
 import { resolveBoundDate } from './deterministic/commits.js';
 import { analyzeRepository } from './analyze-repo.js';
 import { assembleTrendReport } from './report/index.js';
 import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
+import { parseRepoSpec } from './repo/repo-spec.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 import { runConfigLines } from './run-config.js';
 import { splitPeriods } from './trend/periods.js';
 import { loadEmailMap } from './util/email-map.js';
@@ -32,7 +34,7 @@ import { prettyJson, writeJsonFile } from './util/json.js';
 import { mapLimit } from './util/pool.js';
 import { appVersion } from './version.js';
 
-/** Date string git resolves for the default `--until` bound. */
+/** Date string git resolves for the default `until` bound. */
 const DEFAULT_UNTIL = 'today';
 
 /** Per-run analysis state: the range, its periods, and the entries. */
@@ -49,11 +51,11 @@ interface RunAnalysis {
  * Runs the analysis pipeline end to end: clones or reuses the cached
  * clone for each repository, resolves the analyzed author-date range
  * (once per run — date parsing is repo-independent), splits it into
- * periods when `--unit` is set, extracts commits and groups them by
+ * periods when `unit` is set, extracts commits and groups them by
  * author once per repo, runs the LLM phase when enabled (one in-process
  * runtime per repo shared by its periods, per-period analyses merged into the
  * report), assembles the report, and writes it as pretty JSON to
- * stdout or the `--output` file. Duplicate repository specs are
+ * stdout or the `output` file. Duplicate repository specs are
  * analyzed once (their entries are identical anyway, and parallel
  * analysis of the same cache entry would race); the report parameters
  * list the unique repos in input order. The run starts by logging the
@@ -67,7 +69,7 @@ interface RunAnalysis {
  * additionally logged to stderr — per-repo lines carry the repo's
  * label.
  *
- * @param options - Validated CLI options (see `parseCliOptions`).
+ * @param options - Validated report options (see `parseReportOptions`).
  * @returns The assembled trend report document.
  * @throws {GitError} When a clone or a git log fails, or when a bound
  * date cannot be parsed.
@@ -76,9 +78,15 @@ interface RunAnalysis {
  * and the period when `--unit` is set — plus the underlying cause, and
  * the report is not written.
  */
-export async function runPipeline(options: CliOptions): Promise<TrendReport> {
+export async function runPipeline(options: ReportOptions): Promise<TrendReport> {
   setVerbose(options.verbose === true);
+  const startedAt = Date.now();
   const repos = dedupeRepos(options.repos);
+  // The command start/end pair always visible on stderr, like the
+  // startup block below: `starting report` right before the work, then
+  // `finished report in <ms> ms` with the outcome and its duration —
+  // every run shows the command that ran and how long it took.
+  logConfig(`starting report`);
   // The startup block — application version, then the resolved
   // configuration as one indented line per field — is always logged
   // to stderr, so the effective settings are visible on every run,
@@ -88,59 +96,69 @@ export async function runPipeline(options: CliOptions): Promise<TrendReport> {
   for (const line of runConfigLines(options, repos)) {
     logConfig(line);
   }
-  // The email mappings are loaded once per run (the maps file is read
-  // here) and applied at the author-grouping stage of every repository,
-  // so deterministic metrics merge exactly and the LLM phase runs one
-  // session per merged identity.
-  const emailMap = await loadEmailMap(options.mapsFile, options.maps ?? []);
-  const analyzed = await analyzeAllRepos(options, repos, emailMap);
-  const report = assembleTrendReport({
-    repos,
-    range: analyzed.range,
-    unit: options.unit,
-    model: options.llm ? options.model : undefined,
-    llmEnabled: options.llm,
-    generatedAt: new Date().toISOString(),
-    periods: analyzed.periods.map((period, index) => ({
-      range: period,
-      repositories: analyzed.repositories[index] ?? [],
-    })),
-  });
-  if (options.output !== undefined) {
-    await writeJsonFile(options.output, report);
-  } else {
-    process.stdout.write(prettyJson(report));
+  // The finish marker runs in `finally`, so every run — success or
+  // failure — closes the start marker with the same duration line;
+  // an error thrown below propagates after the end marker is logged.
+  try {
+    // The email mappings are loaded once per run and applied at the
+    // author-grouping stage of every repository, so deterministic
+    // metrics merge exactly and the LLM phase runs one session per
+    // merged identity.
+    const emailMap = loadEmailMap(options.maps ?? []);
+    // Each repository argument may carry its own `#branch` suffix; the
+    // parsed specs drive the clone (branch) and the report entries.
+    const specs = repos.map(parseRepoSpec);
+    const analyzed = await analyzeAllRepos(options, specs, emailMap);
+    const report = assembleTrendReport({
+      repos,
+      range: analyzed.range,
+      unit: options.unit,
+      model: options.llm ? options.model : undefined,
+      llmEnabled: options.llm,
+      generatedAt: new Date().toISOString(),
+      periods: analyzed.periods.map((period, index) => ({
+        range: period,
+        repositories: analyzed.repositories[index] ?? [],
+      })),
+    });
+    if (options.output !== undefined) {
+      await writeJsonFile(options.output, report);
+    } else {
+      process.stdout.write(prettyJson(report));
+    }
+    return report;
+  } finally {
+    logConfig(`finished report in ${Date.now() - startedAt} ms`);
   }
-  return report;
 }
 
 /**
  * Analyzes all repositories of the run: the range is resolved once
  * from the first clone (date parsing is repo-independent) and split
  * into periods once; each repository is then analyzed across those
- * periods — in parallel up to `--parallel`. Returns the run range, the
+ * periods — in parallel up to `parallel`. Returns the run range, the
  * period bounds, and the assembled repository entries grouped by
  * period (one entry per repo per period). Every repository runs to
  * completion (each one's `finally` disposes its LLM runtime);
  * the first failure is rethrown after the pool settled, and any
  * additional failures are logged as warnings.
  *
- * @param options - Validated CLI options.
+ * @param options - Validated report options.
  * @param repos - The deduplicated repository specs, in input order.
  * @param emailMap - The compiled email mappings for identity merging.
  * @returns The run range, periods, and per-period repository entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
  * cannot be parsed.
  * @throws {Error} When the LLM phase fails; the message names the repo
- * — and the period when `--unit` is set — plus the underlying cause.
+ * — and the period when `unit` is set — plus the underlying cause.
  */
 async function analyzeAllRepos(
-  options: CliOptions,
-  repos: string[],
+  options: ReportOptions,
+  specs: RepoSpec[],
   emailMap: EmailMap,
 ): Promise<RunAnalysis> {
-  const logs = scopedLogs(repos);
-  const first = repos[0];
+  const logs = scopedLogs(specs);
+  const first = specs[0];
   const firstLog = logs[0];
   if (first === undefined || firstLog === undefined) {
     return {
@@ -153,13 +171,14 @@ async function analyzeAllRepos(
   // and periods from it — git date parsing is repo-independent, and
   // the first clone is then a cache hit inside the parallel pool.
   const startedAt = Date.now();
-  const clone = await ensureClone(first, {
+  const clone = await ensureClone(first.repo, {
     cacheDir: options.cacheDir,
     refresh: options.refresh,
+    branch: first.branch,
     log: firstLog,
   });
   firstLog.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first.spec}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   const range = await resolveRange(clone.repoDir, options.since, options.until);
   const periods = splitPeriods(range, options.unit);
@@ -172,7 +191,7 @@ async function analyzeAllRepos(
     );
   }
 
-  const repositories = await analyzeReposInParallel(options, repos, logs, range, periods, emailMap);
+  const repositories = await analyzeReposInParallel(options, specs, logs, range, periods, emailMap);
   return { range, periods, repositories };
 }
 
@@ -186,7 +205,7 @@ async function analyzeAllRepos(
  * period).
  *
  * @param options - Validated CLI options.
- * @param repos - The deduplicated repository specs, in input order.
+ * @param repos - The deduplicated repository specs (with branch), in input order.
  * @param logs - The per-repository scoped loggers, aligned with `repos`.
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
@@ -194,11 +213,11 @@ async function analyzeAllRepos(
  * @returns The per-period repository entries.
  * @throws {GitError} When a clone or git log fails.
  * @throws {Error} When the LLM phase fails; the message names the repo
- * — and the period when `--unit` is set — plus the underlying cause.
+ * — and the period when `unit` is set — plus the underlying cause.
  */
 async function analyzeReposInParallel(
-  options: CliOptions,
-  repos: readonly string[],
+  options: ReportOptions,
+  repos: readonly RepoSpec[],
   logs: readonly ScopedLog[],
   range: AnalyzedRange,
   periods: AnalyzedRange[],
@@ -269,15 +288,17 @@ function repoLabel(repo: string): string {
 /**
  * One scoped logger per repository, computed once in input order:
  * colliding basenames get a `#2`, `#3`, … suffix so parallel progress
- * lines stay distinguishable.
+ * lines stay distinguishable. Labels come from the full spec as given
+ * (a `#branch` suffix included), so two branches of one repository stay
+ * distinguishable in the log.
  *
- * @param repos - The deduplicated repository specs.
- * @returns The scoped loggers, aligned with `repos`.
+ * @param specs - The deduplicated repository specs.
+ * @returns The scoped loggers, aligned with `specs`.
  */
-function scopedLogs(repos: readonly string[]): ScopedLog[] {
+function scopedLogs(specs: readonly RepoSpec[]): ScopedLog[] {
   const seen = new Map<string, number>();
-  return repos.map((repo) => {
-    const base = repoLabel(repo);
+  return specs.map((spec) => {
+    const base = repoLabel(spec.spec);
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     return createScopedLog(count === 0 ? base : `${base}#${count + 1}`);
@@ -287,16 +308,16 @@ function scopedLogs(repos: readonly string[]): ScopedLog[] {
 /**
  * Resolves the analyzed author-date range to UTC instants with git's
  * own date parser — the same interpretation the scan bounds get.
- * A missing `--since` leaves the start unbounded (`''`); a
- * missing `--until` defaults to `today`. A date-only bound resolves
+ * A missing `since` leaves the start unbounded (`''`); a
+ * missing `until` defaults to `today`. A date-only bound resolves
  * to a fixed time of day instead of the run moment: midnight for
  * `since` and for `until` alike, so a date-only `until` bounds the
- * range at the start of its day (e.g. `--since 2026-01-01 --until
- * 2026-03-01` covers exactly two months).
+ * range at the start of its day (e.g. `since` 2026-01-01, `until`
+ * 2026-03-01 covers exactly two months).
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
- * @param since - Start bound as given on the command line, if any.
- * @param until - End bound as given on the command line, if any.
+ * @param since - Start bound as given in the config, if any.
+ * @param until - End bound as given in the config, if any.
  * @returns The resolved range.
  */
 async function resolveRange(

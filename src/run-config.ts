@@ -8,7 +8,7 @@
  * written. The API key is masked; a secret must never be written out
  * in full.
  */
-import type { CliOptions } from './config.js';
+import type { ReportOptions } from './config.js';
 import { resolveCacheDir } from './repo/cache.js';
 
 /** Replacement for a short secret that must not be shown at all. */
@@ -29,11 +29,11 @@ interface RunConfig {
   since?: string;
   /** End bound as given, if any. */
   until?: string;
-  /** Period unit, when `--unit` is set. */
+  /** Period unit, when `unit` is set. */
   unit?: string;
-  /** Report output file, when `--output` is set. */
+  /** Report output file, when `output` is set. */
   output?: string;
-  /** Resolved cache root (`--cache-dir`, the env var, or the default). */
+  /** Resolved cache root (the `cache-dir` config key, or the default). */
   cacheDir: string;
   /** Whether a fresh clone and re-analysis are forced. */
   refresh: boolean;
@@ -53,8 +53,8 @@ interface RunConfig {
   llmRetries: number;
   /** Email-to-name mappings (`email=name`), when any were given. */
   maps?: string[];
-  /** Email mapping file, when `--maps-file` is set. */
-  mapsFile?: string;
+  /** Config file the options were resolved from, when one was in effect. */
+  configFile?: string;
   /** Repositories analyzed in parallel. */
   parallel: number;
   /** Verbose logging. */
@@ -93,7 +93,7 @@ export function maskSecret(secret: string): string {
  * `runConfigLines` within the module. Not part of the public module
  * API.
  */
-export function runConfig(options: CliOptions, repos: readonly string[]): RunConfig {
+export function runConfig(options: ReportOptions, repos: readonly string[]): RunConfig {
   return {
     repos: [...repos],
     // Optional keys stay absent (not `undefined`) when unset,
@@ -114,7 +114,7 @@ export function runConfig(options: CliOptions, repos: readonly string[]): RunCon
     ...(options.maps === undefined || options.maps.length === 0
       ? {}
       : { maps: options.maps.map((entry) => `${entry.email}=${entry.name}`) }),
-    ...(options.mapsFile === undefined ? {} : { mapsFile: options.mapsFile }),
+    ...(options.configFile === undefined ? {} : { configFile: options.configFile }),
     parallel: options.parallel,
     verbose: options.verbose ?? false,
   };
@@ -132,7 +132,7 @@ export function runConfig(options: CliOptions, repos: readonly string[]): RunCon
  * @returns The config lines, without the logger's timestamp/level
  * prefix.
  */
-export function runConfigLines(options: CliOptions, repos: readonly string[]): string[] {
+export function runConfigLines(options: ReportOptions, repos: readonly string[]): string[] {
   const lines = ['configuration:'];
   for (const [key, value] of Object.entries(runConfig(options, repos))) {
     if (Array.isArray(value)) {

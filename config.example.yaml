@@ -1,0 +1,96 @@
+# dev-perf — YAML configuration file template.
+# Copy this file to config.yaml and fill in real values. config.yaml is
+# gitignored; --config <path> selects a file explicitly, otherwise
+# ./config.yaml is auto-loaded from the working directory when it
+# exists. The config file is the single source of options — the CLI
+# carries no flags beyond --config, so every setting lives here.
+#
+# Two kinds of keys share the file: top-level keys are read by both
+# `report` and `compile` (repos, users-map, verbose); `compile`-only
+# keys live under the nested `compile` section.
+
+# Repositories to analyze (report), or to keep in the report (compile).
+# URLs or local paths, one per dash item. Append #branch to analyze
+# that repository's branch instead of its default (each repository of a
+# run can pick its own branch):
+repos:
+  - https://github.com/AdguardTeam/AdguardBrowserExtension.git
+  # - https://github.com/org/repo.git#dev
+  # - /path/to/local/repo#release-2
+
+# Analyzed author-date range (any git date format):
+since: 2025-08-01
+until: 2026-08-01
+
+# Split the range into UTC-aligned periods
+# (day/week/month/quarter/year). Requires since:
+unit: month
+
+# Write the JSON report to this file instead of stdout:
+output: output/report.json
+
+# Cache directory for cloned repos and LLM results
+# (default: <tmpdir>/.dev-cache):
+# cache-dir: ~/.cache/dev-perf
+
+# Force re-clone and re-analysis, invalidating the LLM result cache:
+# refresh: true
+
+# LLM analysis enabled (default: true; false = deterministic-only):
+llm: false
+
+# LLM analysis provider — dev-perf never reads your global
+# configuration. Model, provider URL, and API key all come from
+# ENV_VAR references (see .env.example), so none of it is committed
+# to version control; each referenced variable must be set in the
+# environment (or in .env) or the run errors out:
+model: ${DEV_PERF_MODEL}
+provider-url: ${DEV_PERF_PROVIDER_URL}
+api-key: ${DEV_PERF_API_KEY}
+
+# Maximum context tokens for LLM analysis (default: 262144):
+# limit-context: 262144
+
+# Maximum output tokens for LLM analysis (default: 65536):
+# limit-output: 65536
+
+# Retries for a failed LLM analysis (default: 2):
+# llm-retries: 2
+
+# Email-to-name mappings, merging identities that would otherwise stay
+# separate; commits whose authors map to the same display name are
+# united (analyzed and reported as one person) under that name.
+# Results are merged by the display name, not by the email:
+users-map:
+  'd.seregin@adguard.com': 'Dmitry Seregin'
+  'v.leleka@adguard.com': 'Slava Leleka'
+  '12473278+slvvko@users.noreply.github.com': 'Slava Leleka'
+  'a.zaitsev@adguard.com': 'Alexandr Zaitsev'
+  'mtopciu@adguard.com': 'Maxim Topciu'
+  'a.khmarskii@adguard.com': 'Anatolii Khmarskii'
+  'd.tota@adguard.com': 'Dávid Tóta'
+  'r.kurbanali@adguard.com': 'Ruslan Kurbanali'
+  's.belov@adguard.com': 'Sergei Belov'
+
+# Analyze up to N repositories in parallel (default: 1):
+# parallel: 2
+
+# Verbose logging:
+# verbose: true
+
+# `compile`-only keys under the nested `compile` section; the shared
+# keys above (repos, users-map, verbose) also apply to `compile`.
+# report is the input JSON report file (as written by `report`) and
+# output is the markdown report output directory:
+compile:
+  report: output/report.json
+  output: output/report
+  include-users:
+    - 'Dmitry Seregin'
+    - 'Slava Leleka'
+    - 'Alexandr Zaitsev'
+    - 'Maxim Topciu'
+    - 'Anatolii Khmarskii'
+    - 'Dávid Tóta'
+  # exclude-users: [ci-bot@example.com]
+  # exclude-repos: [https://github.com/org/legacy.git]

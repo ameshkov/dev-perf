@@ -90,10 +90,12 @@ describe('runCompile', () => {
           parseCompileOptions({ report: reportFile, output }),
         );
 
-        // The startup version line is always logged, even in quiet
-        // mode, mirroring report runs.
+        // The startup version line and the command start/end markers
+        // are always logged, even in quiet mode, mirroring report runs.
         const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
         expect(stderr).toContain(`dev-perf ${appVersion}`);
+        expect(stderr).toContain('starting compile');
+        expect(stderr).toMatch(/finished compile in \d+ ms/);
 
         const md = await readFile(result.reportPath, 'utf8');
         expect(md).toContain('# Dev Performance Report');
@@ -268,6 +270,10 @@ describe('runCompile', () => {
         );
 
         const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+        // The command start/end pair brackets the whole compile run:
+        // the start line comes first, the outcome (with duration) last.
+        expect(stderr).toContain('starting compile');
+        expect(stderr).toMatch(/finished compile in \d+ ms/);
         // The batch start line precedes the per-chart completion lines.
         const renderStart = stderr.indexOf('compile: rendering ');
         const rendered = stderr.indexOf('compile: rendered ');
@@ -277,6 +283,28 @@ describe('runCompile', () => {
       } finally {
         stderrWrite.mockRestore();
         setVerbose(false);
+      }
+    });
+  });
+
+  it('logs the finish marker even when the report is invalid', async () => {
+    await withTempDir(async (dir) => {
+      const reportFile = path.join(dir, 'report.json');
+      await writeFile(reportFile, 'not json');
+      const output = path.join(dir, 'out');
+      const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        // An invalid report throws before anything is written; the
+        // start/end marker pair still brackets the failed compile.
+        await expect(
+          runCompile(reportFile, parseCompileOptions({ report: reportFile, output })),
+        ).rejects.toThrow();
+
+        const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+        expect(stderr).toContain('starting compile');
+        expect(stderr).toMatch(/finished compile in \d+ ms/);
+      } finally {
+        stderrWrite.mockRestore();
       }
     });
   });
@@ -339,7 +367,7 @@ describe('runCompile', () => {
 
       await runCompile(
         reportFile,
-        parseCompileOptions({ report: reportFile, output, excludeUser: ['bob@example.com'] }),
+        parseCompileOptions({ report: reportFile, output, excludeUsers: ['bob@example.com'] }),
       );
 
       const md = await readFile(path.join(output, 'report.md'), 'utf8');
@@ -349,7 +377,7 @@ describe('runCompile', () => {
     });
   });
 
-  it('merges identities through --map and lists the mapping in the appendix', async () => {
+  it('merges identities through the users-map and lists the mapping in the appendix', async () => {
     await withTempDir(async (dir) => {
       const reportFile = path.join(dir, 'report.json');
       await writeFile(reportFile, llmReport());
@@ -360,30 +388,13 @@ describe('runCompile', () => {
         parseCompileOptions({
           report: reportFile,
           output,
-          map: ['alice@example.com=Alice Smith'],
+          maps: [{ email: 'alice@example.com', name: 'Alice Smith' }],
         }),
       );
 
       const md = await readFile(path.join(output, 'report.md'), 'utf8');
       expect(md).toContain('### Alice Smith');
       expect(md).toContain('| alice@example.com | Alice Smith |');
-    });
-  });
-
-  it('reads email mappings from the maps file', async () => {
-    await withTempDir(async (dir) => {
-      const reportFile = path.join(dir, 'report.json');
-      const mapsFile = path.join(dir, 'maps.json');
-      await writeFile(reportFile, llmReport());
-      await writeFile(mapsFile, JSON.stringify({ 'alice@example.com': 'Alice Smith' }));
-
-      await runCompile(
-        reportFile,
-        parseCompileOptions({ report: reportFile, output: path.join(dir, 'out'), mapsFile }),
-      );
-
-      const md = await readFile(path.join(dir, 'out', 'report.md'), 'utf8');
-      expect(md).toContain('### Alice Smith');
     });
   });
 });

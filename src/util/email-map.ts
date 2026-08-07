@@ -1,12 +1,11 @@
 /**
- * Shared email-to-name mapping for identity merging: the `report`
- * (`--map`/`--maps-file`) and `compile` (`DEV_PERF_COMPILE_MAP`) commands
- * both map author emails to display names so identities that would
- * otherwise stay separate merge into one. The mapping keys are lowercased
- * emails; the values are the display names identities merge under.
+ * Shared email-to-name mapping for identity merging: the config
+ * `users-map` key maps author emails to display names so identities
+ * that would otherwise stay separate merge into one (results are united
+ * under the display name). The mapping keys are lowercased emails; the
+ * values are the display names identities merge under.
  */
 import { z } from 'zod';
-import { readJsonFile } from './json.js';
 
 /** Compiled email mappings: lowercased email to display name. */
 export type EmailMap = Record<string, string>;
@@ -29,68 +28,58 @@ export const emailMapEntrySchema = z.object({
 });
 
 /**
- * JSON shape of an `--maps-file`: a flat email-to-name object. The
- * loader trims the keys and values and rejects any that become empty,
- * so empty/blank entries are caught by the clearer
- * `"email" and "Name" must be non-empty` error rather than by the
- * shape check here.
- */
-const mapsFileSchema = z.record(z.string(), z.string());
-
-/**
- * Parses one `email=name` mapping entry, lowercasing the email side.
+ * Compiles the email mappings from the parsed `email=name` entries;
+ * on a conflict the later entry wins.
  *
- * @param entry - The raw `email=name` text.
- * @param source - Where the entry came from, for error messages.
- * @returns The parsed mapping entry.
- * @throws {Error} When the entry is not a `email=name` pair with
- * non-empty sides.
- */
-export function parseEmailMapEntry(entry: string, source: string): EmailMapEntry {
-  const separator = entry.indexOf('=');
-  const email = separator === -1 ? '' : entry.slice(0, separator).trim().toLowerCase();
-  const name = separator === -1 ? '' : entry.slice(separator + 1).trim();
-  if (email === '' || name === '') {
-    throw new Error(`Invalid options:\n${source}: expected 'email=name', got '${entry}'`);
-  }
-  return { email, name };
-}
-
-/**
- * Compiles the email mappings: the `--maps-file` entries merged with the
- * `--map` entries, with the `--map` entries winning on conflict (the flag
- * wins over the file, mirroring the env resolution).
- *
- * @param mapsFile - The `--maps-file` path, if any.
- * @param maps - The parsed `--map` entries.
+ * @param maps - The parsed `email=name` entries.
  * @returns The compiled email-to-name mapping.
- * @throws {Error} When the maps file is missing, not a flat
- * email-to-name object, or holds a key or name that is empty/blank.
  */
-export async function loadEmailMap(
-  mapsFile: string | undefined,
-  maps: EmailMapEntry[] = [],
-): Promise<EmailMap> {
+export function loadEmailMap(maps: EmailMapEntry[] = []): EmailMap {
   const emailMap: EmailMap = {};
-  if (mapsFile !== undefined && mapsFile.trim() !== '') {
-    const raw = await readJsonFile(mapsFile);
-    const result = mapsFileSchema.safeParse(raw);
-    if (!result.success) {
-      throw new Error(
-        `Invalid maps file (${mapsFile}): expected an object of { "email": "Name" } entries`,
-      );
-    }
-    for (const [email, name] of Object.entries(result.data)) {
-      const key = email.trim().toLowerCase();
-      const value = name.trim();
-      if (key === '' || value === '') {
-        throw new Error(`Invalid maps file (${mapsFile}): "email" and "Name" must be non-empty`);
-      }
-      emailMap[key] = value;
-    }
-  }
   for (const entry of maps) {
     emailMap[entry.email] = entry.name;
   }
   return emailMap;
+}
+
+/**
+ * Parses the `users-map` config key (an email-to-display-name YAML
+ * mapping) into parsed mapping entries, so structured names pass
+ * through verbatim: a comma inside a display name stays part of the
+ * name instead of being re-split. The email side is trimmed and
+ * lowercased like the mapping normalization does, so the config value
+ * canonicalizes like an `email=name` entry would.
+ *
+ * @param usersMap - The config `users-map` record: email to display name.
+ * @returns The parsed mapping entries.
+ * @throws {Error} When an entry has an empty email or name; the
+ * config-file schema already rejects these, so this guards against a
+ * caller bypassing it.
+ */
+export function usersMapToEntries(usersMap: Record<string, string>): EmailMapEntry[] {
+  const entries: EmailMapEntry[] = [];
+  for (const [email, name] of Object.entries(usersMap)) {
+    // The email side comes from `Object.entries`, so it is always a
+    // string; only the name can arrive as a non-string value (e.g. a
+    // numeric YAML value that bypassed the config-file schema), whose
+    // `.trim` would otherwise throw a raw `.trim is not a function`
+    // TypeError; reject it with the friendly error this function
+    // documents instead.
+    if (typeof name !== 'string') {
+      throw new Error(
+        `Invalid options:\nusers-map: expected a non-empty email and name, got '${String(email)}' -> '${String(name)}'`,
+      );
+    }
+    const parsed = emailMapEntrySchema.safeParse({
+      email: email.trim().toLowerCase(),
+      name: name.trim(),
+    });
+    if (!parsed.success) {
+      throw new Error(
+        `Invalid options:\nusers-map: expected a non-empty email and name, got '${email}' -> '${name}'`,
+      );
+    }
+    entries.push(parsed.data);
+  }
+  return entries;
 }

@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { cliOptionsSchema, parseCliOptions, resolveRawOptions } from './config.js';
+import type { DevPerfConfig } from './config-file.js';
+import { parseReportOptions, reportOptionsSchema, resolveReportOptions } from './config.js';
 
-/** Full, valid LLM-enabled options; individual tests mutate it. */
-function validOptions(): Record<string, unknown> {
+/** Full, valid LLM-enabled config; individual tests mutate it. */
+function validConfig(): DevPerfConfig {
   return {
     repos: ['https://github.com/org/repo.git'],
     since: '2026-01-01',
     llm: true,
     model: 'gpt-4.1',
-    providerUrl: 'https://api.example.com/v1',
-    apiKey: 'secret',
+    'provider-url': 'https://api.example.com/v1',
+    'api-key': 'secret',
   };
 }
 
-describe('cliOptionsSchema', () => {
+describe('reportOptionsSchema', () => {
   it('validates LLM-enabled options and applies the defaults', () => {
-    const result = cliOptionsSchema.safeParse(validOptions());
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(validConfig()));
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -29,22 +30,22 @@ describe('cliOptionsSchema', () => {
   });
 
   it('validates LLM-disabled options without provider configuration', () => {
-    const options = validOptions();
-    delete options.model;
-    delete options.providerUrl;
-    delete options.apiKey;
-    options.llm = false;
+    const config = validConfig();
+    delete config.model;
+    delete config['provider-url'];
+    delete config['api-key'];
+    config.llm = false;
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(true);
   });
 
-  it('accepts an omitted llm flag as enabled', () => {
-    const options = validOptions();
-    delete options.llm;
+  it('accepts an omitted llm key as enabled', () => {
+    const config = validConfig();
+    delete config.llm;
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -53,10 +54,10 @@ describe('cliOptionsSchema', () => {
   });
 
   it('requires model when LLM analysis is enabled', () => {
-    const options = validOptions();
-    delete options.model;
+    const config = validConfig();
+    delete config.model;
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -66,10 +67,10 @@ describe('cliOptionsSchema', () => {
   });
 
   it('requires providerUrl when LLM analysis is enabled', () => {
-    const options = validOptions();
-    delete options.providerUrl;
+    const config = validConfig();
+    delete config['provider-url'];
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -79,10 +80,10 @@ describe('cliOptionsSchema', () => {
   });
 
   it('requires apiKey when LLM analysis is enabled', () => {
-    const options = validOptions();
-    delete options.apiKey;
+    const config = validConfig();
+    delete config['api-key'];
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -92,10 +93,9 @@ describe('cliOptionsSchema', () => {
   });
 
   it('rejects an empty repo list', () => {
-    const options = validOptions();
-    options.repos = [];
-
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), repos: [] }),
+    );
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -105,10 +105,10 @@ describe('cliOptionsSchema', () => {
   });
 
   it('rejects a missing repo list', () => {
-    const options = validOptions();
-    delete options.repos;
+    const config = validConfig();
+    delete config.repos;
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -119,12 +119,11 @@ describe('cliOptionsSchema', () => {
 
   it('rejects invalid limit-context values', () => {
     for (const value of [0, -5, 1.5, 'abc']) {
-      const options = validOptions();
-      options.limitContext = value;
+      const result = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), 'limit-context': value as never }),
+      );
 
-      const result = cliOptionsSchema.safeParse(options);
-
-      expect(result.success, `expected limitContext ${String(value)} to be rejected`).toBe(false);
+      expect(result.success, `expected limit-context ${String(value)} to be rejected`).toBe(false);
       if (!result.success) {
         const paths = result.error.issues.map((issue) => issue.path.join('.'));
         expect(paths).toContain('limitContext');
@@ -132,46 +131,40 @@ describe('cliOptionsSchema', () => {
     }
   });
 
-  it('coerces numeric limit strings and rejects invalid limit-output values', () => {
-    const options = validOptions();
-    options.limitContext = '128';
-    options.limitOutput = 'nope';
+  it('passes numeric limit values through and rejects invalid limit-output', () => {
+    const ok = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'limit-context': 128 }),
+    );
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.limitContext).toBe(128);
+    }
 
-    const result = cliOptionsSchema.safeParse(options);
-
+    const result = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'limit-output': 'nope' as never }),
+    );
     expect(result.success).toBe(false);
     if (!result.success) {
       const paths = result.error.issues.map((issue) => issue.path.join('.'));
       expect(paths).toContain('limitOutput');
     }
-
-    const coerced = cliOptionsSchema.safeParse({ ...validOptions(), limitContext: '128' });
-    expect(coerced.success).toBe(true);
-    if (coerced.success) {
-      expect(coerced.data.limitContext).toBe(128);
-    }
   });
 
-  it('coerces llm-retries strings, accepts zero, and rejects invalid values', () => {
-    const coerced = cliOptionsSchema.safeParse({ ...validOptions(), llmRetries: '4' });
-    expect(coerced.success).toBe(true);
-    if (coerced.success) {
-      expect(coerced.data.llmRetries).toBe(4);
-    }
-
-    const zero = cliOptionsSchema.safeParse({ ...validOptions(), llmRetries: 0 });
+  it('accepts llm-retries zero and rejects invalid values', () => {
+    const zero = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'llm-retries': 0 }),
+    );
     expect(zero.success).toBe(true);
     if (zero.success) {
       expect(zero.data.llmRetries).toBe(0);
     }
 
     for (const value of [-1, 1.5, 'abc']) {
-      const options = validOptions();
-      options.llmRetries = value;
+      const result = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), 'llm-retries': value as never }),
+      );
 
-      const result = cliOptionsSchema.safeParse(options);
-
-      expect(result.success, `expected llmRetries ${String(value)} to be rejected`).toBe(false);
+      expect(result.success, `expected llm-retries ${String(value)} to be rejected`).toBe(false);
       if (!result.success) {
         const paths = result.error.issues.map((issue) => issue.path.join('.'));
         expect(paths).toContain('llmRetries');
@@ -179,24 +172,19 @@ describe('cliOptionsSchema', () => {
     }
   });
 
-  it('coerces parallel strings, accepts one, and rejects invalid values', () => {
-    const coerced = cliOptionsSchema.safeParse({ ...validOptions(), parallel: '4' });
-    expect(coerced.success).toBe(true);
-    if (coerced.success) {
-      expect(coerced.data.parallel).toBe(4);
-    }
-
-    const one = cliOptionsSchema.safeParse({ ...validOptions(), parallel: 1 });
+  it('accepts parallel one and rejects invalid values', () => {
+    const one = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), parallel: 1 }),
+    );
     expect(one.success).toBe(true);
     if (one.success) {
       expect(one.data.parallel).toBe(1);
     }
 
     for (const value of [0, -1, 1.5, 'abc']) {
-      const options = validOptions();
-      options.parallel = value;
-
-      const result = cliOptionsSchema.safeParse(options);
+      const result = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), parallel: value as never }),
+      );
 
       expect(result.success, `expected parallel ${String(value)} to be rejected`).toBe(false);
       if (!result.success) {
@@ -206,22 +194,11 @@ describe('cliOptionsSchema', () => {
     }
   });
 
-  it('validates limit-output independently', () => {
-    const options = validOptions();
-    options.limitOutput = -1;
-
-    const result = cliOptionsSchema.safeParse(options);
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const paths = result.error.issues.map((issue) => issue.path.join('.'));
-      expect(paths).toContain('limitOutput');
-    }
-  });
-
   it('accepts every period unit and rejects unknown units', () => {
     for (const unit of ['day', 'week', 'month', 'quarter', 'year']) {
-      const result = cliOptionsSchema.safeParse({ ...validOptions(), unit });
+      const result = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), unit }),
+      );
 
       expect(result.success, `expected unit ${unit} to be accepted`).toBe(true);
       if (result.success) {
@@ -229,7 +206,9 @@ describe('cliOptionsSchema', () => {
       }
     }
 
-    const invalid = cliOptionsSchema.safeParse({ ...validOptions(), unit: 'fortnight' });
+    const invalid = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), unit: 'fortnight' }),
+    );
     expect(invalid.success).toBe(false);
     if (!invalid.success) {
       const paths = invalid.error.issues.map((issue) => issue.path.join('.'));
@@ -238,11 +217,10 @@ describe('cliOptionsSchema', () => {
   });
 
   it('requires since when unit is set', () => {
-    const options = validOptions();
-    options.unit = 'month';
-    delete options.since;
+    const config = { ...validConfig(), unit: 'month' };
+    delete config.since;
 
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(resolveReportOptions(config));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -252,179 +230,97 @@ describe('cliOptionsSchema', () => {
   });
 
   it('accepts a unit with since present', () => {
-    const options = validOptions();
-    options.unit = 'week';
-
-    const result = cliOptionsSchema.safeParse(options);
+    const result = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), unit: 'week' }),
+    );
 
     expect(result.success).toBe(true);
   });
+
+  it('rejects duplicate mapped emails under the users-map key', () => {
+    const result = reportOptionsSchema.safeParse({
+      repos: ['https://github.com/org/repo.git'],
+      llm: false,
+      maps: [
+        { email: 'a@example.com', name: 'One' },
+        { email: 'a@example.com', name: 'Two' },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((issue) => issue.path.join('.'));
+      expect(paths).toContain('users-map');
+    }
+  });
 });
 
-describe('resolveRawOptions', () => {
-  it('leaves flag-provided options untouched', () => {
-    const merged = resolveRawOptions(
-      ['https://github.com/org/repo.git'],
-      { since: '2026-01-01' },
-      { DEV_PERF_SINCE: '2026-06-30' },
-    );
+describe('resolveReportOptions', () => {
+  it('maps the kebab-case config keys to the camelCase option shape', () => {
+    const resolved = resolveReportOptions({
+      since: '2026-01-01',
+      until: '2026-06-30',
+      unit: 'month',
+      output: 'report.json',
+      'cache-dir': '/tmp/cache',
+      llm: false,
+      model: 'gpt-4.1',
+      'provider-url': 'https://api.example.com/v1',
+      'api-key': 'config-secret',
+      'limit-context': 128,
+      'limit-output': 64,
+      'llm-retries': 3,
+      parallel: 4,
+      verbose: true,
+    });
 
-    expect(merged.since).toBe('2026-01-01');
-    expect(merged.repos).toEqual(['https://github.com/org/repo.git']);
-  });
-
-  it('fills unset options from their environment variables', () => {
-    const merged = resolveRawOptions(
-      [],
-      {},
-      {
-        DEV_PERF_SINCE: '2026-01-01',
-        DEV_PERF_UNTIL: '2026-06-30',
-        DEV_PERF_UNIT: 'month',
-        DEV_PERF_OUTPUT: 'report.json',
-        DEV_PERF_CACHE_DIR: '/tmp/cache',
-        DEV_PERF_MODEL: 'gpt-4.1',
-        DEV_PERF_PROVIDER_URL: 'https://api.example.com/v1',
-        DEV_PERF_API_KEY: 'env-secret',
-        DEV_PERF_LIMIT_CONTEXT: '128',
-        DEV_PERF_LIMIT_OUTPUT: '64',
-        DEV_PERF_LLM_RETRIES: '3',
-        DEV_PERF_PARALLEL: '4',
-      },
-    );
-
-    expect(merged).toMatchObject({
+    expect(resolved).toMatchObject({
       since: '2026-01-01',
       until: '2026-06-30',
       unit: 'month',
       output: 'report.json',
       cacheDir: '/tmp/cache',
+      llm: false,
       model: 'gpt-4.1',
       providerUrl: 'https://api.example.com/v1',
-      apiKey: 'env-secret',
-      limitContext: '128',
-      limitOutput: '64',
-      llmRetries: '3',
-      parallel: '4',
+      apiKey: 'config-secret',
+      limitContext: 128,
+      limitOutput: 64,
+      llmRetries: 3,
+      parallel: 4,
+      verbose: true,
     });
   });
 
-  it('lets the flag win over DEV_PERF_UNIT', () => {
-    const merged = resolveRawOptions(
-      [],
-      { unit: 'week' },
-      { DEV_PERF_UNIT: 'month', DEV_PERF_SINCE: '2026-01-01' },
-    );
+  it('keeps a comma inside a config users-map display name', () => {
+    const resolved = resolveReportOptions({ 'users-map': { 'alice@example.com': 'Doe, John' } });
 
-    expect(merged.unit).toBe('week');
+    expect(resolved.maps).toEqual([{ email: 'alice@example.com', name: 'Doe, John' }]);
   });
 
-  it('lets the flag win over DEV_PERF_LLM_RETRIES', () => {
-    const merged = resolveRawOptions([], { llmRetries: '1' }, { DEV_PERF_LLM_RETRIES: '3' });
-
-    expect(merged.llmRetries).toBe('1');
+  it('keeps maps absent when the users-map key is missing or empty', () => {
+    expect(resolveReportOptions({}).maps).toBeUndefined();
+    expect(resolveReportOptions({ 'users-map': {} }).maps).toBeUndefined();
   });
 
-  it('lets the flag win over DEV_PERF_PARALLEL', () => {
-    const merged = resolveRawOptions([], { parallel: '2' }, { DEV_PERF_PARALLEL: '4' });
-
-    expect(merged.parallel).toBe('2');
+  it('defaults repositories to an empty list', () => {
+    expect(resolveReportOptions({}).repos).toEqual([]);
+    expect(resolveReportOptions({ repos: ['https://github.com/org/a.git'] }).repos).toEqual([
+      'https://github.com/org/a.git',
+    ]);
   });
 
-  it('fills map and maps-file from their environment variables', () => {
-    const merged = resolveRawOptions(
-      [],
-      {},
-      {
-        DEV_PERF_MAP: 'alice@example.com=Alice Smith, bob@example.com=Bob',
-        DEV_PERF_MAPS_FILE: 'maps.json',
-      },
-    );
-
-    expect(merged.map).toEqual(['alice@example.com=Alice Smith', 'bob@example.com=Bob']);
-    expect(merged.mapsFile).toBe('maps.json');
-  });
-
-  it('lets the map flag win over DEV_PERF_MAP', () => {
-    const merged = resolveRawOptions(
-      [],
-      { map: ['bob@example.com=Bob'] },
-      { DEV_PERF_MAP: 'alice@example.com=Alice' },
-    );
-
-    expect(merged.map).toEqual(['bob@example.com=Bob']);
-  });
-
-  it('fills the map from DEV_PERF_MAP when commander supplies an empty-array default', () => {
-    // Commander passes `[]` (its repeatable-option default) when the
-    // flag was not passed; an empty list must not count as flag-provided.
-    const merged = resolveRawOptions([], { map: [] }, { DEV_PERF_MAP: 'alice@example.com=Alice' });
-
-    expect(merged.map).toEqual(['alice@example.com=Alice']);
-  });
-
-  it('rejects a malformed DEV_PERF_MAP entry under the variable name', () => {
-    expect(() => resolveRawOptions([], {}, { DEV_PERF_MAP: 'not-an-email-name-pair' })).toThrow(
-      /DEV_PERF_MAP: expected 'email=name'/,
-    );
-  });
-
-  it('parses boolean environment variables, inverting DEV_PERF_NO_LLM', () => {
-    const merged = resolveRawOptions(
-      [],
-      {},
-      { DEV_PERF_REFRESH: '1', DEV_PERF_NO_LLM: 'true', DEV_PERF_VERBOSE: 'yes' },
-    );
-
-    expect(merged.refresh).toBe(true);
-    expect(merged.llm).toBe(false);
-    expect(merged.verbose).toBe(true);
-  });
-
-  it('accepts false boolean spellings and treats empty values as unset', () => {
-    const merged = resolveRawOptions(
-      [],
-      {},
-      {
-        DEV_PERF_REFRESH: '0',
-        DEV_PERF_NO_LLM: 'off',
-        DEV_PERF_VERBOSE: '',
-        DEV_PERF_SINCE: '',
-      },
-    );
-
-    expect(merged.refresh).toBe(false);
-    expect(merged.llm).toBe(true);
-    expect(merged.verbose).toBeUndefined();
-    expect(merged.since).toBeUndefined();
-  });
-
-  it('takes repositories from DEV_PERF_REPOS when no positional arguments are given', () => {
-    const merged = resolveRawOptions(
-      [],
-      {},
-      { DEV_PERF_REPOS: ' https://github.com/org/a.git ,/path/to/b ' },
-    );
-
-    expect(merged.repos).toEqual(['https://github.com/org/a.git', '/path/to/b']);
-  });
-
-  it('prefers positional repositories over DEV_PERF_REPOS', () => {
-    const merged = resolveRawOptions(['cli-repo'], {}, { DEV_PERF_REPOS: 'env-repo' });
-
-    expect(merged.repos).toEqual(['cli-repo']);
-  });
-
-  it('rejects unrecognized boolean environment values', () => {
-    expect(() => resolveRawOptions([], {}, { DEV_PERF_REFRESH: 'maybe' })).toThrow(
-      'DEV_PERF_REFRESH: expected a boolean',
-    );
+  it('records the config file path when one was used', () => {
+    expect(resolveReportOptions({}, 'config.yaml').configFile).toBe('config.yaml');
+    expect(resolveReportOptions({}).configFile).toBeUndefined();
   });
 });
 
-describe('parseCliOptions', () => {
+describe('parseReportOptions', () => {
   it('returns the validated options with defaults applied', () => {
-    const options = parseCliOptions({ ...validOptions(), llm: false, limitOutput: '2048' });
+    const options = parseReportOptions(
+      resolveReportOptions({ ...validConfig(), llm: false, 'limit-output': 2048 }),
+    );
 
     expect(options.llm).toBe(false);
     expect(options.limitContext).toBe(262144);
@@ -433,87 +329,83 @@ describe('parseCliOptions', () => {
     expect(options.repos).toEqual(['https://github.com/org/repo.git']);
   });
 
-  it('accepts an LLM-enabled run configured entirely from the environment', () => {
-    const merged = resolveRawOptions(
-      ['https://github.com/org/repo.git'],
-      {},
-      {
-        DEV_PERF_MODEL: 'gpt-4.1',
-        DEV_PERF_PROVIDER_URL: 'https://api.example.com/v1',
-        DEV_PERF_API_KEY: 'env-secret',
-      },
+  it('accepts an LLM-enabled run configured entirely from the config file', () => {
+    const options = parseReportOptions(
+      resolveReportOptions({
+        repos: ['https://github.com/org/repo.git'],
+        since: '2026-01-01',
+        model: 'gpt-4.1',
+        'provider-url': 'https://api.example.com/v1',
+        'api-key': 'config-secret',
+      }),
     );
-
-    const options = parseCliOptions(merged);
 
     expect(options.llm).toBe(true);
-    expect(options.apiKey).toBe('env-secret');
+    expect(options.apiKey).toBe('config-secret');
   });
 
-  it('throws a formatted error listing each invalid option', () => {
-    const options = validOptions();
-    delete options.model;
-    delete options.providerUrl;
-    delete options.apiKey;
-
-    expect(() => parseCliOptions(options)).toThrow(
-      'Invalid options:\n--model: required when LLM analysis is enabled (or pass --no-llm)\n' +
-        '--provider-url: required when LLM analysis is enabled (or pass --no-llm)\n' +
-        '--api-key: required when LLM analysis is enabled (or set DEV_PERF_API_KEY)',
+  it('throws a formatted error naming the config keys', () => {
+    expect(() => parseReportOptions(resolveReportOptions({ repos: ['r'] }))).toThrow(
+      'Invalid options:\nmodel: required when LLM analysis is enabled (or set llm: false)\n' +
+        'provider-url: required when LLM analysis is enabled (or set llm: false)\n' +
+        'api-key: required when LLM analysis is enabled (or set llm: false)',
     );
   });
 
-  it('renders camelCase paths as dashed flags', () => {
-    const options = validOptions();
-    options.limitContext = 'abc';
-
-    expect(() => parseCliOptions(options)).toThrow(/--limit-context: Invalid input/);
-  });
-
-  it('parses map entries into maps and keeps the maps file', () => {
-    const options = parseCliOptions({
-      ...validOptions(),
-      map: ['Alice@Example.com=Alice Smith', 'bob@example.com=Bob'],
-      mapsFile: 'maps.json',
-    });
-
-    expect(options.maps).toEqual([
-      { email: 'alice@example.com', name: 'Alice Smith' },
-      { email: 'bob@example.com', name: 'Bob' },
-    ]);
-    expect(options.mapsFile).toBe('maps.json');
-  });
-
-  it('splits comma-separated map occurrences like the environment lists', () => {
-    const options = parseCliOptions({
-      ...validOptions(),
-      map: ['alice@example.com=Alice, bob@example.com=Bob'],
-    });
-
-    expect(options.maps).toEqual([
-      { email: 'alice@example.com', name: 'Alice' },
-      { email: 'bob@example.com', name: 'Bob' },
-    ]);
-  });
-
-  it('keeps maps absent when no map is given', () => {
-    expect(parseCliOptions(validOptions()).maps).toBeUndefined();
-  });
-
-  it('rejects duplicate mapped emails, naming the --map flag', () => {
+  it('renders camelCase paths as dashed config keys', () => {
     expect(() =>
-      parseCliOptions({
-        ...validOptions(),
-        map: ['a@example.com=One', 'a@example.com=Two'],
+      parseReportOptions(resolveReportOptions({ repos: ['r'], 'limit-context': 'abc' as never })),
+    ).toThrow(/limit-context: Invalid input/);
+  });
+
+  it('requires since when unit is set, naming the since key', () => {
+    expect(() =>
+      parseReportOptions(resolveReportOptions({ repos: ['r'], llm: false, unit: 'month' })),
+    ).toThrow(/since: required when unit is set \(an unbounded range cannot be split\)/);
+  });
+
+  it('parses the config users-map into maps', () => {
+    const options = parseReportOptions(
+      resolveReportOptions({
+        repos: ['https://github.com/org/repo.git'],
+        llm: false,
+        'users-map': { 'alice@example.com': 'Doe, John' },
       }),
-    ).toThrow(/--map: email 'a@example\.com' is mapped more than once/);
+    );
+
+    expect(options.maps).toEqual([{ email: 'alice@example.com', name: 'Doe, John' }]);
+  });
+
+  it('keeps maps absent when no mapping is given', () => {
+    expect(
+      parseReportOptions(resolveReportOptions({ repos: ['r'], llm: false })).maps,
+    ).toBeUndefined();
+  });
+
+  it('rejects duplicate mapped emails, naming the users-map key', () => {
+    expect(() =>
+      parseReportOptions({
+        repos: ['r'],
+        llm: false,
+        maps: [
+          { email: 'a@example.com', name: 'One' },
+          { email: 'a@example.com', name: 'Two' },
+        ],
+      }),
+    ).toThrow(/users-map: email 'a@example\.com' is mapped more than once/);
   });
 
   it('reports every duplicated email in one pass', () => {
     expect(() =>
-      parseCliOptions({
-        ...validOptions(),
-        map: ['a@example.com=One', 'a@example.com=Two', 'b@example.com=One', 'b@example.com=Two'],
+      parseReportOptions({
+        repos: ['r'],
+        llm: false,
+        maps: [
+          { email: 'a@example.com', name: 'One' },
+          { email: 'a@example.com', name: 'Two' },
+          { email: 'b@example.com', name: 'One' },
+          { email: 'b@example.com', name: 'Two' },
+        ],
       }),
     ).toThrow(/email 'a@example\.com' is mapped more than once[\s\S]*email 'b@example\.com'/);
   });
@@ -522,7 +414,7 @@ describe('parseCliOptions', () => {
     for (const input of [null, undefined]) {
       // A missing input must not raise a raw TypeError; the schema
       // reports the missing repository as a formatted option error.
-      expect(() => parseCliOptions(input)).toThrow(/Invalid options:\nrepos: /);
+      expect(() => parseReportOptions(input)).toThrow(/Invalid options:\nrepos: /);
     }
   });
 });

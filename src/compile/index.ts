@@ -7,4 +7,3 @@
 export { runCompile } from './compile.js';
 export type { CompileResult } from './compile.js';
 export { parseCompileOptions, resolveCompileOptions } from './options.js';
-export type { RawCompileOptions } from './options.js';

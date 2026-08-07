@@ -1,111 +1,71 @@
 /**
  * Tests for the shared email mapping helpers used by both the `report`
- * and `compile` commands: `parseEmailMapEntry` parses one `email=name`
- * mapping and `loadEmailMap` merges the `--maps-file` entries with the
- * `--map` entries, the flags winning over the file.
+ * and `compile` commands: `usersMapToEntries` parses the `users-map`
+ * config key into mapping entries, and `loadEmailMap` compiles the
+ * parsed entries into the email-to-name map identities merge under.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { loadEmailMap, parseEmailMapEntry } from './email-map.js';
+import { describe, expect, it } from 'vitest';
+import { loadEmailMap, usersMapToEntries } from './email-map.js';
 
-describe('parseEmailMapEntry', () => {
-  it('parses an email=name pair, lowercasing and trimming the email', () => {
-    expect(parseEmailMapEntry('  Alice@Example.com = Alice Smith ', '--map')).toEqual({
-      email: 'alice@example.com',
-      name: 'Alice Smith',
+describe('loadEmailMap', () => {
+  it('returns an empty map without entries', () => {
+    expect(loadEmailMap()).toEqual({});
+    expect(loadEmailMap([])).toEqual({});
+  });
+
+  it('compiles the parsed entries into an email-to-name map', () => {
+    expect(
+      loadEmailMap([
+        { email: 'alice@example.com', name: 'Alice Smith' },
+        { email: 'bob@example.com', name: 'Bob' },
+      ]),
+    ).toEqual({
+      'alice@example.com': 'Alice Smith',
+      'bob@example.com': 'Bob',
     });
   });
 
-  it('rejects an entry without a separator, naming the source', () => {
-    expect(() => parseEmailMapEntry('no-equals-sign', '--map')).toThrow(
-      /--map: expected 'email=name'/,
-    );
-  });
-
-  it('rejects an entry with an empty email or name', () => {
-    expect(() => parseEmailMapEntry('=Alice', '--map')).toThrow(/--map: expected 'email=name'/);
-    expect(() => parseEmailMapEntry('alice@example.com=', '--map')).toThrow(
-      /--map: expected 'email=name'/,
-    );
+  it('lets a later entry win on a conflicting email', () => {
+    expect(
+      loadEmailMap([
+        { email: 'alice@example.com', name: 'Alice' },
+        { email: 'alice@example.com', name: 'Alice Smith' },
+      ]),
+    ).toEqual({ 'alice@example.com': 'Alice Smith' });
   });
 });
 
-describe('loadEmailMap', () => {
-  let dir: string;
-
-  afterEach(async () => {
-    if (dir !== undefined) {
-      await rm(dir, { recursive: true, force: true });
-    }
+describe('usersMapToEntries', () => {
+  it('parses a users-map record into entries with lowercased, trimmed emails', () => {
+    expect(
+      usersMapToEntries({
+        '  Alice@Example.com ': ' Alice Smith ',
+        'bob@example.com': 'Bob',
+      }),
+    ).toEqual([
+      { email: 'alice@example.com', name: 'Alice Smith' },
+      { email: 'bob@example.com', name: 'Bob' },
+    ]);
   });
 
-  it('returns an empty map without a file or entries', async () => {
-    await expect(loadEmailMap(undefined)).resolves.toEqual({});
+  it('keeps a comma inside a display name in the parsed entry', () => {
+    expect(usersMapToEntries({ 'alice@example.com': 'Doe, John' })).toEqual([
+      { email: 'alice@example.com', name: 'Doe, John' },
+    ]);
   });
 
-  it('treats a blank maps-file path as not provided', async () => {
-    await expect(loadEmailMap('   ')).resolves.toEqual({});
+  it('returns no entries for an empty record', () => {
+    expect(usersMapToEntries({})).toEqual([]);
   });
 
-  it('lowercases and trims the file keys and values', async () => {
-    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-email-map-'));
-    const mapsFile = path.join(dir, 'maps.json');
-    await writeFile(mapsFile, JSON.stringify({ '  Alice@Example.com  ': '  Alice  ' }));
+  it('rejects a non-string value with the friendly error, not a raw TypeError', () => {
+    // A non-string value (e.g. a numeric YAML value that bypassed the
+    // config-file schema) must be rejected with the friendly error
+    // before `.trim()` is called on it.
+    const usersMap = { 'alice@example.com': 42 } as unknown as Record<string, string>;
 
-    await expect(loadEmailMap(mapsFile)).resolves.toEqual({ 'alice@example.com': 'Alice' });
-  });
-
-  it('lets the --map entries win on conflict', async () => {
-    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-email-map-'));
-    const mapsFile = path.join(dir, 'maps.json');
-    await writeFile(
-      mapsFile,
-      JSON.stringify({ 'Alice@Example.com': 'Alice', 'b@example.com': 'B' }),
-    );
-
-    await expect(
-      loadEmailMap(mapsFile, [
-        { email: 'alice@example.com', name: 'Alice Smith' },
-        { email: 'c@example.com', name: 'Carol' },
-      ]),
-    ).resolves.toEqual({
-      'alice@example.com': 'Alice Smith',
-      'b@example.com': 'B',
-      'c@example.com': 'Carol',
-    });
-  });
-
-  it('rejects an empty or whitespace-only name in the file', async () => {
-    for (const name of ['', '   ']) {
-      dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-email-map-'));
-      const mapsFile = path.join(dir, 'maps.json');
-      await writeFile(mapsFile, JSON.stringify({ 'a@example.com': name }));
-
-      await expect(loadEmailMap(mapsFile)).rejects.toThrow(
-        /Invalid maps file .* "email" and "Name" must be non-empty/,
-      );
-    }
-  });
-
-  it('rejects a blank email key in the file', async () => {
-    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-email-map-'));
-    const mapsFile = path.join(dir, 'maps.json');
-    await writeFile(mapsFile, JSON.stringify({ '   ': 'Alice' }));
-
-    await expect(loadEmailMap(mapsFile)).rejects.toThrow(
-      /Invalid maps file .* "email" and "Name" must be non-empty/,
-    );
-  });
-
-  it('throws a descriptive error for an invalid maps file', async () => {
-    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-email-map-'));
-    const mapsFile = path.join(dir, 'maps.json');
-    await writeFile(mapsFile, JSON.stringify(['not', 'an', 'object']));
-
-    await expect(loadEmailMap(mapsFile)).rejects.toThrow(
-      /Invalid maps file .* expected an object of \{ "email": "Name" \} entries/,
+    expect(() => usersMapToEntries(usersMap)).toThrow(
+      /users-map: expected a non-empty email and name, got 'alice@example.com' -> '42'/,
     );
   });
 });

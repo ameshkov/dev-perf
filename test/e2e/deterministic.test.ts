@@ -1,18 +1,19 @@
 /**
  * End-to-end tests for the deterministic analysis path: the compiled
- * CLI runs with `--no-llm` against a fixture repo as a child process,
- * and the emitted output is validated against the report schema and
- * checked exactly. stdout carries the report JSON only; stderr carries
- * the startup block — the application version and the per-line run
- * configuration — on every run, plus the verbose progress lines when
- * `--verbose` is passed.
+ * CLI runs against a fixture repo as a child process with all settings
+ * from a YAML config file (autoloaded `config.yaml` or an explicit
+ * `--config`), and the emitted output is validated against the report
+ * schema and checked exactly. stdout carries the report JSON only;
+ * stderr carries the startup block — the application version and the
+ * per-line run configuration — on every run, plus the verbose progress
+ * lines when `verbose` is set.
  *
  * The suite needs `pnpm build` to have produced `build/index.js`; it
  * is skipped when the build is missing so a plain `pnpm test` stays
  * green (the full gate `pnpm check` always builds first).
  */
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execa } from 'execa';
@@ -20,17 +21,31 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureRepo } from '../fixtures/repo-builder.js';
 import { buildFixtureRepo, removeFixtureRepo } from '../fixtures/repo-builder.js';
 import { entryHash } from '../../src/repo/cache.js';
-import { gitRevParse } from '../../src/repo/git.js';
+import { gitRevParse, runGit } from '../../src/repo/git.js';
 import { trendReportSchema } from '../../src/report/schema.js';
 import { appVersion } from '../../src/version.js';
 
 /** Compiled CLI entry point; the suite runs it as a child process. */
 const BUILD_ENTRY = path.resolve(process.cwd(), 'build', 'index.js');
 
+/** The range every config file carries, matching the fixture dates. */
+const SINCE = '2026-01-01T00:00:00Z';
+const UNTIL = '2026-01-31T23:59:59Z';
+
+/**
+ * The range the CLI resolves the `since`/`until` bounds to (UTC
+ * instants, millisecond precision) as they appear in the report.
+ * `expectedReport` uses these; the config files carry `SINCE`/`UNTIL`.
+ */
+const SINCE_RESOLVED = '2026-01-01T00:00:00.000Z';
+const UNTIL_RESOLVED = '2026-01-31T23:59:59.000Z';
+
 /**
  * The parent environment without `DEV_PERF_*` variables, so settings a
- * developer shell exports (e.g. `DEV_PERF_VERBOSE`) cannot leak into
- * the child runs and break the expected outputs.
+ * developer shell exports (e.g. `DEV_PERF_API_KEY`) cannot leak into the
+ * child runs — they are no longer option sources, but they would still
+ * resolve `${DEV_PERF_*}` references in a config file and perturb the
+ * expected outputs.
  */
 function cleanEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
@@ -42,10 +57,10 @@ function cleanEnv(): NodeJS.ProcessEnv {
  * The directory the child CLI runs in: the test's own temp cache dir,
  * which never contains a `.env` — the CLI auto-loads `.env` from its
  * working directory via dotenv, so running from the repo root would
- * re-inject the developer's `DEV_PERF_*` variables (e.g.
- * `DEV_PERF_OUTPUT`) that `cleanEnv` already strips from the
- * inherited environment. Every argument passed to the child is an
- * absolute path, so the changed cwd cannot affect anything else.
+ * re-inject the developer's env entries — and contains a `config.yaml`
+ * only when a test writes one there. Every argument passed to the
+ * child is an absolute path, so the changed cwd cannot affect anything
+ * else.
  *
  * @param cacheDir - The temp cache directory of the current test.
  * @returns The spawn options for the child CLI.
@@ -59,6 +74,47 @@ function spawnOptions(cacheDir: string): {
   // report parsing expects the exact pretty-printed JSON, which execa's
   // default newline stripping would disturb.
   return { env: cleanEnv(), cwd: cacheDir, stripFinalNewline: false };
+}
+
+/** Range overrides for `writeConfig`; default to the shared range. */
+interface ConfigOverrides {
+  since?: string;
+  until?: string;
+}
+
+/**
+ * Writes a `config.yaml` into the cache dir (auto-loaded from the
+ * child's cwd) with the always-present settings: the fixture repo, the
+ * fixed range (overridable), `llm: false`, and the test's cache
+ * directory. Extra keys are appended on top.
+ *
+ * @param cacheDir - The temp cache directory of the current test.
+ * @param repo - The fixture repo (for its URL).
+ * @param extra - Extra config lines, appended after the shared ones.
+ * @param overrides - Optional `since` / `until` range overrides.
+ * @returns The written config file path.
+ */
+async function writeConfig(
+  cacheDir: string,
+  repo: FixtureRepo,
+  extra: string[] = [],
+  overrides: ConfigOverrides = {},
+): Promise<string> {
+  const file = path.join(cacheDir, 'config.yaml');
+  await writeFile(
+    file,
+    [
+      'repos:',
+      `  - ${repo.url}`,
+      `since: ${overrides.since ?? SINCE}`,
+      `until: ${overrides.until ?? UNTIL}`,
+      'llm: false',
+      `cache-dir: ${cacheDir}`,
+      ...extra,
+      '',
+    ].join('\n'),
+  );
+  return file;
 }
 
 /**
@@ -94,7 +150,7 @@ async function buildFixture(): Promise<FixtureRepo> {
 
 /**
  * The exact report the fixture produces with the fixed
- * `--since`/`--until` range, used by every e2e case.
+ * `since`/`until` range, used by every e2e case.
  *
  * @param repo - The fixture repo (for its URL).
  * @param cacheDir - The cache directory passed to the CLI.
@@ -107,14 +163,14 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
     generatedAt: expect.any(String),
     parameters: {
       repos: [repo.url],
-      since: '2026-01-01T00:00:00.000Z',
-      until: '2026-01-31T23:59:59.000Z',
+      since: SINCE_RESOLVED,
+      until: UNTIL_RESOLVED,
       llmEnabled: false,
     },
     periods: [
       {
-        since: '2026-01-01T00:00:00.000Z',
-        until: '2026-01-31T23:59:59.000Z',
+        since: SINCE_RESOLVED,
+        until: UNTIL_RESOLVED,
         repositories: [
           {
             repo: repo.url,
@@ -122,8 +178,8 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
             branch: 'main',
             head,
             range: {
-              since: '2026-01-01T00:00:00.000Z',
-              until: '2026-01-31T23:59:59.000Z',
+              since: SINCE_RESOLVED,
+              until: UNTIL_RESOLVED,
             },
             stats: {
               totalCommits: 3,
@@ -192,24 +248,14 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
 }
 
 describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
-  it('prints the exact expected report to stdout with the configuration on stderr', async () => {
+  it('prints the exact expected report to stdout with the configuration on stderr (explicit --config)', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
+      const configFile = await writeConfig(cacheDir, repo);
       const { stdout, stderr } = await execa(
         'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-01-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          repo.url,
-        ],
+        [BUILD_ENTRY, 'report', '--config', configFile],
         { ...spawnOptions(cacheDir) },
       );
 
@@ -224,8 +270,8 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain(`dev-perf ${appVersion}`);
       expect(stderr).toContain('configuration:');
       expect(stderr).toContain(`    - ${repo.url}`);
-      expect(stderr).toContain('  since: 2026-01-01T00:00:00Z');
-      expect(stderr).toContain('  until: 2026-01-31T23:59:59Z');
+      expect(stderr).toContain(`  since: ${SINCE}`);
+      expect(stderr).toContain(`  until: ${UNTIL}`);
       expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
       expect(stderr).toContain('  refresh: false');
       expect(stderr).toContain('  llm: false');
@@ -236,39 +282,29 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('with --verbose logs the startup block and progress to stderr while stdout stays pure report JSON', async () => {
+  it('with verbose logs the startup block and progress to stderr while stdout stays pure report JSON', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout, stderr } = await execa(
-        'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--verbose',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-01-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          repo.url,
-        ],
-        { ...spawnOptions(cacheDir) },
-      );
+      await writeConfig(cacheDir, repo, ['verbose: true']);
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
 
       // stdout carries the same pure report JSON as a quiet run.
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
       // stderr carries the startup block plus the progress lines:
-      // the clone start and its completion (with duration), both
-      // naming the cache entry directory, the resolved range, the
-      // commit read, and per-repo commit counts.
+      // the command start/end pair bracketing the run, the clone start
+      // and its completion (with duration), both naming the cache entry
+      // directory, the resolved range, the commit read, and per-repo
+      // commit counts.
       expect(stderr).toContain(`dev-perf ${appVersion}`);
       expect(stderr).toContain('configuration:');
+      expect(stderr).toContain('starting report');
+      expect(stderr).toMatch(/finished report in \d+ ms/);
       expect(stderr).toMatch(/cloning ".+" \(cache ".+"\)/);
       expect(stderr).toMatch(/cloned .* in \d+ ms \(cache ".+"\)/);
-      expect(stderr).toContain('range: 2026-01-01T00:00:00.000Z to 2026-01-31T23:59:59.000Z');
+      expect(stderr).toContain(`range: ${SINCE_RESOLVED} to ${UNTIL_RESOLVED}`);
       expect(stderr).toContain('reading commits');
       expect(stderr).toContain('3 commits from 2 authors');
     } finally {
@@ -277,32 +313,23 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('a default run prints only the startup block on stderr, with no progress lines', async () => {
+  it('a default run prints the startup block and command markers on stderr, with no progress lines', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout, stderr } = await execa(
-        'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-01-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          repo.url,
-        ],
-        { ...spawnOptions(cacheDir) },
-      );
+      await writeConfig(cacheDir, repo);
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
 
       expect(JSON.parse(stdout)).toStrictEqual(await expectedReport(repo, cacheDir));
-      // The startup block is always printed, even without --verbose…
+      // The startup block and the command start/end markers are always
+      // printed, even without verbose…
       expect(stderr).toContain(`dev-perf ${appVersion}`);
       expect(stderr).toContain('configuration:');
       expect(stderr).toContain('  verbose: false');
+      expect(stderr).toContain('starting report');
+      expect(stderr).toMatch(/finished report in \d+ ms/);
       // …but nothing else: progress lines stay hidden in quiet mode.
       expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit/);
     } finally {
@@ -311,31 +338,17 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('writes the same report to the --output file', async () => {
+  it('writes the same report to the config output file', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
     try {
-      const { stdout, stderr } = await execa(
-        'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-01-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          '--output',
-          outFile,
-          repo.url,
-        ],
-        { ...spawnOptions(cacheDir) },
-      );
+      await writeConfig(cacheDir, repo, [`output: ${outFile}`]);
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
 
-      // With --output, stdout carries nothing — the report goes to the
+      // With output set, stdout carries nothing — the report goes to the
       // file and the configuration to stderr.
       expect(stdout).toBe('');
       expect(stderr).toContain(`  output: ${outFile}`);
@@ -356,41 +369,44 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('runs from environment variables alone with the flag-equivalent report', async () => {
+  it('runs from a config file alone with the flag-equivalent report', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
+    // The config.yaml is auto-loaded from the child's working directory
+    // (the isolated cwd keeps the developer's own config out).
+    await writeFile(
+      path.join(cacheDir, 'config.yaml'),
+      [
+        'repos:',
+        `  - ${repo.url}`,
+        `since: ${SINCE}`,
+        `until: ${UNTIL}`,
+        'llm: false',
+        `cache-dir: ${cacheDir}`,
+        `output: ${outFile}`,
+        '',
+      ].join('\n'),
+    );
     try {
-      await execa(
-        'node',
-        [BUILD_ENTRY, 'report'],
-        // The isolated cwd (spawnOptions) keeps the developer's own
-        // `.env` out: dotenv would otherwise inject extra DEV_PERF_*
-        // variables that are not part of this test's env surface.
-        {
-          ...spawnOptions(cacheDir),
-          env: {
-            ...cleanEnv(),
-            DEV_PERF_REPOS: repo.url,
-            DEV_PERF_NO_LLM: 'true',
-            DEV_PERF_SINCE: '2026-01-01T00:00:00Z',
-            DEV_PERF_UNTIL: '2026-01-31T23:59:59Z',
-            DEV_PERF_CACHE_DIR: cacheDir,
-            DEV_PERF_OUTPUT: outFile,
-          },
-        },
-      );
+      const { stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as unknown;
       expect(trendReportSchema.safeParse(written).success).toBe(true);
       expect(written).toStrictEqual(await expectedReport(repo, cacheDir));
+      // The startup dump names the config file the run was resolved
+      // from (the child's cwd resolves the /var → /private/var symlink).
+      const configPath = await realpath(path.join(cacheDir, 'config.yaml'));
+      expect(stderr).toContain(`  configFile: ${configPath}`);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
     }
   });
 
-  it('with --unit month reports one period per month, zeroing empty periods', async () => {
+  it('with unit month reports one period per month, zeroing empty periods', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -407,24 +423,13 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     ]);
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      const { stdout } = await execa(
-        'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--unit',
-          'month',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-03-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          repo.url,
-        ],
-        { ...spawnOptions(cacheDir) },
-      );
+      await writeConfig(cacheDir, repo, ['unit: month'], {
+        since: '2026-01-01T00:00:00Z',
+        until: '2026-03-31T23:59:59Z',
+      });
+      const { stdout } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
 
       const report = JSON.parse(stdout) as {
         parameters: { unit?: string };
@@ -467,7 +472,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('merges identities through --map at report build time', async () => {
+  it('merges identities through the config users-map key with an explicit --config', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -484,24 +489,14 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     ]);
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
+      const configFile = await writeConfig(cacheDir, repo, [
+        'users-map:',
+        "  'alice@example.com': 'Alice Smith'",
+        "  'alice@work.com': 'Alice Smith'",
+      ]);
       const { stdout, stderr } = await execa(
         'node',
-        [
-          BUILD_ENTRY,
-          'report',
-          '--no-llm',
-          '--since',
-          '2026-01-01T00:00:00Z',
-          '--until',
-          '2026-01-31T23:59:59Z',
-          '--cache-dir',
-          cacheDir,
-          '--map',
-          'alice@example.com=Alice Smith',
-          '--map',
-          'alice@work.com=Alice Smith',
-          repo.url,
-        ],
+        [BUILD_ENTRY, 'report', '--config', configFile],
         { ...spawnOptions(cacheDir) },
       );
 
@@ -527,6 +522,141 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain('  maps:');
       expect(stderr).toContain('    - alice@example.com=Alice Smith');
       expect(stderr).toContain('    - alice@work.com=Alice Smith');
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('merges identities through the auto-loaded config users-map key', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'feat: add app',
+        files: [{ path: 'src/app.ts', content: 'line1\nline2\n' }],
+      },
+      {
+        author: { name: 'Alice Work', email: 'alice@work.com' },
+        date: '2026-01-02T11:00:00Z',
+        message: 'docs: extend readme',
+        files: [{ path: 'README.md', content: 'hello\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    try {
+      await writeConfig(cacheDir, repo, [
+        'users-map:',
+        "  'alice@example.com': 'Alice Smith'",
+        "  'alice@work.com': 'Alice Smith'",
+      ]);
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
+
+      // Both emails merge into one identity at the grouping stage.
+      const report = JSON.parse(stdout) as {
+        periods: Array<{
+          repositories: Array<{
+            users: Array<{
+              name: string;
+              emails: string[];
+              deterministic: { commits: number };
+            }>;
+          }>;
+        }>;
+      };
+      expect(trendReportSchema.safeParse(report).success).toBe(true);
+      const users = report.periods[0].repositories[0].users;
+      expect(users).toHaveLength(1);
+      expect(users[0].name).toBe('Alice Smith');
+      expect(users[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
+      expect(users[0].deterministic.commits).toBe(2);
+      // The startup dump lists the applied mappings.
+      expect(stderr).toContain('  maps:');
+      expect(stderr).toContain('    - alice@example.com=Alice Smith');
+      expect(stderr).toContain('    - alice@work.com=Alice Smith');
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('analyzes a specific branch via the repo#branch spec, isolated in its own cache entry', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'feat: base',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    // dev branches from main and adds one commit; main stays behind.
+    await runGit(repo.dir, ['checkout', '-b', 'dev']);
+    await writeFile(path.join(repo.dir, 'dot-dev.txt'), 'dev\n');
+    await runGit(repo.dir, ['add', '-A']);
+    await runGit(
+      repo.dir,
+      [
+        'commit',
+        '--author',
+        'Alice <alice@example.com>',
+        '--date',
+        '2026-01-02T11:00:00Z',
+        '-m',
+        'feat: dev only',
+      ],
+      { env: { GIT_COMMITTER_DATE: '2026-01-02T11:00:00Z' } },
+    );
+    const devHead = await gitRevParse(repo.dir, ['HEAD']);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    try {
+      // The config carries the branch-scoped repo spec (#dev), so the
+      // entry hash and the reported branch follow it.
+      await writeFile(
+        path.join(cacheDir, 'config.yaml'),
+        [
+          'repos:',
+          `  - ${repo.url}#dev`,
+          `since: ${SINCE}`,
+          `until: ${UNTIL}`,
+          'llm: false',
+          `cache-dir: ${cacheDir}`,
+          '',
+        ].join('\n'),
+      );
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
+
+      const report = JSON.parse(stdout) as {
+        parameters: { repos: string[] };
+        periods: Array<{
+          repositories: Array<{
+            repo: string;
+            branch: string;
+            head: string;
+            clonePath: string;
+            stats: { totalCommits: number };
+          }>;
+        }>;
+      };
+      expect(trendReportSchema.safeParse(report).success).toBe(true);
+      const entry = report.periods[0].repositories[0];
+      expect(entry).toMatchObject({ repo: repo.url, branch: 'dev', head: devHead });
+      expect(entry.stats.totalCommits).toBe(2);
+      // The parameters list the spec as given, with the branch suffix.
+      expect(report.parameters.repos).toEqual([`${repo.url}#dev`]);
+      // The branch-scoped cache entry holds the clone.
+      expect(entry.clonePath).toBe(path.join(cacheDir, entryHash(repo.url, 'dev'), 'repo'));
+      // The startup dump lists the spec as given, branch suffix and all.
+      expect(stderr).toContain(`    - ${repo.url}#dev`);
+      // clone.json records the checked-out branch.
+      const cloneInfo = await readFile(
+        path.join(cacheDir, entryHash(repo.url, 'dev'), 'clone.json'),
+        'utf8',
+      );
+      expect(cloneInfo).toContain('"branch": "dev"');
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);

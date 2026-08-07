@@ -9,14 +9,15 @@
  * (per-repository progress) additionally carry a `[label]` prefix so
  * concurrent analysis of several repositories can be told apart.
  * Quiet by default — `error` and `warn` messages are always printed;
- * `--verbose` enables `info` (progress) and `debug`. Every message
+ * `verbose` (from the config `verbose` key) enables `info` (progress)
+ * and `debug`. Every message
  * goes to stderr; stdout carries nothing but the report JSON.
  */
 
 /**
  * Whether verbose levels (`info`, `debug`) are enabled. Module-level
- * state, set once per invocation from the `--verbose` CLI option by the
- * pipeline.
+ * state, set once per invocation from the config `verbose` option by
+ * the pipeline.
  */
 let verbose = false;
 
@@ -128,8 +129,9 @@ export function logWarn(message: string): void {
 /**
  * Logs an informational line that is always printed, regardless of
  * verbose mode — the run-startup block (the application version and
- * the per-line run configuration) must be visible on every run, not
- * only in verbose logs.
+ * the per-line run configuration) and the command start/end markers
+ * (`starting report` / `finished report in 1234 ms`) must be visible
+ * on every run, not only in verbose logs.
  *
  * @param message - The message to write to stderr.
  */

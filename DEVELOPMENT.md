@@ -66,78 +66,83 @@ pnpm build
 
 ## Running the CLI
 
-The CLI surface is implemented: the `report` command with argument
-parsing, `--help`, `--version`, and validation errors all work, and the
-deterministic analysis path runs end to end:
+The CLI surface is implemented: the `report` command with
+`--config`, `--help`, `--version`, and validation errors all work, and
+the deterministic analysis path runs end to end. Every setting — the
+repositories, the date range, the output file, the cache directory,
+verbosity — comes from the config file (the CLI carries no flags
+beyond `--config`):
 
 ```bash
-node build/index.js report --no-llm /path/to/some/git/repo
+node build/index.js report --config config.yaml
 ```
 
 This clones the repository into the cache (`<tmpdir>/.dev-cache` by
 default), analyzes git history, and prints the JSON report to stdout.
-LLM analysis is wired in: a run without `--no-llm`
-requires `--model`, `--provider-url`, and `--api-key`; the language
-model runs fully in-process. Provider settings can come from the
-environment instead of flags (see below).
+LLM analysis is wired in: a run without `llm: false`
+requires the `model`, `provider-url`, and `api-key` config keys; the
+language model runs fully in-process.
 
-Full LLM run:
+Full LLM run (see the config file example below):
 
-```bash
-node build/index.js report --since 2026-01-01 --until 2026-06-30 \
-  --output report.json \
-  --model gpt-4.1 \
-  --provider-url https://api.openai.com/v1 \
-  --api-key "$DEV_PERF_API_KEY" \
-  https://github.com/org/repo.git
-```
+### Configuration file (config.yaml)
 
-### Environment variables (.env)
+Every setting is read from a YAML config file — the config file is the
+single source of options. The config file is shared by `report` and
+`compile` — top-level keys apply to both, and `compile`-only keys live
+under a nested `compile` section. Two files are needed:
 
-Every command-line option has a `DEV_PERF_*` environment variable
-equivalent; the flag wins when both are set. The template documents
-all of them:
+- `config.yaml` — the options themselves (repositories, date range, LLM
+  provider configuration). Copy it from `config.example.yaml`.
+- `.env` — the values for `${ENV_VAR}` references inside `config.yaml`
+  (API keys, model id, provider URL). Copy it from `.env.example`.
+
+Copy both on first use:
 
 ```bash
+cp config.example.yaml config.yaml
 cp .env.example .env
 ```
 
-A `.env` file in the current working directory is auto-loaded at
-startup (`dotenv`), and `.env` is gitignored — the right place for API
-keys and machine-specific settings. Values already exported in the
-shell are never overridden by `.env` entries.
+Edit the values: `--config <path>` selects a file explicitly, otherwise
+`./config.yaml` is auto-loaded from the working directory when it
+exists. `config.yaml` is gitignored. Use `${ENV_VAR}` references for
+the LLM provider configuration so it stays out of version control:
 
-For example, with a `.env` containing:
-
-```text
-DEV_PERF_NO_LLM=true
-DEV_PERF_OUTPUT=report.json
+```yaml
+model: ${DEV_PERF_MODEL}
+provider-url: ${DEV_PERF_PROVIDER_URL}
+api-key: ${DEV_PERF_API_KEY}
 ```
 
-`node build/index.js report /path/to/repo` behaves exactly like
-`--no-llm --output report.json /path/to/repo`. Boolean variables accept
-`1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`.
+Each referenced variable must be set in the environment (or in `.env`,
+which dev-perf auto-loads at startup); a run errors out when it is
+unset or empty. `.env` (from `.env.example`) holds only the variables
+`${ENV_VAR}` references use — it is no longer an option source.
 
 ### Running from VS Code
 
 The repository ships `.vscode/launch.json` with three launch
-configurations that load `.env` via `envFile`:
+configurations that load `.env` via `envFile` and pass `--config
+config.yaml`:
 
-- *dev-perf: run (deterministic)* — `report --no-llm` against the
-  repository root, no provider configuration needed.
-- *dev-perf: run (with LLM)* — full pipeline; set `DEV_PERF_MODEL`,
-  `DEV_PERF_PROVIDER_URL`, and `DEV_PERF_API_KEY` in `.env` first.
-- *dev-perf: compile* — prompts for the JSON report file, then runs
-  `compile <report> --output dev-perf-report` in the workspace root.
+- *dev-perf: report* — `report --config config.yaml` against the repositories
+  in the config file.
+- *dev-perf: compile* — `compile --config config.yaml` with everything —
+  the input report (`compile.report`), the output directory,
+  user/repository selection, and email mapping — set in the config
+  file.
 
-Create `.env` (from `.env.example`) before launching, then press F5 in
-the Run and Debug view. The configurations run the TypeScript sources
-through `tsx`, so no `pnpm build` is needed.
+Create `config.yaml` (from `config.example.yaml`) and `.env` (from
+`.env.example`) before launching, then press F5 in the Run and Debug
+view. The configurations run the TypeScript sources through `tsx`, so
+no `pnpm build` is needed.
 
 ## Manual Testing
 
 The deterministic analysis path is the primary manual workflow: build
-a small fixture repository and run `--no-llm` against it.
+a small fixture repository and run with `llm: false` in the config
+file.
 
 ```bash
 # Help and version
@@ -145,18 +150,37 @@ node build/index.js --help
 node build/index.js --version
 
 # Deterministic analysis of a local repository (stdout)
-node build/index.js report --no-llm /tmp/fixture
+node build/index.js report --config config.yaml
+```
 
-# With an explicit author-date range and an output file
-node build/index.js report --no-llm --since 2026-01-01 --until 2026-12-31 \
-  --output report.json /tmp/fixture
+Create `config.yaml` first (./config.yaml auto-loads from the cwd
+when `--config` is omitted):
 
-# Argument validation (should fail with a clear error)
+```bash
+cp config.example.yaml config.yaml
+```
+
+```yaml
+# config.yaml — deterministic analysis of a local fixture repository
+repos:
+  - /tmp/fixture
+since: 2026-01-01
+until: 2026-12-31
+llm: false
+output: report.json
+```
+
+```bash
+# Run from the config file
 node build/index.js report
+
+# Argument validation (should fail with a clear error): a config file
+# without repos
+node build/index.js report --config /tmp/empty-config.yaml
 
 # Verbose run: progress (operation starts + outcomes, range, commit
 # counts) goes to stderr; stdout carries the report JSON only
-node build/index.js report --no-llm --verbose /tmp/fixture
+node build/index.js report --config config.yaml
 ```
 
 Building a fixture repository:
@@ -167,20 +191,21 @@ git init -b main
 git config user.name "Jane Doe" && git config user.email "jane@example.com"
 printf 'console.log("hello");\n' > index.js
 git add index.js && git commit -m "Initial commit"
-cd - && node build/index.js report --no-llm /tmp/fixture
+cd -
 ```
 
-A second run with the same repository reuses the cached clone; pass
-`--refresh` to force a re-clone.
+A second run with the same repository reuses the cached clone; set
+`refresh: true` in the config to force a re-clone.
 
-`--verbose` shows what the pipeline is doing on stderr — clone vs cache
-reuse (with duration), the resolved author-date range, and per-repo
-commit counts. Every run starts by logging the application version
-(`dev-perf <version>`) to stderr; a `report` run follows it with the
-full resolved configuration as one indented line per field
-(repositories, dates, unit, output, resolved cache directory, refresh,
-LLM settings with the API key masked, limits, retries, parallelism,
-verbose), and stdout carries the report JSON only.
+`verbose: true` in the config shows what the pipeline is doing on
+stderr — clone vs cache reuse (with duration), the resolved author-date
+range, and per-repo commit counts. Every run starts by logging the
+application version (`dev-perf <version>`) to stderr; a `report` run
+follows it with the full resolved configuration as one indented line
+per field (repositories, dates, unit, output file, the config file,
+resolved cache directory, refresh, LLM settings with the API key
+masked, limits, retries, parallelism, verbose), and stdout carries the
+report JSON only.
 `node build/index.js --version` (or `version`) prints the application
 version.
 
@@ -189,14 +214,20 @@ version.
 With a provider API key, run the full pipeline against a small public
 repository (keep the range narrow so the run is quick):
 
+```yaml
+# config.yaml
+repos:
+  - https://github.com/org/small-public-repo.git
+since: 2026-01-01
+until: 2026-06-30
+model: ${DEV_PERF_MODEL}
+provider-url: ${DEV_PERF_PROVIDER_URL}
+api-key: ${DEV_PERF_API_KEY}
+verbose: true
+```
+
 ```bash
-node build/index.js report \
-  --since 2026-01-01 --until 2026-06-30 \
-  --model gpt-4.1 \
-  --provider-url https://api.openai.com/v1 \
-  --api-key "$DEV_PERF_API_KEY" \
-  --verbose \
-  https://github.com/org/small-public-repo.git
+node build/index.js report
 ```
 
 Expectations:
@@ -206,8 +237,8 @@ Expectations:
 - The report's per-user `llm` entries have `status: "completed"` with
   `overview`, `contributions`, and `tokenUsage`.
 - A rerun with identical parameters makes no new LLM calls (results
-  are cached in `<tmpdir>/.dev-cache/<hash>/llm/`); `--refresh` re-runs
-  everything.
+  are cached in `<tmpdir>/.dev-cache/<hash>/llm/`); `refresh: true`
+  re-runs everything.
 - A provider that rejects the key fails fast: the run exits non-zero
   with a message naming the failing prompt, and no report is written.
 - A model that never calls `devperf_report` fails after 3 reminders
@@ -217,8 +248,8 @@ Expectations:
 
 Build the image locally and exercise the CLI inside a container. The
 image exposes `dev-perf` as its entrypoint, so it is used exactly like
-the installed CLI (it runs inside the container, but every flag and
-argument is identical):
+the installed CLI — every setting comes from a config file mounted
+into the container's working directory `/work`:
 
 ```bash
 # Build the image (multi-stage; Node.js 24 runtime with git, bash,
@@ -231,15 +262,22 @@ docker run --rm dev-perf:local --help
 
 # Deterministic analysis of a local repository: mount it read-only
 # (the path is cloned into the container's cache; the working tree is
-# never modified) and pass the mount path.
-docker run --rm -v /path/to/repo:/repo:ro \
-  dev-perf:local report --no-llm /repo
+# never modified) and reference the mount path from the config.
+docker run --rm \
+  -v /path/to/repo:/repo:ro \
+  -v "$PWD":/work \
+  dev-perf:local report
 
-# Write the report onto the host by mounting a directory at the
-# container's working directory /work.
-docker run --rm -v /path/to/repo:/repo:ro -v "$PWD":/work \
-  dev-perf:local report --no-llm --output report.json /repo
+# Write the report onto the host: mount the working directory at /work
+# (its config.yaml is auto-loaded) and set output there.
+docker run --rm \
+  -v /path/to/repo:/repo:ro \
+  -v "$PWD":/work \
+  dev-perf:local report
 ```
+
+with `$PWD/config.yaml` holding the run (`repos: [/repo]`, the range,
+`llm: false`, and `output: report.json`).
 
 The runtime dependency set is pure JavaScript (the one native-looking
 dependency, `@silvia-odwyer/photon-node`, is a WASM module), so the
@@ -331,11 +369,11 @@ it does not depend on the npm publish, so both run in parallel.
   first.
 - **LLM run fails with "Failed to create the pi LLM runtime"** — the
   in-process pi runtime could not be created or the model could not be
-  resolved; check the provider URL and the model id. Deterministic
-  runs (`--no-llm`) never need it.
+  resolved; check the provider URL and the model id in the config.
+  Deterministic runs (`llm: false`) never need it.
 - **LLM run fails with an auth error on the first prompt** — the
-  provider rejected the API key; check `--api-key` /
-  `DEV_PERF_API_KEY` and the provider base URL.
+  provider rejected the API key; check the config `api-key` (or its
+  `${DEV_PERF_API_KEY}` reference) and the provider base URL.
 - **E2E tests are skipped** — the e2e suite
   (`test/e2e/deterministic.test.ts`) runs the compiled CLI and needs
   `pnpm build` first; `pnpm test` skips it when `build/index.js` is

@@ -45,29 +45,38 @@ export function resolveCacheDir(cacheDir?: string): string {
 }
 
 /**
- * Computes the cache entry hash for a repository URL: the first 16 hex
- * characters of the URL's SHA-256.
+ * Computes the cache entry hash for a repository URL (and, when given,
+ * the analyzed branch): the first 16 hex characters of the SHA-256 of
+ * the URL — or of `url + '\x00' + branch` when a branch is selected —
+ * so different branches of the same repository never collide in the
+ * cache. Without a branch the hash is the plain URL hash, keeping
+ * caches written before branch selection was supported reusable.
  *
  * @param url - Repository URL or local path as given on the command line.
+ * @param branch - The analyzed branch, when one was selected.
  * @returns The 16-character entry hash.
  *
  * @internal Exported for tests only (`cache.test.ts`); used by
  * `cacheEntryDir` within the module. Not part of the public module
  * API.
  */
-export function entryHash(url: string): string {
-  return createHash('sha256').update(url).digest('hex').slice(0, ENTRY_HASH_LENGTH);
+export function entryHash(url: string, branch?: string): string {
+  const key = branch === undefined || branch === '' ? url : `${url}\x00${branch}`;
+  return createHash('sha256').update(key).digest('hex').slice(0, ENTRY_HASH_LENGTH);
 }
 
 /**
- * Returns the cache entry directory for a repository URL.
+ * Returns the cache entry directory for a repository URL — and its
+ * analyzed branch when one was selected, so branch-specific clones and
+ * LLM results are isolated per branch.
  *
  * @param cacheDir - Resolved cache root.
  * @param url - Repository URL or local path as given on the command line.
+ * @param branch - The analyzed branch, when one was selected.
  * @returns Absolute path of the entry directory.
  */
-export function cacheEntryDir(cacheDir: string, url: string): string {
-  return path.join(cacheDir, entryHash(url));
+export function cacheEntryDir(cacheDir: string, url: string, branch?: string): string {
+  return path.join(cacheDir, entryHash(url, branch));
 }
 
 /**

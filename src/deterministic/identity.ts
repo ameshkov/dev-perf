@@ -1,11 +1,12 @@
 /**
  * Author identity resolution: commits are grouped by lowercased author
  * email; the display name is the most frequent author name for that
- * email. An optional email map (`--map`/`--maps-file`) merges distinct
- * emails that map to the same display name into one identity, so a
- * person's metrics are exact across their emails. Without a map,
- * v1 behavior holds — every distinct email is its own identity. Bots
- * are flagged by a heuristic but never filtered: they are counted like
+ * email. An optional email map (the config `users-map` key)
+ * merges distinct emails that map to the same display name into one
+ * identity, so a person's metrics are exact across their emails.
+ * Without a map, v1 behavior holds — every distinct email is its own
+ * identity. Bots are flagged by a heuristic but never filtered: they
+ * are counted like
  * everyone else.
  */
 import type { EmailMap } from '../util/email-map.js';

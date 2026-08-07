@@ -26,6 +26,11 @@ export interface EnsureCloneOptions {
   cacheDir?: string;
   /** Force a fresh clone even when the cache matches. */
   refresh?: boolean;
+  /** Branch to check out and analyze, when not the repository's
+   * default branch. Branch-specific clones and LLM results are cached
+   * under their own entry, so switching branches never reuses the wrong
+   * clone. */
+  branch?: string;
   /** The repository's scoped logger for clone warnings. */
   log?: ScopedLog;
   /** Git executable to run; defaults to `git`. Tests override it to
@@ -100,14 +105,16 @@ export function cloneTarget(repo: string): string {
  * Ensures a repository is cloned into the cache: reuses the
  * clone when `repo/` exists and `clone.json` matches the URL; re-clones
  * (removing the old `repo/`) on `--refresh` or when the cache is stale;
- * clones with `--filter=blob:none` and falls back to a full clone when
- * the hosting rejects partial clones. Writes `clone.json` after cloning.
- * The clone start, naming the cache entry directory, is logged through
- * the scoped logger (verbose); the caller logs the outcome with its
- * duration.
+ * clones with `--filter=blob:none` (or the requested `--branch` when
+ * one is given) and falls back to a full clone when the hosting
+ * rejects partial clones. Writes `clone.json` after cloning. The
+ * cache entry is keyed by the URL and the requested branch, so
+ * different branches never share a cache entry. The clone start,
+ * naming the cache entry directory, is logged through the scoped
+ * logger (verbose); the caller logs the outcome with its duration.
  *
  * @param url - Repository URL or local path as given on the command line.
- * @param options - Cache directory, refresh flag, and git overrides.
+ * @param options - Cache directory, refresh flag, branch, and git overrides.
  * @returns The clone location and identity.
  * @throws {GitError} When cloning fails and the fallback does not apply.
  */
@@ -117,7 +124,7 @@ export async function ensureClone(
 ): Promise<CloneResult> {
   const log = options.log ?? createScopedLog();
   const cacheDir = resolveCacheDir(options.cacheDir);
-  const entryDir = cacheEntryDir(cacheDir, url);
+  const entryDir = cacheEntryDir(cacheDir, url, options.branch);
   const gitOptions = { gitBinary: options.gitBinary };
 
   const cached = await readCloneInfo(entryDir);
@@ -141,6 +148,8 @@ export async function ensureClone(
   await mkdir(entryDir, { recursive: true });
 
   const target = cloneTarget(url);
+  const branchArgs =
+    options.branch === undefined || options.branch === '' ? [] : ['--branch', options.branch];
   // A clone can take a long time; log that it started so the user sees
   // what dev-perf is doing instead of a silent wait. Naming the cache
   // entry directory lets the user match the repository to its cache
@@ -148,11 +157,11 @@ export async function ensureClone(
   // N ms (cache "...")`) once this returns.
   log.info(`cloning "${url}" (cache "${entryDir}")`);
   try {
-    await gitClone(entryDir, ['--filter=blob:none', target, 'repo'], gitOptions);
+    await gitClone(entryDir, ['--filter=blob:none', ...branchArgs, target, 'repo'], gitOptions);
   } catch (error) {
     if (error instanceof GitError && isPartialCloneFailure(error)) {
       log.warn(`partial clone failed (${error.message}); falling back to a full clone`);
-      await gitClone(entryDir, [target, 'repo'], gitOptions);
+      await gitClone(entryDir, [...branchArgs, target, 'repo'], gitOptions);
     } else {
       throw error;
     }

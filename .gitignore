@@ -20,6 +20,9 @@ build/
 # Local environment (secrets)
 .env
 
+# Local configuration (secrets); config.example.yaml is committed
+config.yaml
+
 # dev-perf clone cache
 .dev-perf/
 

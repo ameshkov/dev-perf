@@ -51,56 +51,37 @@ Pipeline phases, in order:
 2. **Deterministic analysis** — enumerate commits in the range, compute per-user
    metrics (§5). This is fast and cheap; it also produces the inputs (commit list,
    stats) the LLM layer will need.
-3. **LLM analysis** (optional, `--no-llm` to skip) — for each user, an in-process
+3. **LLM analysis** (optional — set `llm: false` to skip) — for each user, an in-process
    pi session with read access to the repo finishes by calling the report tool
    with its analysis (§6.5).
-4. **Assemble** — merge layers into the report, write to stdout or `--output`
-   (§7).
+4. **Assemble** — merge layers into the report, write to stdout or the `output`
+   config key (§7).
 
 ## 3. CLI
 
+The CLI is **config-driven**: `report` and `compile` select the step to
+run (exactly one per invocation), and every functional setting lives in
+the YAML config file (§3.1). The only flag is `--config <path>`; else
+`./config.yaml` auto-loads from the working directory when it exists.
+`version` / `--version` print the application version.
+
 ```text
-dev-perf [options] <repo...>
-
-Arguments:
-  repo                   Git repository URL or local path (repeatable)
-
-Options:
-  --since <date>         Start date (author-date, UTC). Any git date format.
-  --until <date>         End date (default: today)
-  --unit <unit>          Split the range into periods: day, week, month,
-                         quarter, year (requires --since)
-  --output <file>        Write JSON report to file (default: stdout; pretty-printed)
-  --cache-dir <dir>      Cache directory (default: <tmpdir>/.dev-cache) — cloned repos
-                         and LLM analysis results (§4, §6.6)
-  --refresh              Force re-clone and re-analysis even if cache is present
-  --no-llm               Deterministic stats only
-  --map <email=name>     Map an author email to a display name, merging identities
-                         (repeatable; §5.3)
-  --maps-file <path>     JSON file with email-to-name mappings
-                         ({ "email": "Name" })
-  --model <model>        Model id, e.g. gpt-4.1 (required for LLM analysis)
-  --provider-url <url>   OpenAI-compatible provider base URL (required for LLM)
-  --api-key <key>        Provider API key (required for LLM; DEV_PERF_API_KEY env
-                         var allowed)
-  --limit-context <n>    Max context tokens for LLM analysis (default: 262144)
-  --limit-output <n>     Max output tokens for LLM analysis (default: 65536)
-  --verbose
+dev-perf report --config <path>   # or omit --config: ./config.yaml auto-loads
+dev-perf compile --config <path>
+dev-perf version | --version
 ```
 
-The LLM layer requires `--model`, `--provider-url` and `--api-key` to be specified
-explicitly — dev-perf never falls back to the user's global configuration
-(see §6.2). `--limit-context` and `--limit-output` are optional caps for the model
+The LLM layer requires `model`, `provider-url` and `api-key` to be specified
+explicitly in the config — dev-perf never falls back to the user's global
+configuration (see §6.2). `limit-context` and `limit-output` are optional caps for the model
 window (defaults: 256k context / 64k output tokens), registered as the model's
 `contextWindow` / `maxTokens` (§6.2).
 
-`--map <email=name>` (repeatable) and `--maps-file <path>` merge author emails
-that belong to the same person into one identity during analysis (§5.3),
-mirroring the `compile` command's mapping options; the `--map` flag wins over
-the file. Both map to `DEV_PERF_MAP` / `DEV_PERF_MAPS_FILE` for the `report`
-command.
+The config `users-map` key merges author emails that belong to the same person
+into one identity during analysis (§5.3), mirroring the `compile` command's
+mapping.
 
-With `--unit`, the analyzed range is split into UTC-aligned periods and the report
+With `unit`, the analyzed range is split into UTC-aligned periods and the report
 carries one full per-repository report per period (`src/trend/periods.ts`):
 period bounds are instants (day = midnight, week = Monday, month = 1st,
 quarter = Jan/Apr/Jul/Oct, year = Jan 1), first/last periods are trimmed to the
@@ -108,18 +89,46 @@ range, `until` is inclusive (next start − 1 ms), and empty periods are include
 with zeroed metrics. The user list is resolved once over the whole range and
 shown in every period; the LLM phase runs per period for the users active in it
 (one in-process pi runtime per repo, shared across its periods; the LLM result
-cache keys by period bounds). `--since` is required with `--unit` — an unbounded
+cache keys by period bounds). `since` is required with `unit` — an unbounded
 range cannot be split.
 
-Implementation: `commander` for arg parsing, `zod` for validation of args and all
-data schemas. The report schema (zod) is shared between the CLI, the deterministic
+### 3.1 Configuration file
+
+The config file is the single source of options, shared by `report` and
+`compile`: top-level keys apply to both, and `compile`-only keys live
+under a nested `compile` section. Keys are kebab-case; booleans are
+YAML booleans and numeric keys hold YAML numbers, so values flow into
+the option schemas unchanged. `${ENV_VAR}` references are expanded from
+the environment (a `.env` file provides them) before YAML parsing, so
+the LLM provider configuration and API key stay out of version control;
+an unset or empty variable errors naming the file and the variable.
+
+| Key | Commands | Notes |
+| --- | --- | --- |
+| `repos` | report, compile | Repositories (URL or path); `repo#branch` analyzes that branch; `compile` keep-filter |
+| `since` / `until` | report | Analyzed author-date range (§5.1) |
+| `unit` | report | Period split; requires `since` |
+| `output` | report | JSON report file |
+| `cache-dir` | report | Cache root (§4); default `<tmpdir>/.dev-cache` |
+| `refresh` | report | Force re-clone and re-analysis (§4) |
+| `llm` | report | LLM analysis enabled; default `true` |
+| `model` / `provider-url` / `api-key` | report | LLM provider, explicit only (§6.2) |
+| `limit-context` / `limit-output` / `llm-retries` | report | LLM caps and retries (§6.2) |
+| `users-map` | report, compile | Email-to-name mapping; identity merging (§5.3) |
+| `parallel` | report | Repositories analyzed in parallel (§6.7) |
+| `verbose` | report, compile | Verbose logging |
+| `compile.report` / `compile.output` | compile | Input JSON report / markdown output directory (default `dev-perf-report`) |
+| `compile.include-users` / `exclude-users` / `exclude-repos` | compile | User and repository selection (§8) |
+
+Implementation: `commander` for command parsing and `--config`, `zod`
+for validation of the config file and all data schemas. The report schema (zod) is shared between the CLI, the deterministic
 layer, and the LLM structured-output schema so nothing can drift.
 
 ## 4. Cache and cloning
 
 - Default cache root: `<tmpdir>/.dev-cache` — `.dev-cache` in the OS temp
   directory, so invoking the tool never pollutes the working directory and
-  nothing needs to be gitignored. Point `--cache-dir` anywhere to override,
+  nothing needs to be gitignored. Set `cache-dir` anywhere to override,
   e.g. `~/.cache/dev-perf`.
 - Layout:
 
@@ -139,11 +148,14 @@ and uses a logical `pi/home/` agent home that is never created on disk
 - Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
   needed for the date range, but blobs are fetched on demand when the deterministic
   layer reads numstat data or the LLM agent requests a diff. Falls back to a full
-  clone when the hosting does not support partial clones.
+  clone when the hosting does not support partial clones. A `#branch` suffix on a
+  repository argument (`url#branch`) adds `--branch <branch>` to the clone, so that
+  repository is analyzed on the given branch instead of its default.
 - Cache reuse: if `repo/` exists and `clone.json` matches the URL, skip cloning;
-  `--refresh` forces a re-clone. LLM results are cached under the same entry and
-  reused when parameters match; `--refresh` invalidates both (§6.6). On re-clone
-  the old dir is removed.
+  the cache entry is keyed by the URL *and* the requested branch, so branch-specific
+  clones and LLM results never collide. `refresh` forces a re-clone. LLM results
+  are cached under the same entry and reused when parameters match; `refresh`
+  invalidates both (§6.6). On re-clone the old dir is removed.
 - All git operations go through a small `execa`-based wrapper (`src/repo/git.ts`).
 
 ## 5. Deterministic analysis
@@ -191,7 +203,7 @@ contribution.
 
 - Commits are grouped by **lowercased author email**; the display name is the most
   frequent author name for that email.
-- `--map`/`--maps-file` merge identities at the **grouping stage**: a commit whose
+- the config `users-map` key merges identities at the **grouping stage**: a commit whose
   email is in the mapping joins the mapped-name identity, otherwise its lowercased
   email. Identity keys are prefixed so mapped-name and email key spaces can never
   collide, and mapped identities take the user-supplied name (verbatim, so the
@@ -238,7 +250,7 @@ binary on `PATH`:
 - Session-event debug logging: each session also feeds its event stream to the
   debug log (`src/llm/session-events.ts`) — agent/message lifecycle
   (`message_end` with truncated content), compaction, auto-retries, and every
-  tool execution — so a `--verbose` run can follow the analysis event by event.
+  tool execution — so a `verbose` run can follow the analysis event by event.
 - Per-session token usage: `session.getSessionStats()` (no cost tracking).
 - System prompts: `DefaultResourceLoader.systemPrompt` injects the rendered
   per-session system prompt; sessions never read the user's global `~/.pi`.
@@ -248,10 +260,10 @@ binary on `PATH`:
 - One runtime per cloned repo: `createLlmRuntime(cloneDir, config)` (`src/llm/runtime.ts`)
   creates the `ModelRuntime` in memory (no `models.json`, an in-memory
   credential store so no `auth.json` is ever written), registers the
-  `devperf` provider (base URL from `--provider-url`), the single model
-  (`--model`, with `contextWindow`/`maxTokens` from
-  `--limit-context`/`--limit-output`), injects the API key from
-  `--api-key` in memory, and resolves the model. Nothing is written to
+  `devperf` provider (base URL from `provider-url`), the single model
+  (`model`, with `contextWindow`/`maxTokens` from
+  `limit-context`/`limit-output`), injects the API key from
+  `api-key` in memory, and resolves the model. Nothing is written to
   disk.
 - **No global pi config**: the agent home (`agentDir`) is a logical path
   under the cache entry's `pi/home/` that is **never created** — it only
@@ -260,14 +272,14 @@ binary on `PATH`:
   `models.json` is loaded or written.
 - **Token limits** — the registered model carries the caps:
   `contextWindow: 262144`, `maxTokens: 65536` (overridable via
-  `--limit-context` / `--limit-output`).
+  `limit-context` / `limit-output`).
 - Sessions are created per analysis by `createSessionService(runtime, entryDir,
   log)` (`src/llm/session.ts`); `close()` disposes every session and
   `runtime.dispose()` removes the in-memory API key.
-- LLM failures are retried (`--llm-retries`) with a **fresh runtime** per
+- LLM failures are retried (`llm-retries`) with a **fresh runtime** per
   attempt; completed per-user analyses are cached and reused across attempts
   (§6.6).
-- Multiple repos are analyzed in parallel up to `--parallel`; user sessions
+- Multiple repos are analyzed in parallel up to `parallel`; user sessions
   within a repo run one at a time to keep resource usage predictable.
 
 ### 6.3 Sessions and prompts
@@ -374,12 +386,12 @@ rather than averaged into one description.
   just the primary email, so a newly merged identity (§5.3) can never reuse a
   stale result cached for one of its constituent emails. The cache version is
   bumped whenever the analysis behavior changes, invalidating entries written by
-  older versions. A rerun with the same parameters reuses them; `--refresh`
+  older versions. A rerun with the same parameters reuses them; `refresh`
   invalidates the cache and re-runs everything. The cached file stores all
   cache-key components (repo, primary email, email set, range, model, limits)
   next to the payload, so each file is self-describing; the filename hash
   encodes the same components.
-- `--no-llm` produces the deterministic-only report (also the CI mode).
+- `llm: false` produces the deterministic-only report (also the CI mode).
 - The report includes `tokenUsage` (non-cached input, cached read, and output
   tokens, read from the pi session's `getSessionStats()`). There is no cost
   tracking: dev-perf deliberately does not report estimated USD.
@@ -388,8 +400,8 @@ rather than averaged into one description.
 
 Single JSON document (schema defined in `src/report/schema.ts` with zod),
 schema v2: repository entries are always wrapped in a `periods` array. Without
-`--unit` there is exactly one period covering the whole range — the v1 report
-content, nested one level deeper. With `--unit`, each period is a full
+`unit` there is exactly one period covering the whole range — the v1 report
+content, nested one level deeper. With `unit`, each period is a full
 per-repository report over its bounds (UTC instants, `until` inclusive).
 
 Before the analysis, every run logs the application version
@@ -400,7 +412,7 @@ file, the resolved cache directory, refresh, LLM settings (model,
 provider, API key masked), limits, retries, parallelism, and verbose —
 always printed, so the effective settings are visible even when the
 run fails before the report is written. stdout carries the report JSON
-only; with `--output` the report goes to the file and stdout stays
+only; with `output` the report goes to the file and stdout stays
 empty.
 
 ```json
@@ -442,7 +454,7 @@ empty.
 
 The report carries no schema change for identity merging: a user's `emails` field
 already lists every lowercased email of the identity (§5.3) — one email per
-identity without `--map`, the full set when emails merge.
+identity without a mapping, the full set when emails merge.
 
 Period splitting (`src/trend/periods.ts`): bounds are UTC instants (day =
 midnight, week = Monday, month = 1st, quarter = Jan/Apr/Jul/Oct, year = Jan 1);
@@ -464,6 +476,7 @@ dev-perf/
 │   ├── cli.ts                          # commander entry, command registry
 │   ├── commands/report.ts              # the `report` command (options + action)
 │   ├── config.ts                       # zod schemas for args
+│   ├── config-file.ts                  # YAML config: --config / config.yaml, ${VAR} expansion
 │   ├── repo/{clone,cache,git}.ts       # clone/cache management, execa wrappers
 │   ├── deterministic/
 │   │   ├── commits.ts                  # git log --numstat parsing
@@ -477,7 +490,7 @@ dev-perf/
 │   │   ├── prompts.ts                   # renders src/llm/prompts/*.md templates
 │   │   ├── prompts/                     # system + user prompt templates (*.md)
 │   │   └── analyze.ts                   # orientation + per-user orchestration
-│   ├── trend/periods.ts                # --unit period splitting + per-period commit filtering
+│   ├── trend/periods.ts                # `unit` period splitting + per-period commit filtering
 │   ├── report/{schema,assemble}.ts
 │   └── util/                           # logging, json
 └── tests/
@@ -485,7 +498,7 @@ dev-perf/
     ├── deterministic.test.ts
     ├── identity.test.ts
     ├── languages.test.ts
-    └── e2e.test.ts                     # --no-llm run against a fixture repo
+    └── e2e.test.ts                     # config-driven `llm: false` run against a fixture repo
 ```
 
 ## 9. Testing strategy
@@ -494,7 +507,7 @@ dev-perf/
   mapping, churn approximation. Fixture repos are built by `tests/fixtures/repo-builder.ts`
   (init, configure author, commit known files) so line counts are exact and
   asserted exactly.
-- **e2e (CI-safe)**: run the full CLI with `--no-llm` against a fixture repo,
+- **e2e (CI-safe)**: run the full CLI with `llm: false` against a fixture repo,
   snapshot the JSON.
 - **LLM integration (manual/slow)**: real run on a small public repo with a known
   contributor; golden-file comparison of the `devperf_report` payload shape (not
@@ -529,8 +542,8 @@ dev-perf/
   `cwd` and the isolated `agentDir`, so tools and prompts are scoped to the
   analyzed repo.
 - **Identity is hard** — plain email-based grouping is the v1 contract (bots
-  included); `--map`/`--maps-file` merge identities at report time (§3, §5.3),
-  and `.mailmap`-aware identity resolution remains a candidate for automatic
-  merging.
+  included); the config `users-map` key merges identities at report time
+  (§3, §5.3), and `.mailmap`-aware identity resolution remains a candidate for
+  automatic merging.
 - **Date semantics** — author date in UTC is the v1 contract; document that commit
   date filtering would produce different results.

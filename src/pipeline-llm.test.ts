@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
-import type { CliOptions } from './config.js';
+import type { ReportOptions } from './config.js';
 import { createLlmRuntime } from './llm/runtime.js';
 import type { LlmRuntimeConfig } from './llm/runtime.js';
 import { createSessionService } from './llm/session.js';
@@ -121,7 +121,7 @@ class StubSessions implements SessionService {
 }
 
 /** Defaults for an LLM-enabled pipeline run. */
-function options(overrides: Partial<CliOptions> = {}): CliOptions {
+function options(overrides: Partial<ReportOptions> = {}): ReportOptions {
   return {
     repos: [],
     llm: true,

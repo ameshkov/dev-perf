@@ -49,7 +49,7 @@ export interface LlmRuntimeConfig {
   providerUrl: string;
   /** Model id (`--model`), the model key inside the `devperf` provider. */
   model: string;
-  /** Provider API key (`--api-key` or `DEV_PERF_API_KEY`). */
+  /** Provider API key (`--api-key` or the config `api-key` key). */
   apiKey: string;
   /** Max context tokens (`--limit-context`), the model's `contextWindow`. */
   limitContext: number;

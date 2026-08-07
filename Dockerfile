@@ -48,8 +48,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git file ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
-# Default working directory: relative --output paths (report.json,
-# compile output) land here, and a .env in it is picked up at startup.
+# Default working directory: the config `output` path (report.json,
+# compile output) lands here, and a .env in it is picked up at startup.
 # The node user owns it so `--output` files can be written without root.
 WORKDIR /work
 RUN mkdir -p /work && chown node:node /work

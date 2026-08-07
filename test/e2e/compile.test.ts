@@ -1,9 +1,12 @@
 /**
  * End-to-end test for the compile path: the compiled CLI turns a
  * fixture JSON report into a markdown report with chart assets as a
- * child process, and the emitted files are checked exactly — the
- * report references every asset, the chart SVGs are non-empty, and
- * stdout carries nothing but the report path.
+ * child process, driven entirely by a `config.yaml` (the input report
+ * under `compile.report`, the output directory under `compile.output`,
+ * and the mapping/selection under `users-map` / `compile.exclude-users`),
+ * and the emitted files are checked exactly — the report references
+ * every asset, the chart SVGs are non-empty, and stdout carries nothing
+ * but the report path.
  *
  * The suite needs `pnpm build` to have produced `build/index.js`; it
  * is skipped when the build is missing so a plain `pnpm test` stays
@@ -140,12 +143,15 @@ describe('e2e compile', () => {
       const reportFile = path.join(dir, 'report.json');
       const output = path.join(dir, 'out');
       await writeFile(reportFile, fixtureReport());
-
-      const result = await execa(
-        process.execPath,
-        [BUILD_ENTRY, 'compile', reportFile, '--output', output],
-        { env: cleanEnv(), cwd: dir },
+      await writeFile(
+        path.join(dir, 'config.yaml'),
+        ['compile:', `  report: ${reportFile}`, `  output: ${output}`, ''].join('\n'),
       );
+
+      const result = await execa(process.execPath, [BUILD_ENTRY, 'compile'], {
+        env: cleanEnv(),
+        cwd: dir,
+      });
 
       // stdout carries nothing but the report path.
       expect(result.stdout).toBe(path.join(output, 'report.md'));
@@ -182,7 +188,7 @@ describe('e2e compile', () => {
     }
   });
 
-  it('applies email mapping and user selection from the CLI', async () => {
+  it('applies email mapping and user selection from the config file', async () => {
     if (!existsSync(BUILD_ENTRY)) {
       return;
     }
@@ -191,22 +197,23 @@ describe('e2e compile', () => {
       const reportFile = path.join(dir, 'report.json');
       const output = path.join(dir, 'out');
       await writeFile(reportFile, fixtureReport());
-
-      await execa(
-        process.execPath,
+      await writeFile(
+        path.join(dir, 'config.yaml'),
         [
-          BUILD_ENTRY,
-          'compile',
-          reportFile,
-          '--output',
-          output,
-          '--map',
-          'alice@example.com=Alice Smith',
-          '--exclude-user',
-          'bob@example.com',
-        ],
-        { env: cleanEnv(), cwd: dir },
+          'compile:',
+          `  report: ${reportFile}`,
+          `  output: ${output}`,
+          "  'exclude-users': [bob@example.com]",
+          'users-map:',
+          "  'alice@example.com': 'Alice Smith'",
+          '',
+        ].join('\n'),
       );
+
+      await execa(process.execPath, [BUILD_ENTRY, 'compile'], {
+        env: cleanEnv(),
+        cwd: dir,
+      });
 
       const md = await readFile(path.join(output, 'report.md'), 'utf8');
       expect(md).toContain('### Alice Smith');

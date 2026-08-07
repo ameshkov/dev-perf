@@ -1,74 +1,64 @@
 /**
- * Resolution and validation of the `compile` command options.
- * `resolveCompileOptions` fills options that were not passed as flags
- * from their `DEV_PERF_COMPILE_*` environment variables (the flag
- * always wins), and `parseCompileOptions` validates the merged options
- * against `compileOptionsSchema`. The cross-field rules: `--include-user`
- * and `--exclude-user` are mutually exclusive, as are `--repo` and
- * `--exclude-repo`; `--map` entries must be `email=name` pairs with a
- * unique email on the left side.
+ * Resolution and validation of the `compile` command options from the
+ * YAML config file. `resolveCompileOptions` maps the config keys —
+ * top-level `repos`, `users-map`, `verbose` and the nested `compile`
+ * section (`compile.report`, `compile.output`, `compile.include-users`,
+ * `compile.exclude-users`, `compile.exclude-repos`) — to the camelCase
+ * validated shape, and `parseCompileOptions` validates them against
+ * `compileOptionsSchema`. The config file is the single source of
+ * options — the CLI carries no flags beyond `--config`. The cross-field
+ * rules: `include-users` and `exclude-users` are mutually exclusive, as
+ * are `repos` and `exclude-repos`; each email may map to only one
+ * display name. Error labels always name the config key the value came
+ * from (`compile.report`, `compile.include-users`, `users-map`, ...).
  */
 import { z } from 'zod';
-import { emailMapEntrySchema, parseEmailMapEntry } from '../util/email-map.js';
-import { splitList } from '../util/list.js';
+import type { DevPerfConfig } from '../config-file.js';
+import { parseRepoSpec } from '../repo/repo-spec.js';
+import { emailMapEntrySchema, usersMapToEntries } from '../util/email-map.js';
+import type { EmailMapEntry } from '../util/email-map.js';
 
 /**
- * Raw options as parsed by commander before validation: repeatable
- * options are arrays (commander collects them), and unset options are
- * `undefined`. The validated, defaulted shape is `CompileOptions` from
- * this module.
+ * The compile options as resolved from the config file before
+ * validation: optional config keys mapped to the camelCase fields of
+ * the validated shape. The config file is the only source of options,
+ * so this is the input to `parseCompileOptions`.
  */
-export interface RawCompileOptions {
-  /** Output directory for `report.md` and the `assets/` charts. */
+interface RawCompileOptions {
+  /** Input JSON report file (`compile.report`). */
+  report?: string;
+  /** Output directory for `report.md` and the `assets/` charts (`compile.output`). */
   output?: string;
-  /** Email-to-name mappings, one `email=name` per entry. */
-  map?: string[];
-  /** JSON file with email-to-name mappings (`{ "email": "Name" }`). */
-  mapsFile?: string;
-  /** Keep only users matching one of these names or emails. */
-  includeUser?: string[];
-  /** Drop users matching one of these names or emails. */
-  excludeUser?: string[];
-  /** Keep only these repositories (as given on the command line). */
-  repo?: string[];
-  /** Drop these repositories (as given on the command line). */
-  excludeRepo?: string[];
-  /** Verbose logging. */
+  /** Email-to-name mappings parsed from the `users-map` config key. */
+  maps?: EmailMapEntry[];
+  /** Keep only these users (`compile.include-users`). */
+  includeUsers?: string[];
+  /** Drop these users (`compile.exclude-users`). */
+  excludeUsers?: string[];
+  /** Keep only these repositories (the top-level `repos` key). */
+  repos?: string[];
+  /** Drop these repositories (`compile.exclude-repos`). */
+  excludeRepos?: string[];
+  /** Verbose logging (the top-level `verbose` key). */
   verbose?: boolean;
 }
 
-/** Environment variable backing each raw compile option. */
-const OPTION_ENV: Readonly<Record<keyof RawCompileOptions, string>> = {
-  output: 'DEV_PERF_COMPILE_OUTPUT',
-  map: 'DEV_PERF_COMPILE_MAP',
-  mapsFile: 'DEV_PERF_COMPILE_MAPS_FILE',
-  includeUser: 'DEV_PERF_COMPILE_INCLUDE_USER',
-  excludeUser: 'DEV_PERF_COMPILE_EXCLUDE_USER',
-  repo: 'DEV_PERF_COMPILE_REPO',
-  excludeRepo: 'DEV_PERF_COMPILE_EXCLUDE_REPO',
-  verbose: 'DEV_PERF_VERBOSE',
+/**
+ * Config key path backing each compile option, for error labels: the
+ * schema fields are camelCase, while the values always come from the
+ * config file, so a validation error names the config key
+ * (`compile.include-users`, `users-map`, ...) — never a flag.
+ */
+const CONFIG_KEY: Readonly<Record<string, string>> = {
+  report: 'compile.report',
+  output: 'compile.output',
+  maps: 'users-map',
+  includeUsers: 'compile.include-users',
+  excludeUsers: 'compile.exclude-users',
+  repos: 'repos',
+  excludeRepos: 'compile.exclude-repos',
+  verbose: 'verbose',
 };
-
-/** Environment variable backing the positional `<report>` argument. */
-const REPORT_ENV_VAR = 'DEV_PERF_COMPILE_REPORT';
-
-/** True spellings accepted for boolean environment variables. */
-const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
-
-/** False spellings accepted for boolean environment variables. */
-const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off']);
-
-/** Raw-option keys whose environment values are booleans. */
-const BOOLEAN_OPTIONS: ReadonlySet<keyof RawCompileOptions> = new Set(['verbose']);
-
-/** Raw-option keys whose environment values are comma-separated lists. */
-const LIST_OPTIONS: ReadonlySet<keyof RawCompileOptions> = new Set([
-  'map',
-  'includeUser',
-  'excludeUser',
-  'repo',
-  'excludeRepo',
-]);
 
 /**
  * zod schema for the parsed compile options. List options default to
@@ -83,10 +73,8 @@ export const compileOptionsSchema = z
     report: z.string().min(1, 'the report file is required'),
     /** Output directory for `report.md` and the `assets/` charts. */
     output: z.string().default('dev-perf-report'),
-    /** Email-to-name mappings parsed from `--map` / the environment. */
+    /** Email-to-name mappings parsed from the `users-map` config key. */
     maps: z.array(emailMapEntrySchema),
-    /** JSON file with email-to-name mappings. */
-    mapsFile: z.string().optional(),
     /** Keep only users matching one of these names or emails. */
     includeUsers: z.array(z.string()),
     /** Drop users matching one of these names or emails. */
@@ -99,21 +87,21 @@ export const compileOptionsSchema = z
     verbose: z.boolean().optional(),
   })
   .superRefine((options, ctx) => {
-    // Inverting a selection is ambiguous: --include-user and
-    // --exclude-user cannot be combined, and neither can --repo and
-    // --exclude-repo.
+    // Inverting a selection is ambiguous: `include-users` and
+    // `exclude-users` cannot be combined, and neither can `repos` and
+    // `exclude-repos`.
     if (options.includeUsers.length > 0 && options.excludeUsers.length > 0) {
       ctx.addIssue({
         code: 'custom',
-        path: ['excludeUser'],
-        message: 'cannot be combined with --include-user; choose one selection direction',
+        path: ['excludeUsers'],
+        message: 'cannot be combined with compile.include-users; choose one selection direction',
       });
     }
     if (options.repos.length > 0 && options.excludeRepos.length > 0) {
       ctx.addIssue({
         code: 'custom',
-        path: ['excludeRepo'],
-        message: 'cannot be combined with --repo; choose one selection direction',
+        path: ['excludeRepos'],
+        message: 'cannot be combined with repos; choose one selection direction',
       });
     }
     // Each email may map to only one identity; report every duplicated
@@ -123,7 +111,7 @@ export const compileOptionsSchema = z
       if (seen.has(entry.email)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['map'],
+          path: ['maps'],
           message: `email '${entry.email}' is mapped more than once`,
         });
         continue;
@@ -136,158 +124,116 @@ export const compileOptionsSchema = z
 export type CompileOptions = z.infer<typeof compileOptionsSchema>;
 
 /**
- * Fills raw options that were not passed as flags from their
- * `DEV_PERF_COMPILE_*` environment variables; a CLI flag always wins
- * over the environment. List variables are comma-separated, booleans
- * accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`, and empty
- * values are treated as unset. `DEV_PERF_COMPILE_REPORT` supplies the
- * report file when no positional argument was given.
+ * Maps the validated config file to the compile options shape: the
+ * input report comes from `compile.report`, the output directory from
+ * `compile.output`, the user and repository selections from the `compile`
+ * section and the top-level `repos` key, and the `users-map` config key
+ * is parsed straight into mapping entries (display names pass through
+ * verbatim, so a comma in a name survives). The `maps` field stays
+ * absent when no mapping was given.
  *
- * @param report - The report file from the command line, if any.
- * @param raw - Raw options as parsed by commander.
- * @param env - Environment source; defaults to `process.env`. Tests
- * pass a controlled object.
- * @returns The merged raw options, ready for `parseCompileOptions`.
- * @throws {Error} When a boolean environment variable holds an
- * unrecognized value, or a `DEV_PERF_COMPILE_MAP` entry is not an
- * `email=name` pair.
+ * @param config - The validated config file (see `loadDevPerfConfig`);
+ * empty when no file is in effect.
+ * @returns The resolved compile options, ready for `parseCompileOptions`.
  */
-export function resolveCompileOptions(
-  report: string | undefined,
-  raw: RawCompileOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): RawCompileOptions & { report: string | undefined } {
-  const merged: Record<string, unknown> = { ...raw };
-  for (const key of Object.keys(OPTION_ENV) as Array<keyof RawCompileOptions>) {
-    // Repeatable options default to `[]` in commander, so an empty
-    // array means the flag was not passed; only a non-empty list (or
-    // any value for non-list options) counts as flag-provided.
-    const providedByFlag = Array.isArray(merged[key])
-      ? (merged[key] as unknown[]).length > 0
-      : merged[key] !== undefined;
-    if (providedByFlag) {
-      continue;
-    }
-    const value = env[OPTION_ENV[key]];
-    if (value === undefined || value === '') {
-      continue;
-    }
-    if (BOOLEAN_OPTIONS.has(key)) {
-      merged[key] = parseBoolean(value, OPTION_ENV[key]);
-    } else if (LIST_OPTIONS.has(key)) {
-      const entries = splitList(value);
-      if (key === 'map') {
-        // Validate now so a malformed environment entry is reported
-        // under its own variable name, not the `--map` flag.
-        for (const entry of entries) {
-          parseEmailMapEntry(entry, OPTION_ENV.map);
-        }
-      }
-      merged[key] = entries;
-    } else {
-      merged[key] = value;
-    }
-  }
-  const envReport = env[REPORT_ENV_VAR];
+export function resolveCompileOptions(config: DevPerfConfig = {}): RawCompileOptions {
+  const maps = usersMapToEntries(config['users-map'] ?? {});
   return {
-    ...(merged as RawCompileOptions),
-    report: report ?? (envReport !== undefined && envReport !== '' ? envReport : undefined),
+    report: config.compile?.report,
+    output: config.compile?.output,
+    ...(maps.length > 0 ? { maps } : {}),
+    includeUsers: config.compile?.['include-users'],
+    excludeUsers: config.compile?.['exclude-users'],
+    repos: cleanRepos(config.repos),
+    excludeRepos: cleanRepos(config.compile?.['exclude-repos']),
+    verbose: config.verbose,
   };
 }
 
 /**
- * Parses a boolean environment value: `1`/`true`/`yes`/`on` are true,
- * `0`/`false`/`no`/`off` are false.
- *
- * @param value - The raw environment value.
- * @param envVar - The variable name, for error messages.
- * @returns The parsed boolean.
- * @throws {Error} When the value is not a recognized boolean spelling.
- */
-function parseBoolean(value: string, envVar: string): boolean {
-  const normalized = value.toLowerCase();
-  if (TRUE_ENV_VALUES.has(normalized)) {
-    return true;
-  }
-  if (FALSE_ENV_VALUES.has(normalized)) {
-    return false;
-  }
-  throw new Error(
-    `Invalid options:\n${envVar}: expected a boolean ('true' or 'false'), got '${value}'`,
-  );
-}
-
-/**
- * Renders an issue path as the CLI flag the user would pass, e.g.
- * `includeUsers` → `--include-user`; the `report` path renders as
- * `report` (a positional argument, not a flag), and an empty path
- * renders as `options`.
+ * Renders an issue path as the config key the user set, e.g.
+ * `includeUsers` → `compile.include-users`, `maps` → `users-map`; an
+ * empty path renders as `options`.
  *
  * @param path - Issue path from a zod validation error.
- * @returns The flag name for error messages.
+ * @returns The config key for error messages.
  */
-function flagName(path: PropertyKey[]): string {
+function configKeyName(path: PropertyKey[]): string {
   if (path.length === 0) {
     return 'options';
   }
-  if (path.length === 1 && path[0] === 'report') {
-    return 'report';
-  }
-  const flag = path
-    .map((segment) => String(segment).replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`))
-    .join('.');
-  return `--${flag}`;
+  const first = String(path[0]);
+  const base = CONFIG_KEY[first] ?? first;
+  const rest = path
+    .slice(1)
+    .map((segment) => `.${String(segment)}`)
+    .join('');
+  return base + rest;
 }
 
 /**
- * Normalizes one raw list option into its entries: the option is
- * repeatable, and each occurrence may carry a comma-separated list
- * (mirroring the environment-variable form); entries are trimmed and
- * empty ones are dropped, so an empty or whitespace-only occurrence
- * contributes nothing.
+ * Normalizes one config list option into its entries: entries are
+ * trimmed and empty ones are dropped, so an empty or whitespace-only
+ * list item selects nothing. (The config uses YAML lists, so there is
+ * no comma-splitting.) The normalized schema lists are always arrays.
  *
- * @param entries - The raw occurrences of the option.
+ * @param entries - The raw config list, if any.
  * @returns The non-empty list entries.
  */
-function normalizeList(entries: string[] | undefined): string[] {
-  return (entries ?? []).flatMap((entry) => splitList(entry));
+function cleanList(entries: string[] | undefined): string[] {
+  return (entries ?? []).map((entry) => entry.trim()).filter((entry) => entry !== '');
 }
 
 /**
- * Validates raw compile options (as parsed by commander) against
- * `compileOptionsSchema` and returns the validated options with
- * defaults applied. The raw list options (`map`, `includeUser`,
- * `excludeUser`, `repo`, `excludeRepo`) are normalized to the schema's
- * plural field names — each occurrence is split on commas, trimmed,
- * and emptied entries are dropped, so `--exclude-user ""` or `--map
- * ""` select nothing — and `--map` entries are parsed into email-name
- * pairs, so the schema sees the parsed shape. An empty `--output`
- * falls back to the `dev-perf-report` default.
+ * Strips the `#branch` suffix off each repository entry: the report
+ * entries carry the bare clone target (a `#branch` suffix was already
+ * split off by `parseRepoSpec` when the report was produced), so the
+ * repo selection must match those bare targets. Without this, a
+ * branch-qualified entry like `https://host/org/repo.git#dev` would
+ * never match and silently drop every repository from the compiled
+ * output.
  *
- * @param input - Raw options, including the `report` file.
+ * @param entries - The raw config repo list, if any.
+ * @returns The bare clone targets, `#branch` suffixes removed; absent
+ * when the config key was absent.
+ */
+function cleanRepos(entries: string[] | undefined): string[] | undefined {
+  return entries?.map((spec) => parseRepoSpec(spec).repo);
+}
+
+/**
+ * Validates compile options (as resolved from the config file) against
+ * `compileOptionsSchema` and returns the validated options with
+ * defaults applied. The config list options are normalized to
+ * non-empty trimmed entries, an empty `output` falls back to the
+ * `dev-perf-report` default, and the `maps` entries (already parsed by
+ * `resolveCompileOptions`) are validated against the mapping schema.
+ * The config file is the single source, so every error names the config
+ * key the value came from.
+ *
+ * @param input - The resolved compile options.
  * @returns The validated options.
  * @throws {Error} When the options are invalid; the message lists each
- * failing option and why.
+ * failing option and why, naming the config key.
  */
 export function parseCompileOptions(input: unknown): CompileOptions {
-  const raw = (input ?? {}) as RawCompileOptions & { report: string | undefined };
+  const raw = (input ?? {}) as Partial<RawCompileOptions>;
   if (raw.report === undefined || raw.report === '') {
-    throw new Error('Invalid options:\nreport: the report file is required');
+    throw new Error('Invalid options:\ncompile.report: the report file is required');
   }
-  const maps = normalizeList(raw.map).map((entry) => parseEmailMapEntry(entry, '--map'));
   const normalized = {
     ...raw,
-    maps,
+    maps: raw.maps ?? [],
     output: raw.output === undefined || raw.output.trim() === '' ? undefined : raw.output,
-    includeUsers: normalizeList(raw.includeUser),
-    excludeUsers: normalizeList(raw.excludeUser),
-    repos: normalizeList(raw.repo),
-    excludeRepos: normalizeList(raw.excludeRepo),
+    includeUsers: cleanList(raw.includeUsers),
+    excludeUsers: cleanList(raw.excludeUsers),
+    repos: cleanList(raw.repos),
+    excludeRepos: cleanList(raw.excludeRepos),
   };
   const result = compileOptionsSchema.safeParse(normalized);
   if (!result.success) {
     const details = result.error.issues
-      .map((issue) => `${flagName(issue.path)}: ${issue.message}`)
+      .map((issue) => `${configKeyName(issue.path)}: ${issue.message}`)
       .join('\n');
     throw new Error(`Invalid options:\n${details}`);
   }

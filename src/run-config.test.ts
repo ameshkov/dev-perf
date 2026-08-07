@@ -5,12 +5,12 @@
  * defaults applied, unset options omitted, and the API key masked.
  */
 import { describe, expect, it } from 'vitest';
-import type { CliOptions } from './config.js';
+import type { ReportOptions } from './config.js';
 import { resolveCacheDir } from './repo/cache.js';
 import { maskSecret, runConfig, runConfigLines } from './run-config.js';
 
 /** Defaults for a deterministic-only run. */
-function options(overrides: Partial<CliOptions> = {}): CliOptions {
+function options(overrides: Partial<ReportOptions> = {}): ReportOptions {
   return {
     repos: [],
     llm: false,
@@ -98,7 +98,7 @@ describe('runConfig', () => {
     expect(config.repos).toEqual(['a']);
   });
 
-  it('surfaces email mappings and the maps file when set', () => {
+  it('surfaces email mappings and the config file when set', () => {
     const config = runConfig(
       options({
         repos: ['r'],
@@ -106,20 +106,20 @@ describe('runConfig', () => {
           { email: 'alice@example.com', name: 'Alice Smith' },
           { email: 'alice@work.com', name: 'Alice Smith' },
         ],
-        mapsFile: 'maps.json',
+        configFile: 'config.yaml',
       }),
       ['r'],
     );
 
     expect(config.maps).toEqual(['alice@example.com=Alice Smith', 'alice@work.com=Alice Smith']);
-    expect(config.mapsFile).toBe('maps.json');
+    expect(config.configFile).toBe('config.yaml');
   });
 
-  it('omits maps and the maps file when they were not given', () => {
+  it('omits maps and the config file when they were not given', () => {
     const config = runConfig(options({ repos: ['r'] }), ['r']);
 
     expect('maps' in config).toBe(false);
-    expect('mapsFile' in config).toBe(false);
+    expect('configFile' in config).toBe(false);
   });
 });
 

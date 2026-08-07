@@ -9,8 +9,9 @@ import { logError } from './util/log.js';
 import { appVersion } from './version.js';
 
 async function main() {
-  // Load .env from the current working directory so DEV_PERF_API_KEY (and
-  // any other dev-perf environment variables) work without shell exports.
+  // Load .env from the current working directory so environment
+  // variables referenced as ${ENV_VAR} inside config.yaml (e.g.
+  // ${DEV_PERF_API_KEY}) work without shell exports.
   dotenv.config({ quiet: true });
 
   const program = new Command();

@@ -44,11 +44,30 @@ describe('entryHash', () => {
     expect(entryHash(URL)).toBe(entryHash(URL));
     expect(entryHash(URL)).not.toBe(entryHash(other));
   });
+
+  it('isolates branches: a branch changes the hash, and no branch keeps the plain URL hash', () => {
+    // The no-branch hash stays the plain URL hash, so caches written
+    // before branch selection was supported remain reusable.
+    expect(entryHash(URL, '')).toBe(entryHash(URL));
+    expect(entryHash(URL, undefined)).toBe(entryHash(URL));
+
+    const branchKey = `${URL}\x00dev`;
+    expect(entryHash(URL, 'dev')).toBe(expectedHash(branchKey));
+    expect(entryHash(URL, 'dev')).not.toBe(entryHash(URL));
+    expect(entryHash(URL, 'dev')).not.toBe(entryHash(URL, 'main'));
+  });
 });
 
 describe('cacheEntryDir', () => {
   it('joins the cache root and the entry hash', () => {
     expect(cacheEntryDir('/cache', URL)).toBe(path.join('/cache', expectedHash(URL)));
+  });
+
+  it('keys branch-specific entries under their own directory', () => {
+    expect(cacheEntryDir('/cache', URL, 'dev')).toBe(
+      path.join('/cache', expectedHash(`${URL}\x00dev`)),
+    );
+    expect(cacheEntryDir('/cache', URL, 'dev')).not.toBe(cacheEntryDir('/cache', URL));
   });
 });
 

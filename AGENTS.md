@@ -35,20 +35,21 @@ user**:
 2. **Deterministic analysis** — commits, added/removed lines, files
    touched, churn, active days, and per-language contribution sizes,
    counted straight from git history.
-3. **LLM analysis** (optional, `--no-llm` to skip) — an in-process pi
+3. **LLM analysis** (optional, set `llm: false` to skip) — an in-process pi
    agent with read access to the repository inspects the actual
    commits and diffs and assesses the dimensions that cannot be
    counted. Provider, model, and API key are always passed explicitly;
    the user's global configuration is never read.
 4. **Assembly** — the two layers are merged into a single JSON report,
    per repository and per user.
-5. **Compile** (optional) — `dev-perf compile <report>` turns the JSON
-   report into a markdown report with Vega-Lite SVG charts: team and
+5. **Compile** (optional) — `dev-perf compile` turns the JSON report
+   into a markdown report with Vega-Lite SVG charts: team and
    individual dynamics, LLM distribution pies, tables, and an appendix,
    with repo/user selection and email mapping.
 
 Both analysis layers are implemented: the deterministic path —
-`dev-perf report --no-llm <repo>` clones the repository and produces
+`dev-perf report` with a config file (`llm: false`; the `repos` key)
+clones the repository and produces
 the JSON report — and the LLM agentic layer, which creates one
 in-process pi runtime per repository, registers the `devperf_report`
 tool in code, drives per-user sessions and prompts, enforces the
@@ -80,7 +81,8 @@ dev-perf/
 │   ├── commands/              # One file per CLI command
 │   ├── pipeline.ts            # Orchestration: clone → analysis → LLM → assemble → write
 │   ├── analyze-repo.ts        # Per-repository analysis: clone, commits, LLM phase, assembly
-│   ├── config.ts              # zod validation of parsed CLI options
+│   ├── config.ts              # zod validation of the config-derived report options
+│   ├── config-file.ts         # YAML config file: --config / config.yaml autoload, ${VAR} expansion
 │   ├── run-config.ts          # Per-line run configuration dump for the startup log
 │   ├── version.ts             # Application version from package.json
 │   ├── repo/                  # Clone/cache management
@@ -97,7 +99,8 @@ dev-perf/
 │   └── design.md              # Full design document
 ├── Dockerfile                 # Multi-stage image: Node.js + git + bash runtime
 └── Root config: package.json, tsconfig*.json, vitest.config.ts,
-    oxlint.config.ts, knip.config.ts, .env.example, .dockerignore
+    oxlint.config.ts, knip.config.ts, config.example.yaml, .env.example,
+    .dockerignore
 ```
 
 Publishing is split across two workflows: `.github/workflows/ci.yml`
@@ -185,18 +188,22 @@ Universal design principles this codebase follows:
 - **Stdout Discipline** — stdout carries the report JSON only (or the
   compile command's written report path). Progress and errors go to
   stderr through the level-based logger (`src/util/log.ts`):
-  `error`/`warn` messages always, `info`/`debug` messages only when
-  `--verbose` is set. Every `report` and `compile` run additionally
-  logs an always-visible startup line to stderr with the application
-  version (`dev-perf <version>`); `report` runs follow it with the
-  full resolved configuration as one indented line per config field
-  (`src/run-config.ts`), with the API key masked. Long-running
-  operations log their start as well as their outcome: a verbose
-  `info` line right before the work (e.g. `cloning "repo"`, `reading
-  commits`, `LLM runtime: creating the in-process pi runtime ...`,
-  `compile: rendering N charts`)
-  paired with the existing outcome line, so a long wait stays visible
-  as what dev-perf is doing right now instead of a silent gap. Clone
+  `error`/`warn` messages always; `info`/`debug` messages only when
+  the config `verbose` key is set, except for a small always-visible
+  `info` set.
+  Every command run is bracketed by start/end markers
+  (`starting <command>`, then `finished <command> in <ms> ms`, e.g.
+  `starting report` / `finished report in 1234 ms`), every `report`
+  and `compile` run logs an always-visible startup line with the
+  application version (`dev-perf <version>`), and `report` runs
+  follow it with the full resolved configuration as one indented line
+  per config field (`src/run-config.ts`), with the API key masked.
+  Long-running operations log their start as well as their outcome: a
+  verbose `info` line right before the work (e.g. `cloning "repo"`,
+  `reading commits`, `LLM runtime: creating the in-process pi runtime
+  ...`, `compile: rendering N charts`) paired with the existing
+  outcome line, so a long wait stays visible as what dev-perf is
+  doing right now instead of a silent gap. Clone
   lines name the cache entry directory (`.dev-cache/<hash>`), so a
   repository can be matched to its cache entry from the log. Log
   message strings are formatted per the **Log string formatting**
@@ -382,7 +389,8 @@ Every module MUST have test coverage:
   cases.
 - **End-to-end tests**: E2E tests live in `test/e2e/` and run the full
   compiled CLI as a child process. The deterministic-only path
-  (`--no-llm` against a fixture repo, JSON snapshot) is the CI-safe E2E
+  (a config-driven `llm: false` run against a fixture repo, JSON
+  snapshot) is the CI-safe E2E
   target; LLM runs are manual/slow.
 - **Test verification mandatory**: All changes MUST pass `pnpm test`
   before merge. Tests MUST NOT be deleted or weakened without explicit
@@ -435,19 +443,30 @@ Configuration and documentation MUST stay synchronized with code:
   configuration MUST update relevant documentation.
 - **Structure tracking**: Changes to project structure MUST update the
   Project Structure section in `AGENTS.md`.
-- **Environment variables**: A `.env` file in the current working
-  directory is auto-loaded at startup (`dotenv`). Every command-line
-  option of the `report` command has a `DEV_PERF_*` environment
-  variable equivalent, and every `compile` option has a
-  `DEV_PERF_COMPILE_*` one (see `.env.example` and the README); the
-  flag wins when both are set. `src/config.ts` resolves the report
-  environment (`resolveRawOptions`) and `src/compile/options.ts` the
-  compile environment (`resolveCompileOptions`) before validating the
-  options. The user's
-  global configuration is NEVER read — provider, model, and
-  API key are always passed explicitly via
-  `--provider-url`/`DEV_PERF_PROVIDER_URL`,
-  `--model`/`DEV_PERF_MODEL`, and `--api-key`/`DEV_PERF_API_KEY`.
+- **Configuration file**: Options are read from a YAML config file
+  shared by `report` and `compile` (`src/config-file.ts`): top-level
+  keys apply to both commands, and `compile`-only keys live under the
+  nested `compile` section (`compile.report`, `compile.output`,
+  `compile.include-users`, `compile.exclude-users`,
+  `compile.exclude-repos`). `--config <path>` selects it, else
+  `<cwd>/config.yaml` is auto-loaded when it exists; the config file is
+  the single source of options — the CLI carries no functional flags.
+  `src/config.ts` (`resolveReportOptions`) and
+  `src/compile/options.ts` (`resolveCompileOptions`) map the config
+  keys to the camelCase validated options before validating, and record
+  the config file on the report options for the run-config dump.
+  `${ENV_VAR}`
+  references inside the config are expanded from the environment
+  **before** YAML parsing (so `refresh: ${DEV_PERF_REFRESH}` parses as
+  a boolean), erroring out on an unset or empty variable. A `.env` file
+  in the current working directory is auto-loaded at startup (`dotenv`)
+  as the source for those `${ENV_VAR}` references; the `DEV_PERF_*`
+  layer is **not** an option source. The user's global configuration is
+  NEVER read — provider, model, and API key are always passed
+  explicitly, via the config keys `provider-url`, `model`,
+  `api-key` (typically `${ENV_VAR}` references to `.env`). Email
+  mappings live in the config `users-map` key (a YAML `email: name`
+  mapping, merged under the display name).
 
 **Rationale**: Stale documentation causes onboarding friction and
 operational incidents.

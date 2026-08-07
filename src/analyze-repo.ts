@@ -4,11 +4,11 @@
  * in-process pi runtime per repo, shared by all its periods, replaced
  * with a fresh runtime when an attempt fails), and per-period report
  * assembly. `analyzeRepository` is the single entry; the pipeline runs
- * it once per repository — in parallel up to `--parallel` — with the
+ * it once per repository — in parallel up to `parallel` — with the
  * run's resolved range and periods.
  */
 import path from 'node:path';
-import type { CliOptions } from './config.js';
+import type { ReportOptions } from './config.js';
 import { readCommits } from './deterministic/commits.js';
 import type { AuthorGroup } from './deterministic/identity.js';
 import { groupByAuthor } from './deterministic/identity.js';
@@ -21,6 +21,7 @@ import { assembleRepository } from './report/index.js';
 import type { AnalyzedRange, LlmAnalysis, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 import { filterGroupsForPeriod } from './trend/periods.js';
 import type { EmailMap } from './util/email-map.js';
 import { errorDetail } from './util/error.js';
@@ -31,7 +32,7 @@ import type { ScopedLog } from './util/log.js';
 interface RepoAnalysis {
   /** Resolved author-date range of the run (UTC instants). */
   range: AnalyzedRange;
-  /** Period bounds of the run; one whole-range period without `--unit`. */
+  /** Period bounds of the run; one whole-range period without `unit`. */
   periods: AnalyzedRange[];
   /** Assembled repository entries, one per period. */
   repositories: Repository[];
@@ -56,7 +57,8 @@ interface LlmPhase {
  * pipeline resolved them from the first clone before the parallel
  * phase.
  *
- * @param repo - Repository URL or local path as given on the command line.
+ * @param repo - The repository spec as given (URL or local path, with
+ * an optional `#branch` suffix selecting the branch to analyze).
  * @param options - Validated CLI options.
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
@@ -67,24 +69,25 @@ interface LlmPhase {
  * @throws {GitError} When a clone or git log fails, or a bound date
  * cannot be parsed.
  * @throws {Error} When the LLM phase fails; the message names the repo
- * — and the period when `--unit` is set — plus the underlying cause.
+ * — and the period when `unit` is set — plus the underlying cause.
  */
 export async function analyzeRepository(
-  repo: string,
-  options: CliOptions,
+  repo: RepoSpec,
+  options: ReportOptions,
   range: AnalyzedRange,
   periods: AnalyzedRange[],
   log: ScopedLog,
   emailMap: EmailMap,
 ): Promise<RepoAnalysis> {
   const startedAt = Date.now();
-  const clone = await ensureClone(repo, {
+  const clone = await ensureClone(repo.repo, {
     cacheDir: options.cacheDir,
     refresh: options.refresh,
+    branch: repo.branch,
     log,
   });
   log.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.spec}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   // Reading the whole-range commit history is the dominant git cost on
   // a large repository; log that it started so the user sees what
@@ -111,7 +114,7 @@ export async function analyzeRepository(
  * With `llmRetries: 0` the original error is rethrown unchanged (fail
  * fast).
  *
- * @param repo - Repository URL or local path as given on the command line.
+ * @param repo - The repository spec, as given with its optional branch.
  * @param clone - The clone the analysis runs in.
  * @param periods - The run's period bounds.
  * @param groups - The author groups of the whole range.
@@ -119,15 +122,15 @@ export async function analyzeRepository(
  * @param log - The repository's scoped logger.
  * @returns One assembled repository entry per period.
  * @throws {Error} When every LLM attempt fails; the message names the
- * repo — and the period when `--unit` is set — plus the underlying
+ * repo — and the period when `unit` is set — plus the underlying
  * cause.
  */
 async function runLlmPhase(
-  repo: string,
+  repo: RepoSpec,
   clone: CloneResult,
   periods: AnalyzedRange[],
   groups: AuthorGroup[],
-  options: CliOptions,
+  options: ReportOptions,
   log: ScopedLog,
 ): Promise<Repository[]> {
   const attempts = 1 + options.llmRetries;
@@ -153,10 +156,10 @@ async function runLlmPhase(
   }
   if (attempts === 1) {
     // No retries configured: surface the original error unchanged.
-    throw lastError ?? new Error(`LLM analysis failed for ${repo}`);
+    throw lastError ?? new Error(`LLM analysis failed for ${repo.spec}`);
   }
   throw new Error(
-    `LLM analysis failed for ${repo} after ${attempts} attempts: ${errorDetail(lastError)}`,
+    `LLM analysis failed for ${repo.spec} after ${attempts} attempts: ${errorDetail(lastError)}`,
     { cause: lastError },
   );
 }
@@ -167,7 +170,7 @@ async function runLlmPhase(
  * the repo's periods. Returns `undefined` when LLM analysis is
  * disabled or the repo has no authors in the range.
  *
- * @param repo - Repository URL or local path as given on the command line.
+ * @param repo - The repository spec, as given with its optional branch.
  * @param clone - The clone the analysis runs in.
  * @param groups - The author groups of the whole range.
  * @param options - Validated CLI options.
@@ -177,10 +180,10 @@ async function runLlmPhase(
  * the repo and the underlying cause.
  */
 async function startLlmRuntime(
-  repo: string,
+  repo: RepoSpec,
   clone: CloneResult,
   groups: AuthorGroup[],
-  options: CliOptions,
+  options: ReportOptions,
   log: ScopedLog,
 ): Promise<LlmPhase | undefined> {
   if (!options.llm || groups.length === 0) {
@@ -197,7 +200,9 @@ async function startLlmRuntime(
     };
   } catch (error) {
     // errorDetail walks the cause chain.
-    throw new Error(`LLM analysis failed for ${repo}: ${errorDetail(error)}`, { cause: error });
+    throw new Error(`LLM analysis failed for ${repo.spec}: ${errorDetail(error)}`, {
+      cause: error,
+    });
   }
 }
 
@@ -206,7 +211,7 @@ async function startLlmRuntime(
  * groups' commits filtered to its bounds, an LLM analysis for its
  * active users, and an assembled repository entry.
  *
- * @param repo - Repository URL or local path as given on the command line.
+ * @param repo - The repository spec, as given with its optional branch.
  * @param clone - The clone the analysis runs in.
  * @param periods - The run's period bounds.
  * @param groups - The author groups of the whole range.
@@ -215,15 +220,15 @@ async function startLlmRuntime(
  * @param log - The repository's scoped logger.
  * @returns One assembled repository entry per period.
  * @throws {Error} When the LLM phase fails; the message names the repo
- * — and the period when `--unit` is set — plus the underlying cause.
+ * — and the period when `unit` is set — plus the underlying cause.
  */
 async function assemblePeriods(
-  repo: string,
+  repo: RepoSpec,
   clone: CloneResult,
   periods: AnalyzedRange[],
   groups: AuthorGroup[],
   llm: LlmPhase | undefined,
-  options: CliOptions,
+  options: ReportOptions,
   log: ScopedLog,
 ): Promise<Repository[]> {
   const repositories: Repository[] = [];
@@ -246,14 +251,14 @@ async function assemblePeriods(
           options.unit === undefined
             ? ''
             : ` in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`;
-        throw new Error(`LLM analysis failed for ${repo}${where}: ${errorDetail(error)}`, {
+        throw new Error(`LLM analysis failed for ${repo.spec}${where}: ${errorDetail(error)}`, {
           cause: error,
         });
       }
     }
     repositories.push(
       assembleRepository({
-        repo,
+        repo: repo.repo,
         clonePath: clone.repoDir,
         branch: clone.branch,
         head: clone.head,
@@ -295,11 +300,11 @@ async function closeLlmPhase(llm: LlmPhase | undefined, log: ScopedLog): Promise
  * Runs the LLM phase for one period of a repository: the repo's
  * in-process runtime is reused, and `analyzeRepositoryLLM` produces
  * one analysis per user with commits in the period (cached results
- * reused unless `--refresh`). Users without commits in the period get
+ * reused unless `refresh`). Users without commits in the period get
  * no analysis — their report entries stay skipped. Returns `undefined`
  * when no user has commits in the period.
  *
- * @param repo - Repository URL or local path as given on the command line.
+ * @param repo - The repository spec, as given with its optional branch.
  * @param clone - The clone the analysis runs in.
  * @param period - The period bounds (UTC instants).
  * @param groups - The period's author groups (zero-commit groups kept).
@@ -312,11 +317,11 @@ async function closeLlmPhase(llm: LlmPhase | undefined, log: ScopedLog): Promise
  * and session plus the underlying cause.
  */
 async function analyzePeriodLlm(
-  repo: string,
+  repo: RepoSpec,
   clone: CloneResult,
   period: AnalyzedRange,
   groups: AuthorGroup[],
-  options: CliOptions,
+  options: ReportOptions,
   service: SessionService,
   log: ScopedLog,
 ): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
@@ -328,7 +333,7 @@ async function analyzePeriodLlm(
     return undefined;
   }
   const results = await analyzeRepositoryLLM({
-    repo,
+    repo: repo.repo,
     cloneDir: clone.repoDir,
     entryDir: path.dirname(clone.repoDir),
     config: llmRuntimeConfig(options),
@@ -346,18 +351,18 @@ async function analyzePeriodLlm(
 
 /**
  * Builds the pi runtime configuration from the validated CLI options.
- * `parseCliOptions` guarantees `model`, `providerUrl` and `apiKey`
- * (the key may come from `DEV_PERF_API_KEY`, resolved by
- * `resolveRawOptions`) whenever LLM analysis is enabled; the guard is
- * defensive for direct pipeline callers.
+ * `parseReportOptions` guarantees `model`, `providerUrl` and `apiKey`
+ * (the key may come from the config file `api-key` key) whenever LLM
+ * analysis is enabled; the guard is defensive for direct pipeline
+ * callers.
  *
  * @param options - Validated CLI options (LLM enabled).
  * @returns The runtime configuration.
  * @throws {Error} When a required LLM option is missing — unreachable
- * after `parseCliOptions`, possible only when options are constructed
+ * after `parseReportOptions`, possible only when options are constructed
  * by hand.
  */
-function llmRuntimeConfig(options: CliOptions): LlmRuntimeConfig {
+function llmRuntimeConfig(options: ReportOptions): LlmRuntimeConfig {
   if (
     options.model === undefined ||
     options.providerUrl === undefined ||

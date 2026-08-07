@@ -1,9 +1,9 @@
 /**
  * Filtering and identity merging for the `compile` command: the input
  * report's periods and repositories are narrowed to the selected repos,
- * author identities are merged through the `--map` email mappings, and
- * users are kept or dropped through the `--include-user` /
- * `--exclude-user` selections. Merging sums deterministic metrics
+ * author identities are merged through the `users-map` email mappings,
+ * and users are kept or dropped through the `include-users` /
+ * `exclude-users` config selections. Merging sums deterministic metrics
  * (languages included) and concatenates LLM contributions; `activeDays`
  * is approximated as the max of the merged users' values (the report
  * does not carry per-day data), and `avgCommitSize` is recomputed from

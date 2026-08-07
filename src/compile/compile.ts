@@ -120,53 +120,65 @@ async function renderCharts(
  * @param reportFile - The input report file (JSON, schema v2).
  * @param options - Validated compile options (see `parseCompileOptions`).
  * @returns The compile outcome.
- * @throws {Error} When the report or maps file is invalid, or a chart
- * fails to render; the message names the file or chart.
+ * @throws {Error} When the report is invalid or a chart fails to
+ * render; the message names the file or chart.
  */
 export async function runCompile(
   reportFile: string,
   options: CompileOptions,
 ): Promise<CompileResult> {
   setVerbose(options.verbose === true);
+  const startedAt = Date.now();
+  // The command start/end pair always visible on stderr, like the
+  // startup line below: `starting compile` right before the work, then
+  // `finished compile in <ms> ms` with the outcome and its duration.
+  logConfig(`starting compile`);
   // The startup version line is always logged, mirroring report runs,
   // so a compile log file names the dev-perf build that produced it.
   logConfig(`dev-perf ${appVersion}`);
-  const report = await loadReport(reportFile);
-  logInfo(`compile: report "${reportFile}" (${report.periods.length} periods)`);
-  const emailMap = await loadEmailMap(options.mapsFile, options.maps);
-  const filtered = filterReport(report, {
-    repos: options.repos,
-    excludeRepos: options.excludeRepos,
-    includeUsers: options.includeUsers,
-    excludeUsers: options.excludeUsers,
-    emailMap,
-  });
-  const data = buildChartData(filtered);
-  const outputDir = options.output;
-  const assetsPath = path.join(outputDir, ASSETS_DIR);
-  const assets = await renderCharts(buildChartAssets(data), assetsPath);
-  const markdown = [
-    assembleTeamMarkdown(data, assets),
-    assembleIndividualMarkdown(data, assets, options, emailMap),
-  ]
-    .filter((section) => section !== '')
-    .join('\n\n');
-  const reportPath = path.join(outputDir, REPORT_FILE);
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(reportPath, `${markdown}\n`, 'utf8');
-  const peopleDir = await writePersonReports(data, assets, outputDir);
-  logInfo(
-    `compile: wrote "${reportPath}" with ${assets.size} charts for ${filtered.users.length} users`,
-  );
-  return {
-    reportFile,
-    outputDir,
-    reportPath,
-    assetsPath,
-    peoplePath: peopleDir,
-    chartCount: assets.size,
-    userCount: filtered.users.length,
-  };
+  // The finish marker runs in `finally`, so every run — success or
+  // failure — closes the start marker with the same duration line;
+  // an error thrown below propagates after the end marker is logged.
+  try {
+    const report = await loadReport(reportFile);
+    logInfo(`compile: report "${reportFile}" (${report.periods.length} periods)`);
+    const emailMap = loadEmailMap(options.maps);
+    const filtered = filterReport(report, {
+      repos: options.repos,
+      excludeRepos: options.excludeRepos,
+      includeUsers: options.includeUsers,
+      excludeUsers: options.excludeUsers,
+      emailMap,
+    });
+    const data = buildChartData(filtered);
+    const outputDir = options.output;
+    const assetsPath = path.join(outputDir, ASSETS_DIR);
+    const assets = await renderCharts(buildChartAssets(data), assetsPath);
+    const markdown = [
+      assembleTeamMarkdown(data, assets),
+      assembleIndividualMarkdown(data, assets, options, emailMap),
+    ]
+      .filter((section) => section !== '')
+      .join('\n\n');
+    const reportPath = path.join(outputDir, REPORT_FILE);
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(reportPath, `${markdown}\n`, 'utf8');
+    const peopleDir = await writePersonReports(data, assets, outputDir);
+    logInfo(
+      `compile: wrote "${reportPath}" with ${assets.size} charts for ${filtered.users.length} users`,
+    );
+    return {
+      reportFile,
+      outputDir,
+      reportPath,
+      assetsPath,
+      peoplePath: peopleDir,
+      chartCount: assets.size,
+      userCount: filtered.users.length,
+    };
+  } finally {
+    logConfig(`finished compile in ${Date.now() - startedAt} ms`);
+  }
 }
 
 /**
