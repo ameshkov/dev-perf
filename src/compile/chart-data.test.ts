@@ -22,7 +22,7 @@ function fixtureData() {
                   linesAdded: 40,
                   linesRemoved: 4,
                   filesTouched: 6,
-                  activeDays: 3,
+                  activeDays: ['2026-01-02', '2026-01-05', '2026-01-10'],
                   languages: {
                     TypeScript: { linesAdded: 30, linesRemoved: 4, filesTouched: 4 },
                     Markdown: { linesAdded: 10, linesRemoved: 0, filesTouched: 2 },
@@ -56,7 +56,11 @@ function fixtureData() {
               {
                 name: 'Bob',
                 emails: ['bob@example.com'],
-                deterministic: { commits: 2, linesAdded: 20, activeDays: 2 },
+                deterministic: {
+                  commits: 2,
+                  linesAdded: 20,
+                  activeDays: ['2026-01-03', '2026-01-08'],
+                },
                 llm: { status: 'skipped', contributions: [] },
               },
             ],
@@ -83,7 +87,11 @@ function fixtureData() {
               {
                 name: 'Bob',
                 emails: ['bob@example.com'],
-                deterministic: { commits: 3, linesAdded: 15, activeDays: 1 },
+                deterministic: {
+                  commits: 3,
+                  linesAdded: 15,
+                  activeDays: ['2026-02-04'],
+                },
                 llm: { status: 'skipped', contributions: [] },
               },
             ],

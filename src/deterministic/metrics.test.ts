@@ -59,7 +59,7 @@ describe('userMetrics', () => {
       netLines: 4,
       filesTouched: 3,
       uniqueFilesTouched: 2,
-      activeDays: 3,
+      activeDays: ['2026-01-01', '2026-01-02', '2026-01-03'],
       firstCommitAt: '2026-01-01T10:00:00.000Z',
       lastCommitAt: '2026-01-03T12:00:00.000Z',
       avgCommitSize: 3,
@@ -75,7 +75,7 @@ describe('userMetrics', () => {
       commit({ authorDate: '2026-01-16T02:00:00+05:00' }),
     ]);
     // 23:30-05:00 is 04:30Z on Jan 16; 02:00+05:00 is 21:00Z on Jan 15.
-    expect(metrics.activeDays).toBe(2);
+    expect(metrics.activeDays).toEqual(['2026-01-15', '2026-01-16']);
     expect(metrics.firstCommitAt).toBe('2026-01-15T21:00:00.000Z');
     expect(metrics.lastCommitAt).toBe('2026-01-16T04:30:00.000Z');
   });
@@ -90,7 +90,7 @@ describe('userMetrics', () => {
       netLines: 0,
       filesTouched: 0,
       uniqueFilesTouched: 0,
-      activeDays: 0,
+      activeDays: [],
       firstCommitAt: '',
       lastCommitAt: '',
       avgCommitSize: 0,
@@ -305,7 +305,7 @@ describe('fixture integration', () => {
         netLines: 9,
         filesTouched: 5,
         uniqueFilesTouched: 4,
-        activeDays: 4,
+        activeDays: ['2026-01-01', '2026-01-02', '2026-01-04', '2026-01-07'],
         firstCommitAt: '2026-01-01T10:00:00.000Z',
         lastCommitAt: '2026-01-07T10:00:00.000Z',
         avgCommitSize: 3,
@@ -327,7 +327,7 @@ describe('fixture integration', () => {
         netLines: 0,
         filesTouched: 3,
         uniqueFilesTouched: 3,
-        activeDays: 2,
+        activeDays: ['2026-01-03', '2026-01-06'],
         firstCommitAt: '2026-01-03T12:00:00.000Z',
         lastCommitAt: '2026-01-06T09:00:00.000Z',
         avgCommitSize: 3,

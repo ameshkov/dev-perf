@@ -67,7 +67,7 @@ describe('runPipeline', () => {
 
       const head = await gitRevParse(repo.dir, ['HEAD']);
       expect(report).toStrictEqual({
-        schemaVersion: 2,
+        schemaVersion: 3,
         generatedAt: expect.any(String),
         parameters: {
           repos: [{ repo: repo.url }],
@@ -112,7 +112,7 @@ describe('runPipeline', () => {
                       netLines: 3,
                       filesTouched: 3,
                       uniqueFilesTouched: 3,
-                      activeDays: 2,
+                      activeDays: ['2026-01-01', '2026-01-03'],
                       firstCommitAt: '2026-01-01T10:00:00.000Z',
                       lastCommitAt: '2026-01-03T09:00:00.000Z',
                       avgCommitSize: 1.5,
@@ -137,7 +137,7 @@ describe('runPipeline', () => {
                       netLines: 1,
                       filesTouched: 1,
                       uniqueFilesTouched: 1,
-                      activeDays: 1,
+                      activeDays: ['2026-01-02'],
                       firstCommitAt: '2026-01-02T11:00:00.000Z',
                       lastCommitAt: '2026-01-02T11:00:00.000Z',
                       avgCommitSize: 1,
@@ -302,7 +302,7 @@ describe('runPipeline', () => {
           linesRemoved: 0,
           filesTouched: 0,
           uniqueFilesTouched: 0,
-          activeDays: 0,
+          activeDays: [],
           firstCommitAt: '',
           lastCommitAt: '',
           avgCommitSize: 0,

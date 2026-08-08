@@ -267,7 +267,7 @@ describe('assembleTrendReport', () => {
       ],
     });
 
-    expect(report.schemaVersion).toBe(2);
+    expect(report.schemaVersion).toBe(3);
     expect(report.generatedAt).toBe('2026-08-03T12:00:00.000Z');
     expect(report.parameters).toEqual({
       repos: [{ repo: 'https://github.com/org/repo.git' }],

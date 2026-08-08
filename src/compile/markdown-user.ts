@@ -41,7 +41,7 @@ export function userSummaryLine(series: UserSeries): string {
     `${formatInt(user.deterministic.commits)} commits`,
     `+${formatInt(user.deterministic.linesAdded)} / −${formatInt(user.deterministic.linesRemoved)} lines`,
     `${formatInt(user.deterministic.filesTouched)} files`,
-    `${formatInt(user.deterministic.activeDays)} active days`,
+    `${formatInt(user.deterministic.activeDays.length)} active days`,
     topLanguageOf(user),
   ].join(' · ');
 }
@@ -63,7 +63,7 @@ export function statisticsTable(series: UserSeries, data: ChartData): string {
     ['Lines added', formatInt(user.deterministic.linesAdded)],
     ['Lines removed', formatInt(user.deterministic.linesRemoved)],
     ['Files touched', formatInt(user.deterministic.filesTouched)],
-    ['Active days', formatInt(user.deterministic.activeDays)],
+    ['Active days', formatInt(user.deterministic.activeDays.length)],
     ['Top language', topLanguageOf(user)],
   ];
   if (data.parameters.llmEnabled) {

@@ -193,9 +193,9 @@ empty list items are ignored. An empty `output` falls back to the
 `dev-perf-report` default.
 
 The `users-map` mapping merges author emails into one identity:
-deterministic metrics are summed (active days take the max — the
-report carries no per-day data), LLM contributions are concatenated,
-and repository stats are recomputed after filtering.
+deterministic metrics are summed (active days are the union of the
+merged entries' `YYYY-MM-DD` dates), LLM contributions are
+concatenated, and repository stats are recomputed after filtering.
 
 ```yaml
 compile:

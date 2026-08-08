@@ -213,7 +213,7 @@ Core set (v1):
 | `netLines` | added − removed |
 | `filesTouched` | Commit-file pairs |
 | `uniqueFilesTouched` | Distinct paths |
-| `activeDays` | Distinct author-dates |
+| `activeDays` | Distinct author-dates (UTC `YYYY-MM-DD`, sorted; count is `.length`) |
 | `firstCommitAt` / `lastCommitAt` | Author dates |
 | `avgCommitSize` | added/removed per non-merge commit |
 | `languages` | Per extension: linesAdded, linesRemoved, filesTouched (cloc-style counting applied to contributions; extension → language via a built-in map) |
@@ -459,7 +459,7 @@ empty.
 
 ```json
 {
-  schemaVersion: 2,
+  schemaVersion: 3,
   generatedAt: ISO,
   parameters: {
     repos: [ { repo, branch?, base?, ignore? }, ... ],

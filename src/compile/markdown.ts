@@ -262,7 +262,7 @@ function contributorRow(series: UserSeries, llm: boolean): string[] {
     formatInt(user.deterministic.linesAdded),
     formatInt(user.deterministic.linesRemoved),
     formatInt(user.deterministic.filesTouched),
-    formatInt(user.deterministic.activeDays),
+    formatInt(user.deterministic.activeDays.length),
     topLanguageOf(user),
   ];
   const repos = series.repos;

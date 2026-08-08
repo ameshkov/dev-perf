@@ -229,7 +229,7 @@ function appendixSection(data: ChartData, options: CompileOptions, emailMap: Ema
       `### Email mapping\n\n${table(
         ['Email', 'Mapped to'],
         mappings.map(([email, name]) => [email, name]),
-      )}\n\nMerged users: deterministic metrics are summed (active days take the max of the merged entries — the report carries no per-day data), LLM contributions are concatenated.`,
+      )}\n\nMerged users: deterministic metrics are summed (active days are the union of the merged entries' dates), LLM contributions are concatenated.`,
     );
   }
   sections.push(

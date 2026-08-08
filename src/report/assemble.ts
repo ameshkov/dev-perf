@@ -170,7 +170,7 @@ export function assembleReport(input: ReportInput): Report {
 }
 
 /**
- * Builds the trend report document (schema v2): parameters with the
+ * Builds the trend report document (schema v3): parameters with the
  * optional period unit, the generated-at timestamp, and one full
  * per-repository report per period. The result is validated against
  * `trendReportSchema`, which applies defaults (e.g.
@@ -183,7 +183,7 @@ export function assembleReport(input: ReportInput): Report {
  */
 export function assembleTrendReport(input: TrendReportInput): TrendReport {
   return trendReportSchema.parse({
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     generatedAt: input.generatedAt,
     parameters: {
       repos: input.repos,

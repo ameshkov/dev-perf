@@ -75,8 +75,11 @@ export const deterministicMetricsSchema = z.object({
   filesTouched: z.number().int().nonnegative(),
   /** Distinct file paths touched in the range. */
   uniqueFilesTouched: z.number().int().nonnegative(),
-  /** Distinct author dates (UTC) with commits in the range. */
-  activeDays: z.number().int().nonnegative(),
+  /** Distinct author dates (UTC, `YYYY-MM-DD`) with commits in the
+   * range, sorted ascending. The active-days count is
+   * `activeDays.length`; keeping the dates lets consumers compute the
+   * exact union when repository specs alias the same repository. */
+  activeDays: z.array(z.string()),
   /** Author date of the first commit in the range (ISO 8601, UTC). */
   firstCommitAt: z.string(),
   /** Author date of the last commit in the range (ISO 8601, UTC). */
@@ -565,7 +568,7 @@ export type Parameters = z.infer<typeof parametersSchema>;
 
 /**
  * The v1 dev-perf report document: parameters, repository entries, and
- * per-user analysis. Superseded by `trendReportSchema` (v2) in the
+ * per-user analysis. Superseded by `trendReportSchema` (v3) in the
  * production pipeline; kept so the v1 shape stays covered by the
  * schema tests and the v1 assembler (`src/report/assemble.ts`).
  */
@@ -615,13 +618,13 @@ export const periodReportSchema = z.object({
 });
 
 /**
- * The full trend report document (schema v2): parameters plus one
+ * The full trend report document (schema v3): parameters plus one
  * full per-repository report per time-based period. Without `--unit`,
  * a single period covers the whole analyzed range.
  */
 export const trendReportSchema = z.object({
-  /** Schema version; 2 for the v2 trend report shape. */
-  schemaVersion: z.literal(2),
+  /** Schema version; 3 for the v3 trend report shape. */
+  schemaVersion: z.literal(3),
   /** When the report was generated (ISO 8601, UTC). */
   generatedAt: z.string(),
   /** Parameters of the analysis run. */

@@ -115,7 +115,7 @@ Example output (abridged):
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "parameters": {
     "repos": [{ "repo": "https://github.com/org/repo.git", "branch": "main" }],
     "since": "2026-01-01T00:00:00.000Z",
@@ -137,7 +137,7 @@ Example output (abridged):
                 "linesAdded": 1234,
                 "linesRemoved": 567,
                 "filesTouched": 89,
-                "activeDays": 15,
+                "activeDays": ["2026-01-03", "2026-01-14", "2026-02-02", "2026-03-17"],
                 "languages": {
                   "TypeScript": { "linesAdded": 900, "linesRemoved": 400 }
                 }

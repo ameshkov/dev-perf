@@ -159,7 +159,7 @@ async function buildFixture(): Promise<FixtureRepo> {
 async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unknown> {
   const head = await gitRevParse(repo.dir, ['HEAD']);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: expect.any(String),
     parameters: {
       repos: [{ repo: repo.url }],
@@ -204,7 +204,7 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
                   netLines: 3,
                   filesTouched: 3,
                   uniqueFilesTouched: 3,
-                  activeDays: 2,
+                  activeDays: ['2026-01-01', '2026-01-03'],
                   firstCommitAt: '2026-01-01T10:00:00.000Z',
                   lastCommitAt: '2026-01-03T09:00:00.000Z',
                   avgCommitSize: 1.5,
@@ -229,7 +229,7 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
                   netLines: 1,
                   filesTouched: 1,
                   uniqueFilesTouched: 1,
-                  activeDays: 1,
+                  activeDays: ['2026-01-02'],
                   firstCommitAt: '2026-01-02T11:00:00.000Z',
                   lastCommitAt: '2026-01-02T11:00:00.000Z',
                   avgCommitSize: 1,
@@ -364,7 +364,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
         periods: Array<{ repositories: Array<{ users: unknown[] }> }>;
       };
       expect(trendReportSchema.safeParse(written).success).toBe(true);
-      expect(written.schemaVersion).toBe(2);
+      expect(written.schemaVersion).toBe(3);
       expect(written.parameters).toMatchObject({
         repos: [{ repo: repo.url }],
         llmEnabled: false,

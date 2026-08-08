@@ -55,6 +55,16 @@ and this project adheres to
 
 ### Changed
 
+- `activeDays` in the deterministic per-user metrics is now a sorted
+  array of the distinct author dates (`YYYY-MM-DD`, UTC) instead of a
+  plain count; the count is `activeDays.length`. Because the specific
+  days are recorded, `compile` merges the lists as a union when
+  identities are merged across repositories, periods, or the
+  `users-map`, so the reported active-days count is exact even when
+  two repository specs analyze the same repository. The trend report
+  schema bumps to version 3; reports written by earlier versions must
+  be regenerated with `dev-perf report`.
+
 - The report's `parameters.repos` and the startup configuration dump
   record each analyzed repository as a full spec — the clone target
   plus the branch, base scoping, and ignored paths — instead of a bare

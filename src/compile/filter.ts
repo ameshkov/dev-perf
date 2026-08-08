@@ -4,11 +4,12 @@
  * author identities are merged through the `users-map` email mappings,
  * and users are kept or dropped through the `include-users` /
  * `exclude-users` config selections. Merging sums deterministic metrics
- * (languages included) and concatenates LLM contributions; `activeDays`
- * is approximated as the max of the merged users' values (the report
- * does not carry per-day data), and `avgCommitSize` is recomputed from
- * the merged totals. Repository stats are recomputed from the merged
- * users, since the report's own stats are stale after filtering.
+ * (languages included), unions the `activeDays` date lists (so the
+ * count recomputed from the merged list is exact even when repository
+ * specs alias the same repository), concatenates LLM contributions,
+ * and recomputes `avgCommitSize` from the merged totals. Repository
+ * stats are recomputed from the merged users, since the report's own
+ * stats are stale after filtering.
  */
 import type {
   DeterministicMetrics,
@@ -54,7 +55,7 @@ const ZEROED_DETERMINISTIC: DeterministicMetrics = {
   netLines: 0,
   filesTouched: 0,
   uniqueFilesTouched: 0,
-  activeDays: 0,
+  activeDays: [],
   firstCommitAt: '',
   lastCommitAt: '',
   avgCommitSize: 0,
@@ -88,10 +89,10 @@ export function mappedName(user: User, emailMap: EmailMap): string {
 
 /**
  * Merges several user entries of the same identity into one: emails
- * are unioned, deterministic metrics are summed (`activeDays` takes
- * the max, `avgCommitSize` is recomputed), languages are summed per
- * language, and LLM contributions are concatenated with summed usage.
- * An empty list yields a zeroed user.
+ * are unioned, deterministic metrics are summed (`activeDays` date
+ * lists are unioned, `avgCommitSize` is recomputed), languages are
+ * summed per language, and LLM contributions are concatenated with
+ * summed usage. An empty list yields a zeroed user.
  *
  * @param users - Entries of the same identity (may be empty).
  * @param name - The display name of the merged identity.
@@ -117,10 +118,10 @@ export function mergeUsers(users: User[], name: string): User {
 
 /**
  * Merges deterministic metrics: counts, lines and files are summed,
- * `activeDays` takes the maximum (the report carries no per-day data,
- * so the union cannot be recomputed exactly), `firstCommitAt` /
- * `lastCommitAt` span the merged range, and `avgCommitSize` is
- * recomputed from the merged totals.
+ * `activeDays` date lists are unioned (the count of the merged list is
+ * the exact distinct-days union, even when repository specs alias the
+ * same repository), `firstCommitAt` / `lastCommitAt` span the merged
+ * range, and `avgCommitSize` is recomputed from the merged totals.
  *
  * @param entries - The metrics to merge.
  * @returns The merged metrics.
@@ -136,11 +137,11 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
       acc.netLines += entry.netLines;
       acc.filesTouched += entry.filesTouched;
       acc.uniqueFilesTouched += entry.uniqueFilesTouched;
-      acc.activeDays = Math.max(acc.activeDays, entry.activeDays);
       return acc;
     },
     { ...ZEROED_DETERMINISTIC },
   );
+  const activeDays = [...new Set(entries.flatMap((entry) => entry.activeDays))].sort();
   const firstCommits = entries
     .map((entry) => entry.firstCommitAt)
     .filter((value) => value !== '')
@@ -151,6 +152,7 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
     .sort();
   return {
     ...summed,
+    activeDays,
     firstCommitAt: firstCommits[0] ?? '',
     lastCommitAt: lastCommits[lastCommits.length - 1] ?? '',
     avgCommitSize:

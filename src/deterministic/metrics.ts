@@ -32,8 +32,8 @@ interface DateTotals {
   firstAt: Date;
   /** Latest author-date instant. */
   lastAt: Date;
-  /** Distinct author dates (UTC) with commits in the range. */
-  activeDays: number;
+  /** Distinct author dates (UTC `YYYY-MM-DD`), sorted ascending. */
+  activeDays: string[];
 }
 
 /**
@@ -88,7 +88,7 @@ function zeroMetrics(): DeterministicMetrics {
     netLines: 0,
     filesTouched: 0,
     uniqueFilesTouched: 0,
-    activeDays: 0,
+    activeDays: [],
     firstCommitAt: '',
     lastCommitAt: '',
     avgCommitSize: 0,
@@ -142,7 +142,7 @@ function changeTotals(commits: Commit[]): ChangeTotals {
  * Computes the date-derived per-user values: the
  * earliest and latest author-date instants, and the distinct author
  * dates counted in UTC (a commit at 23:30-05:00 belongs to the next
- * UTC day).
+ * UTC day), as a `YYYY-MM-DD` list sorted ascending.
  *
  * @param commits - One author's commits; non-empty.
  * @returns The date totals.
@@ -157,7 +157,11 @@ function dateTotals(commits: Commit[]): DateTotals {
     lastAt = Math.max(lastAt, dateEpoch);
     activeDays.add(new Date(dateEpoch).toISOString().slice(0, 10));
   }
-  return { firstAt: new Date(firstAt), lastAt: new Date(lastAt), activeDays: activeDays.size };
+  return {
+    firstAt: new Date(firstAt),
+    lastAt: new Date(lastAt),
+    activeDays: [...activeDays].sort(),
+  };
 }
 
 /**

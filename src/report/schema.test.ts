@@ -44,7 +44,7 @@ function validReport(): unknown {
               netLines: 280,
               filesTouched: 15,
               uniqueFilesTouched: 9,
-              activeDays: 4,
+              activeDays: ['2026-01-12', '2026-02-03', '2026-03-05', '2026-06-28'],
               firstCommitAt: '2026-01-12T10:00:00.000Z',
               lastCommitAt: '2026-06-28T16:30:00.000Z',
               avgCommitSize: 45.7,
@@ -305,13 +305,13 @@ describe('reportSchema', () => {
 
 describe('trendReportSchema', () => {
   /**
-   * A full, valid v2 trend report: the v1 sample's repository entry
+   * A full, valid v3 trend report: the sample's repository entry
    * nested into one period, plus an empty second period.
    */
   function validTrendReport(): unknown {
     const report = validReport() as { repositories: unknown[] };
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       generatedAt: '2026-08-03T12:00:00.000Z',
       parameters: {
         repos: [{ repo: 'https://github.com/org/repo.git', branch: 'main' }],
@@ -367,7 +367,7 @@ describe('trendReportSchema', () => {
       {
         path: 'schemaVersion',
         mutate: (report) => {
-          report.schemaVersion = 1;
+          report.schemaVersion = 2;
         },
       },
       {

@@ -1,5 +1,5 @@
 /**
- * Builds trend report documents (schema v2) for compile tests: the
+ * Builds trend report documents (schema v3) for compile tests: the
  * periods, repositories and users of the fixture are given as plain
  * objects, and the builder fills every schema-required field with
  * consistent defaults (recomputed stats, LLM status, metric defaults)
@@ -118,7 +118,7 @@ function deterministicMetrics(
     netLines: 8,
     filesTouched: 3,
     uniqueFilesTouched: 3,
-    activeDays: 1,
+    activeDays: [periodSince.slice(0, 10)],
     firstCommitAt: periodSince,
     lastCommitAt: periodUntil,
     avgCommitSize: 12,
@@ -261,7 +261,7 @@ export function buildTrendReport(options: BuildTrendReportOptions): TrendReport 
     ...new Set(options.periods.flatMap((period) => period.repositories.map((repo) => repo.repo))),
   ].map((repo) => ({ repo }));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: GENERATED_AT,
     parameters: {
       repos,

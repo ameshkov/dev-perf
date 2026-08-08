@@ -127,7 +127,7 @@ describe('runCompile', () => {
         expect(md).toContain('| Repos |');
         expect(md).toContain('| Top repo |');
         expect(md).toContain(
-          '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 1 | TypeScript | completed | 1 | repo-a |',
+          '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 2 | TypeScript | completed | 1 | repo-a |',
         );
         // The individual sections link to the per-person reports.
         expect(md).toContain('[Full individual report →](people/alice.md)');

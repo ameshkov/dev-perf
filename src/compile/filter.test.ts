@@ -22,7 +22,7 @@ function fixtureReport() {
                   linesAdded: 40,
                   linesRemoved: 4,
                   filesTouched: 6,
-                  activeDays: 3,
+                  activeDays: ['2026-01-02', '2026-01-05', '2026-01-10'],
                   languages: {
                     TypeScript: { linesAdded: 30, linesRemoved: 4, filesTouched: 4 },
                     Markdown: { linesAdded: 10, linesRemoved: 0, filesTouched: 2 },
@@ -39,7 +39,11 @@ function fixtureReport() {
               {
                 name: 'Bob',
                 emails: ['bob@example.com'],
-                deterministic: { commits: 2, linesAdded: 20, activeDays: 2 },
+                deterministic: {
+                  commits: 2,
+                  linesAdded: 20,
+                  activeDays: ['2026-01-03', '2026-01-08'],
+                },
               },
             ],
           },
@@ -66,13 +70,17 @@ function fixtureReport() {
               {
                 name: 'Alice',
                 emails: ['alice@example.com'],
-                deterministic: { commits: 0, linesAdded: 0, activeDays: 0 },
+                deterministic: { commits: 0, linesAdded: 0, activeDays: [] },
                 llm: { status: 'skipped', contributions: [] },
               },
               {
                 name: 'Bob',
                 emails: ['bob@example.com'],
-                deterministic: { commits: 3, linesAdded: 15, activeDays: 1 },
+                deterministic: {
+                  commits: 3,
+                  linesAdded: 15,
+                  activeDays: ['2026-02-04'],
+                },
               },
             ],
           },
@@ -125,7 +133,7 @@ describe('mergeUsers', () => {
                     commits: 4,
                     linesAdded: 40,
                     linesRemoved: 4,
-                    activeDays: 3,
+                    activeDays: ['2026-01-02', '2026-01-05', '2026-01-10'],
                     languages: { TypeScript: { linesAdded: 40, linesRemoved: 4, filesTouched: 4 } },
                   },
                   llm: { contributions: [fixtureContribution({ title: 'A1' })] },
@@ -152,7 +160,7 @@ describe('mergeUsers', () => {
                     commits: 2,
                     linesAdded: 10,
                     linesRemoved: 1,
-                    activeDays: 4,
+                    activeDays: ['2026-01-10', '2026-01-20', '2026-01-25', '2026-01-30'],
                     languages: { TypeScript: { linesAdded: 10, linesRemoved: 1, filesTouched: 2 } },
                   },
                   llm: { contributions: [fixtureContribution({ title: 'A2' })] },
@@ -171,7 +179,16 @@ describe('mergeUsers', () => {
     expect(merged.deterministic.commits).toBe(6);
     expect(merged.deterministic.linesAdded).toBe(50);
     expect(merged.deterministic.linesRemoved).toBe(5);
-    expect(merged.deterministic.activeDays).toBe(4);
+    // The active-days lists are unioned (Jan 10 overlaps), not max'd
+    // or summed: 6 distinct dates across the two entries.
+    expect(merged.deterministic.activeDays).toEqual([
+      '2026-01-02',
+      '2026-01-05',
+      '2026-01-10',
+      '2026-01-20',
+      '2026-01-25',
+      '2026-01-30',
+    ]);
     expect(merged.deterministic.languages.TypeScript.linesAdded).toBe(50);
     expect(merged.llm.contributions.map((contribution) => contribution.title)).toEqual([
       'A1',
