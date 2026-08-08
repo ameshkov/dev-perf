@@ -209,8 +209,9 @@ async function cloneIntoEntry(
   // what dev-perf is doing instead of a silent wait. Naming the cache
   // entry directory lets the user match the repository to its cache
   // entry from the log. The caller logs the outcome (`cloned "..." in
-  // N ms (cache "...")`) once this returns.
-  log.info(`cloning "${url}" (cache "${entryDir}")`);
+  // N ms (cache "...")`) once this returns. The start line is coarse
+  // stage progress, so it stays visible even in quiet mode.
+  log.progress(`cloning "${url}" (cache "${entryDir}")`);
   try {
     await gitClone(entryDir, ['--filter=blob:none', ...branchArgs, target, 'repo'], gitOptions);
   } catch (error) {

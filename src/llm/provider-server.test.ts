@@ -275,7 +275,7 @@ function group(email: string, name: string, sha: string): AuthorGroup {
 }
 
 function stubLog(): ScopedLog {
-  return { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+  return { error: vi.fn(), warn: vi.fn(), progress: vi.fn(), info: vi.fn(), debug: vi.fn() };
 }
 
 function config(): LlmRuntimeConfig {

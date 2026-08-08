@@ -174,7 +174,9 @@ Stdout carries the report JSON only; progress and errors go to stderr as
 timestamped `[LEVEL]` lines. Every `report` and `compile` run starts by
 logging the application version; every `report` run then logs the full
 resolved configuration (the API key masked), so the effective settings
-are visible before the analysis.
+are visible before the analysis. The coarse analysis stages (clone,
+commit reading, per-repository boundaries, the LLM phase) are shown on
+every `report` run; the `verbose` config key adds per-user detail.
 
 ### Compiling a markdown report with charts
 

@@ -123,7 +123,7 @@ async function analyzePeriodLlm(
 ): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
   const active = groups.filter((group) => group.commits.length > 0);
   if (active.length === 0) {
-    log.info(
+    log.progress(
       `LLM: no authors in period ${rangeBound(period.since)} to ${rangeBound(period.until)}; skipping`,
     );
     return undefined;
@@ -144,7 +144,7 @@ async function analyzePeriodLlm(
     refresh: options.refresh === true,
     log,
   });
-  log.info(
+  log.progress(
     `LLM: analyzed ${pluralize(results.length, 'user')} in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`,
   );
   return new Map(results.map((result) => [result.email, result.llm]));

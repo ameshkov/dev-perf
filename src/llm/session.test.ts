@@ -63,7 +63,13 @@ vi.mock('../util/log.js', () => ({
   logInfo: vi.fn(),
   logDebug: vi.fn(),
   setVerbose: vi.fn(),
-  createScopedLog: vi.fn(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() })),
+  createScopedLog: vi.fn(() => ({
+    error: vi.fn(),
+    warn: vi.fn(),
+    progress: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  })),
 }));
 
 const DIRECTORY = '/clone/repo';

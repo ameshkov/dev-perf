@@ -176,7 +176,7 @@ async function analyzeAllRepos(
     branch: first.branch,
     log: firstLog,
   });
-  firstLog.info(
+  firstLog.progress(
     `${clone.reused ? 'reused cached clone' : 'cloned'} "${first.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   const range = await resolveRange(clone.repoDir, options.since, options.until);

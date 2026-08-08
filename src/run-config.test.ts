@@ -1,8 +1,11 @@
 /**
  * Tests for the run configuration dump: the full resolved
  * configuration of a run, rendered as one indented line per config
- * field for the stderr log, with the cache directory resolved,
- * defaults applied, unset options omitted, and the API key masked.
+ * field — keyed by the config-file key names (`cache-dir`,
+ * `provider-url`, `users-map`, ...), so the dump reads like the YAML
+ * config it was resolved from — for the stderr log, with the cache
+ * directory resolved, defaults applied, unset options omitted, and
+ * the API key masked.
  */
 import { describe, expect, it } from 'vitest';
 import type { ReportOptions } from './config.js';
@@ -117,14 +120,17 @@ describe('runConfig', () => {
       repoSpecs('r'),
     );
 
-    expect(config.maps).toEqual(['alice@example.com=Alice Smith', 'alice@work.com=Alice Smith']);
+    expect(config.usersMap).toEqual([
+      'alice@example.com=Alice Smith',
+      'alice@work.com=Alice Smith',
+    ]);
     expect(config.configFile).toBe('config.yaml');
   });
 
-  it('omits maps and the config file when they were not given', () => {
+  it('omits usersMap and the config file when they were not given', () => {
     const config = runConfig(options({ repos: repoSpecs('r') }), repoSpecs('r'));
 
-    expect('maps' in config).toBe(false);
+    expect('usersMap' in config).toBe(false);
     expect('configFile' in config).toBe(false);
   });
 });
@@ -173,15 +179,15 @@ describe('runConfigLines', () => {
       '  until: 2026-06-30',
       '  unit: month',
       '  output: report.json',
-      '  cacheDir: /tmp/cache',
+      '  cache-dir: /tmp/cache',
       '  refresh: true',
       '  llm: true',
       '  model: gpt-4.1',
-      '  providerUrl: https://api.openai.com/v1',
-      '  apiKey: sk-0…cdef',
-      '  limitContext: 1000',
-      '  limitOutput: 2000',
-      '  llmRetries: 0',
+      '  provider-url: https://api.openai.com/v1',
+      '  api-key: sk-0…cdef',
+      '  limit-context: 1000',
+      '  limit-output: 2000',
+      '  llm-retries: 0',
       '  parallel: 3',
       '  verbose: true',
     ]);
@@ -212,13 +218,15 @@ describe('runConfigLines', () => {
           { email: 'alice@example.com', name: 'Alice Smith' },
           { email: 'alice@work.com', name: 'Alice Smith' },
         ],
+        configFile: 'config.yaml',
       }),
       repoSpecs('r'),
     );
 
-    expect(lines).toContain('  maps:');
+    expect(lines).toContain('  users-map:');
     expect(lines).toContain('    - alice@example.com=Alice Smith');
     expect(lines).toContain('    - alice@work.com=Alice Smith');
+    expect(lines).toContain('  config-file: config.yaml');
   });
 
   it('shows the resolved defaults and omits unset optional fields', () => {
@@ -228,12 +236,12 @@ describe('runConfigLines', () => {
       'configuration:',
       '  repos:',
       '    - r',
-      `  cacheDir: ${resolveCacheDir()}`,
+      `  cache-dir: ${resolveCacheDir()}`,
       '  refresh: false',
       '  llm: false',
-      '  limitContext: 262144',
-      '  limitOutput: 65536',
-      '  llmRetries: 2',
+      '  limit-context: 262144',
+      '  limit-output: 65536',
+      '  llm-retries: 2',
       '  parallel: 1',
       '  verbose: false',
     ]);

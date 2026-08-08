@@ -132,7 +132,7 @@ async function startLlmRuntime(
 ): Promise<LlmPhase | undefined> {
   if (!options.llm || groups.length === 0) {
     if (options.llm) {
-      log.info(`LLM: no authors in the range; skipping LLM analysis`);
+      log.progress(`LLM: no authors in the range; skipping LLM analysis`);
     }
     return undefined;
   }

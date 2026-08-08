@@ -176,7 +176,7 @@ afterEach(async () => {
 
 /** A no-op scoped logger keeping test output quiet. */
 function stubLog(): ScopedLog {
-  return { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+  return { error: vi.fn(), warn: vi.fn(), progress: vi.fn(), info: vi.fn(), debug: vi.fn() };
 }
 
 /** Builds the analysis input for the given groups and service. */

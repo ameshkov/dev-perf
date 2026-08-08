@@ -209,12 +209,16 @@ users-map:
 
 ## Verbose logging (`verbose`)
 
-Setting `verbose: true` additionally prints progress to stderr — the
-start of long-running operations so it stays clear what dev-perf is
-doing right now (cloning a repository, reading the commit history,
-creating the LLM runtime, rendering compile charts), cache reuse vs a
-fresh clone (with duration), the resolved author-date range, and
-per-repo commit counts. Per-repository lines are prefixed with the
+Every run shows the coarse analysis stages on stderr, even in quiet
+mode: cloning or reusing the cached clone, reading the commit history
+and its count, the per-repository start/end pair, and the LLM phase
+(runtime creation, per-period outcomes) — so it stays clear what
+dev-perf is doing right now instead of a silent wait.
+
+Setting `verbose: true` adds the fine-grained detail: the resolved
+author-date range and period split, base-resolution and ignored-path
+outcomes, and per-user LLM progress (sessions, token counts, cache
+reuse, heartbeats). Per-repository lines are prefixed with the
 repository's label (`[repo]`), so the progress of a parallel run stays
 traceable. Clone lines name the cache entry directory
 (`.dev-cache/<hash>`), so a repository can be matched to its cache

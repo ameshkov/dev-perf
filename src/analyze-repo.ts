@@ -42,9 +42,9 @@ interface RepoAnalysis {
  * its bounds, an LLM analysis for its active users, and an assembled
  * repository entry. The range and periods come from the run — the
  * pipeline resolved them from the first clone before the parallel
- * phase. The analysis is bracketed by a verbose start/end log pair
- * (`starting analysis of ...` then `finished analysis of ... in <ms>
- * ms`), its end line closed even when the analysis fails.
+ * phase. The analysis is bracketed by an always-visible start/end
+ * progress pair (`starting analysis of ...` then `finished analysis of
+ * ... in <ms> ms`), its end line closed even when the analysis fails.
  *
  * @param repo - The repository spec as given (URL or local path, with
  * an optional branch selecting the branch to analyze).
@@ -73,8 +73,9 @@ export async function analyzeRepository(
   // right before the clone, then a finish line with the duration after
   // the LLM phase settles — in `finally`, so a failing repository
   // still closes the marker it opened (mirroring the run-level
-  // `starting report` / `finished report in <ms> ms` pair).
-  log.info(`starting analysis of "${repo.repo}"`);
+  // `starting report` / `finished report in <ms> ms` pair). Both are
+  // coarse stage progress, always visible in quiet mode.
+  log.progress(`starting analysis of "${repo.repo}"`);
   try {
     // The clone and the branch-delta base resolution run before the
     // commit scan; the resolved base name travels to the report entry and
@@ -83,8 +84,9 @@ export async function analyzeRepository(
     // Reading the whole-range commit history is the dominant git cost on
     // a large repository; log that it started so the user sees what
     // dev-perf is doing instead of a silent wait. The aggregated count
-    // (`N commits from M authors`) is logged once this returns.
-    log.info(`reading commits`);
+    // (`N commits from M authors`) is logged once this returns. Both
+    // lines are coarse stage progress, always visible in quiet mode.
+    log.progress(`reading commits`);
     const commits = await readCommits(clone.repoDir, {
       since: options.since,
       until: options.until,
@@ -104,7 +106,7 @@ export async function analyzeRepository(
     );
     return { range, periods, repositories };
   } finally {
-    log.info(`finished analysis of "${repo.repo}" in ${Date.now() - startedAt} ms`);
+    log.progress(`finished analysis of "${repo.repo}" in ${Date.now() - startedAt} ms`);
   }
 }
 
@@ -132,7 +134,7 @@ async function prepareClone(
     branch: repo.branch,
     log,
   });
-  log.info(
+  log.progress(
     `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   // Resolve the branch-delta base once, after the clone, and log the
@@ -178,7 +180,9 @@ function filterAndGroup(
     }
   }
   const groups = groupByAuthor(filtered, emailMap);
-  log.info(`${pluralize(filtered.length, 'commit')} from ${pluralize(groups.length, 'author')}`);
+  log.progress(
+    `${pluralize(filtered.length, 'commit')} from ${pluralize(groups.length, 'author')}`,
+  );
   return groups;
 }
 

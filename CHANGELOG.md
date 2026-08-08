@@ -55,6 +55,14 @@ and this project adheres to
 
 ### Changed
 
+- Coarse analysis-stage markers are now shown on every `report` run,
+  even without `verbose`: cloning or reusing the cached clone,
+  `reading commits` and the commit count, each repository's
+  `starting analysis` / `finished analysis` pair, and the LLM phase
+  (runtime creation, per-period outcomes) — so the current stage stays
+  visible during a long run. `verbose: true` keeps adding the
+  fine-grained detail (the resolved range, per-user LLM sessions,
+  token counts, session heartbeats).
 - `activeDays` in the deterministic per-user metrics is now a sorted
   array of the distinct author dates (`YYYY-MM-DD`, UTC) instead of a
   plain count; the count is `activeDays.length`. Because the specific
@@ -71,6 +79,11 @@ and this project adheres to
   URL string, so entries analyzing the same repository differently
   (e.g. at different branches) are distinguishable; `compile` still
   reads older reports whose entries were plain strings.
+- The startup configuration dump names each line by its config-file
+  key (`cache-dir`, `provider-url`, `api-key`, the `limit-*` keys,
+  `users-map`, ...) instead of the camelCase option names, so the
+  dumped settings read exactly like the YAML config they were resolved
+  from.
 - The README is shortened: the full configuration reference moved to
   `docs/configuration.md` and the README shows a simple configuration
   instead.

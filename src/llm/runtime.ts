@@ -154,7 +154,7 @@ export async function createLlmRuntime(
   log: ScopedLog = createScopedLog(),
 ): Promise<LlmRuntime> {
   const agentDir = piHomeDir(path.dirname(cloneDir));
-  log.info(`LLM runtime: creating the in-process pi runtime (model "${config.model}")`);
+  log.progress(`LLM runtime: creating the in-process pi runtime (model "${config.model}")`);
   let runtime: ModelRuntime | undefined;
   try {
     runtime = await ModelRuntime.create({
@@ -190,7 +190,7 @@ export async function createLlmRuntime(
     if (model === undefined) {
       throw new Error(`model "${config.model}" is not available in the "devperf" provider`);
     }
-    log.info(`LLM runtime: ready (model "${config.model}")`);
+    log.progress(`LLM runtime: ready (model "${config.model}")`);
     return {
       model,
       modelRuntime: runtime,

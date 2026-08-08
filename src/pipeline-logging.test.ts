@@ -55,7 +55,7 @@ describe('runPipeline logging', () => {
       expect(stderr).toContain(`dev-perf ${appVersion}`);
       expect(stderr).toContain('configuration:');
       expect(stderr).toContain('    - ' + repo.url);
-      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
+      expect(stderr).toContain(`  cache-dir: ${cacheDir}`);
       expect(stderr).toContain('  verbose: true');
       // The command start/end pair brackets the whole run: the start
       // line comes first, the outcome (with duration) last.
@@ -145,7 +145,7 @@ describe('runPipeline logging', () => {
     }
   });
 
-  it('a default run prints the startup block and command markers on stderr, with no progress lines', async () => {
+  it('a default run prints the startup block, command markers, and the coarse analysis stages on stderr', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -167,9 +167,23 @@ describe('runPipeline logging', () => {
       expect(stderr).toContain('  verbose: false');
       expect(stderr).toContain('starting report');
       expect(stderr).toMatch(/finished report in \d+ ms/);
-      // …but nothing else: progress lines stay hidden without
-      // `--verbose`.
-      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit|analysis/);
+      // …and so are the coarse analysis-stage markers: the clone starts
+      // and completes (naming the cache entry), the commit scan starts
+      // and reports its count, and each repository's analysis is
+      // bracketed by its own start/end pair — so the current stage
+      // stays visible without `--verbose`.
+      expect(stderr).toMatch(/cloning ".+" \(cache ".+"\)/);
+      expect(stderr).toMatch(/cloned .* in \d+ ms \(cache ".+"\)/);
+      expect(stderr).toMatch(/starting analysis of ".+"/);
+      expect(stderr).toContain('reading commits');
+      expect(stderr).toContain('1 commit from 1 author');
+      expect(stderr).toMatch(/finished analysis of ".+" in \d+ ms/);
+      // …while the fine-grained detail stays hidden without `--verbose`:
+      // the resolved range, the base-scope outcomes, and the
+      // ignored-path summaries.
+      expect(stderr).not.toContain('range:');
+      expect(stderr).not.toMatch(/excluding base|is the head of|no base branch/);
+      expect(stderr).not.toContain('ignored paths');
     } finally {
       vi.restoreAllMocks();
       await rm(cacheDir, { recursive: true, force: true });

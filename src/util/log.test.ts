@@ -65,6 +65,35 @@ describe('log', () => {
     );
   });
 
+  it('always prints coarse progress lines in quiet mode while fine info stays hidden', () => {
+    const scoped = createScopedLog('repo-a');
+
+    scoped.progress('reading commits');
+    scoped.info('hidden per-user detail');
+
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'reading commits', 'repo-a')),
+    );
+    expect(stderrWrite).not.toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'hidden per-user detail', 'repo-a')),
+    );
+  });
+
+  it('prints coarse progress lines in verbose mode alongside the fine info', () => {
+    setVerbose(true);
+    const scoped = createScopedLog('repo-a');
+
+    scoped.progress('starting analysis of "repo"');
+    scoped.info('analyzing "Alice"');
+
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'starting analysis of "repo"', 'repo-a')),
+    );
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'analyzing "Alice"', 'repo-a')),
+    );
+  });
+
   it('prints info and debug messages when verbose is enabled', () => {
     setVerbose(true);
 
@@ -90,13 +119,13 @@ describe('log', () => {
 
   it('always prints config lines as INFO, regardless of verbose mode', () => {
     logConfig(`dev-perf ${appVersion}`);
-    logConfig('  cacheDir: /tmp/cache');
+    logConfig('  cache-dir: /tmp/cache');
 
     expect(stderrWrite).toHaveBeenCalledWith(
       expect.stringMatching(stampedLine('INFO', `dev-perf ${appVersion}`)),
     );
     expect(stderrWrite).toHaveBeenCalledWith(
-      expect.stringMatching(stampedLine('INFO', '  cacheDir: /tmp/cache')),
+      expect.stringMatching(stampedLine('INFO', '  cache-dir: /tmp/cache')),
     );
   });
 
@@ -129,12 +158,16 @@ describe('log', () => {
     );
   });
 
-  it('gates scoped info and debug in quiet mode while scoped warns always print', () => {
+  it('gates scoped info and debug in quiet mode while scoped warns and progress always print', () => {
     const scoped = createScopedLog('repo-a');
 
+    scoped.progress('visible stage');
     scoped.info('hidden progress');
     scoped.warn('visible warning');
 
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringMatching(stampedLine('INFO', 'visible stage', 'repo-a')),
+    );
     expect(stderrWrite).not.toHaveBeenCalledWith(
       expect.stringMatching(stampedLine('INFO', 'hidden progress', 'repo-a')),
     );
@@ -150,6 +183,7 @@ describe('log', () => {
     logWarn('heads up');
     logInfo('progress');
     logDebug('detail');
+    scoped.progress('scoped stage');
     scoped.info('scoped');
 
     expect(stdoutWrite).not.toHaveBeenCalled();

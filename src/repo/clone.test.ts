@@ -420,7 +420,7 @@ describe('ensureClone logging', () => {
     }
   });
 
-  it('hides the clone start line in quiet mode', async () => {
+  it('shows the clone start line even in quiet mode (coarse stage progress)', async () => {
     const fixture = await buildFixture();
     const cacheDir = await tempCacheDir();
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -428,7 +428,9 @@ describe('ensureClone logging', () => {
       await ensureClone(fixture.dir, { cacheDir });
 
       const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
-      expect(stderr).not.toContain('cloning "');
+      // The clone start is coarse analysis-stage progress, so it stays
+      // visible without `--verbose`.
+      expect(stderr).toContain('cloning "');
     } finally {
       await removeFixtureRepo(fixture);
       await rm(path.dirname(cacheDir), { recursive: true, force: true });

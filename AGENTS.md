@@ -189,9 +189,10 @@ Universal design principles this codebase follows:
 - **Stdout Discipline** — stdout carries the report JSON only (or the
   compile command's written report path). Progress and errors go to
   stderr through the level-based logger (`src/util/log.ts`):
-  `error`/`warn` messages always; `info`/`debug` messages only when
-  the config `verbose` key is set, except for a small always-visible
-  `info` set.
+  `error`/`warn` messages always; the coarse analysis-stage `progress`
+  lines always; `info`/`debug` (detailed per-user and session
+  progress) only when the config `verbose` key is set, plus a small
+  always-visible `info` set.
   Every command run is bracketed by start/end markers
   (`starting <command>`, then `finished <command> in <ms> ms`, e.g.
   `starting report` / `finished report in 1234 ms`), every `report`
@@ -199,12 +200,19 @@ Universal design principles this codebase follows:
   application version (`dev-perf <version>`), and `report` runs
   follow it with the full resolved configuration as one indented line
   per config field (`src/run-config.ts`), with the API key masked.
-  Long-running operations log their start as well as their outcome: a
-  verbose `info` line right before the work (e.g. `cloning "repo"`,
-  `reading commits`, `LLM runtime: creating the in-process pi runtime
-  ...`, `compile: rendering N charts`) paired with the existing
-  outcome line, so a long wait stays visible as what dev-perf is
-  doing right now instead of a silent gap. Clone
+  The analysis stages are visible on every run, not only in verbose
+  logs: coarse stage transitions — clone/reuse, the commit-read stage
+  and its count (`cloned "repo" in 12 ms`, `reading commits`, `3
+  commits from 2 authors`), per-repository start/end lines
+  (`starting analysis of "repo"` / `finished analysis of "repo" in
+  4567 ms`), and the LLM phase (runtime creation/ready, per-period
+  outcomes) — are logged as always-visible scoped `progress` lines, so
+  a long wait stays visible as what dev-perf is doing right now
+  instead of a silent gap. Fine-grained detail — the resolved
+  range/period split, base-resolution and ignored-path outcomes,
+  per-user LLM sessions, token counts, cache reuse, session
+  heartbeats, and the compile command's rendering lines — stays behind
+  `verbose` `info`/`debug`. Clone
   lines name the cache entry directory (`.dev-cache/<hash>`), so a
   repository can be matched to its cache entry from the log. Log
   message strings are formatted per the **Log string formatting**

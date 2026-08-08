@@ -272,7 +272,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain(`    - ${repo.url}`);
       expect(stderr).toContain(`  since: ${SINCE}`);
       expect(stderr).toContain(`  until: ${UNTIL}`);
-      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
+      expect(stderr).toContain(`  cache-dir: ${cacheDir}`);
       expect(stderr).toContain('  refresh: false');
       expect(stderr).toContain('  llm: false');
       expect(stderr).toContain('  verbose: false');
@@ -317,7 +317,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('a default run prints the startup block and command markers on stderr, with no progress lines', async () => {
+  it('a default run prints the startup block, command markers, and the coarse analysis stages on stderr', async () => {
     const repo = await buildFixture();
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
@@ -334,8 +334,20 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain('  verbose: false');
       expect(stderr).toContain('starting report');
       expect(stderr).toMatch(/finished report in \d+ ms/);
-      // …but nothing else: progress lines stay hidden in quiet mode.
-      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit|analysis/);
+      // …and so are the coarse analysis-stage markers: the clone starts
+      // and completes, the commit scan starts and reports its count, and
+      // the repository's analysis is bracketed by its own start/end
+      // pair — the current stage stays visible on every run.
+      expect(stderr).toMatch(/cloning ".+" \(cache ".+"\)/);
+      expect(stderr).toMatch(/cloned .* in \d+ ms \(cache ".+"\)/);
+      expect(stderr).toContain('starting analysis of');
+      expect(stderr).toContain('reading commits');
+      expect(stderr).toContain('3 commits from 2 authors');
+      expect(stderr).toMatch(/finished analysis of .+ in \d+ ms/);
+      // …while the fine-grained detail stays hidden without `--verbose`:
+      // the resolved range and the base-scope outcomes.
+      expect(stderr).not.toContain('range:');
+      expect(stderr).not.toMatch(/excluding base|is the head of|no base branch/);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
@@ -356,7 +368,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       // file and the configuration to stderr.
       expect(stdout).toBe('');
       expect(stderr).toContain(`  output: ${outFile}`);
-      expect(stderr).toContain(`  cacheDir: ${cacheDir}`);
+      expect(stderr).toContain(`  cache-dir: ${cacheDir}`);
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as {
         schemaVersion: number;
@@ -406,7 +418,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       // The startup dump names the config file the run was resolved
       // from (the child's cwd resolves the /var → /private/var symlink).
       const configPath = await realpath(path.join(cacheDir, 'config.yaml'));
-      expect(stderr).toContain(`  configFile: ${configPath}`);
+      expect(stderr).toContain(`  config-file: ${configPath}`);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
@@ -526,7 +538,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(users[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
       expect(users[0].deterministic.commits).toBe(2);
       // The startup dump lists the applied mappings.
-      expect(stderr).toContain('  maps:');
+      expect(stderr).toContain('  users-map:');
       expect(stderr).toContain('    - alice@example.com=Alice Smith');
       expect(stderr).toContain('    - alice@work.com=Alice Smith');
     } finally {
@@ -580,7 +592,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(users[0].emails).toEqual(['alice@example.com', 'alice@work.com']);
       expect(users[0].deterministic.commits).toBe(2);
       // The startup dump lists the applied mappings.
-      expect(stderr).toContain('  maps:');
+      expect(stderr).toContain('  users-map:');
       expect(stderr).toContain('    - alice@example.com=Alice Smith');
       expect(stderr).toContain('    - alice@work.com=Alice Smith');
     } finally {

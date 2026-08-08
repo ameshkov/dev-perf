@@ -8,10 +8,13 @@
  * `[INFO]`, `[DEBUG]`) carries the severity; scoped lines
  * (per-repository progress) additionally carry a `[label]` prefix so
  * concurrent analysis of several repositories can be told apart.
- * Quiet by default — `error` and `warn` messages are always printed;
- * `verbose` (from the config `verbose` key) enables `info` (progress)
- * and `debug`. Every message
- * goes to stderr; stdout carries nothing but the report JSON.
+ * Quiet by default — `error` and `warn` messages are always printed,
+ * and the coarse analysis-stage `progress` lines (clone/reuse, commit
+ * reading, per-repository boundaries, the LLM phase) stay visible too,
+ * so a long analysis never reads as a silent gap; `verbose` (from the
+ * config `verbose` key) enables the detailed `info` (per-user and
+ * session progress) and `debug` levels. Every message goes to stderr;
+ * stdout carries nothing but the report JSON.
  */
 
 /**
@@ -25,7 +28,7 @@ let verbose = false;
  * Enables or disables verbose logging for this process.
  *
  * @param enabled - True to print `info` and `debug` messages; false for
- * quiet mode (errors and warnings only).
+ * quiet mode (errors, warnings, and coarse `progress` lines only).
  */
 export function setVerbose(enabled: boolean): void {
   verbose = enabled;
@@ -41,7 +44,13 @@ export interface ScopedLog {
   error(message: string): void;
   /** Logs a warning message. Always printed, even in quiet mode. */
   warn(message: string): void;
-  /** Logs a progress message. Printed only when verbose is enabled. */
+  /**
+   * Logs a coarse analysis-stage progress message (clone/reuse, commit
+   * reading, per-repository start/end, the LLM phase). Always printed,
+   * even in quiet mode, so the current stage stays visible on every run.
+   */
+  progress(message: string): void;
+  /** Logs a detailed progress message. Printed only when verbose is enabled. */
   info(message: string): void;
   /** Logs a debug message. Printed only when verbose is enabled. */
   debug(message: string): void;
@@ -95,6 +104,7 @@ export function createScopedLog(label?: string): ScopedLog {
   return {
     error: (message) => writeLine('ERROR', label, message),
     warn: (message) => writeLine('WARN', label, message),
+    progress: (message) => writeLine('INFO', label, message),
     info: (message) => {
       if (verbose) {
         writeLine('INFO', label, message);
@@ -140,8 +150,9 @@ export function logConfig(message: string): void {
 }
 
 /**
- * Logs a progress message. Printed only when verbose logging is enabled
- * (`--verbose`); hidden in quiet mode.
+ * Logs a detailed progress message. Printed only when verbose logging is
+ * enabled (`--verbose`); hidden in quiet mode. Coarse analysis-stage
+ * markers use the always-printed scoped `progress` method instead.
  *
  * @param message - The message to write to stderr.
  */

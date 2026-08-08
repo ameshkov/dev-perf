@@ -7,7 +7,7 @@ import { logAgentSessionEvent, subscribeSessionEventLog } from './session-events
 function testLog(): { log: ScopedLog; debug: ReturnType<typeof vi.fn> } {
   const debug = vi.fn();
   return {
-    log: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug },
+    log: { error: vi.fn(), warn: vi.fn(), progress: vi.fn(), info: vi.fn(), debug },
     debug,
   };
 }
