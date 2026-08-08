@@ -46,17 +46,24 @@ describe('resolveCompileOptions', () => {
     expect(resolveCompileOptions({ verbose: true }).verbose).toBe(true);
   });
 
-  it('strips the #branch suffix off repos and exclude-repos entries', () => {
+  it('keeps repo entries as given, since the # character is no longer a branch selector', () => {
     const resolved = resolveCompileOptions({
       repos: ['https://github.com/org/repo.git#dev', 'repo-a'],
       compile: { 'exclude-repos': ['https://github.com/org/legacy.git#release-2'] },
     });
 
-    // The report entries carry the bare clone target, so the selection
-    // must match those bare targets; a branch-qualified entry would
-    // otherwise never match and drop every repository.
-    expect(resolved.repos).toEqual(['https://github.com/org/repo.git', 'repo-a']);
-    expect(resolved.excludeRepos).toEqual(['https://github.com/org/legacy.git']);
+    // Repo values are the clone targets as given — nothing is stripped,
+    // because a `#` suffix no longer selects a branch.
+    expect(resolved.repos).toEqual(['https://github.com/org/repo.git#dev', 'repo-a']);
+    expect(resolved.excludeRepos).toEqual(['https://github.com/org/legacy.git#release-2']);
+  });
+
+  it('extracts the bare target from structured repos entries too', () => {
+    const resolved = resolveCompileOptions({
+      repos: ['plain-repo', { repo: 'https://github.com/org/other.git', branch: 'dev' }],
+    });
+
+    expect(resolved.repos).toEqual(['plain-repo', 'https://github.com/org/other.git']);
   });
 
   it('keeps report, output and the selections absent in an empty config', () => {
@@ -178,7 +185,7 @@ describe('parseCompileOptions', () => {
     expect(parsed.repos).toEqual(['repo-a']);
   });
 
-  it('keeps branch-qualified repos as bare targets after parsing', () => {
+  it('keeps repo entries verbatim after parsing', () => {
     const parsed = parseCompileOptions(
       resolveCompileOptions({
         compile: { report: 'r.json' },
@@ -186,6 +193,6 @@ describe('parseCompileOptions', () => {
       }),
     );
 
-    expect(parsed.repos).toEqual(['https://github.com/org/repo.git']);
+    expect(parsed.repos).toEqual(['https://github.com/org/repo.git#dev']);
   });
 });

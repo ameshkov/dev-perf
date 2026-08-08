@@ -57,8 +57,10 @@ describe('buildUserSystemPrompt', () => {
 
 describe('buildOrientationPrompt', () => {
   it('asks for tech stack, main modules, and conventions', async () => {
-    const prompt = await buildOrientationPrompt('https://example.com/repo.git');
+    const prompt = await buildOrientationPrompt('https://example.com/repo.git', 'main');
     expect(prompt).toContain('https://example.com/repo.git');
+    expect(prompt).toContain('the "main" branch');
+    expect(prompt).toContain('none.');
     expect(prompt).toContain('Tech stack: languages, frameworks, and key');
     expect(prompt).toContain('Main modules or directories and what each does');
     expect(prompt).toContain('Conventions: code style, testing, commit message style');
@@ -66,8 +68,31 @@ describe('buildOrientationPrompt', () => {
     expect(prompt).toContain('read-only git commands');
   });
 
+  it('renders a neutral phrase when the clone resolved to no branch', async () => {
+    const prompt = await buildOrientationPrompt('https://example.com/repo.git', '');
+    expect(prompt).toContain('the current checkout');
+    expect(prompt).not.toContain('the default branch');
+  });
+
+  it('escapes branch names so they cannot break out of the quoting', async () => {
+    const prompt = await buildOrientationPrompt('https://example.com/repo.git', 'dev"x`y');
+    expect(prompt).toContain('the "dev\\"x\\`y" branch');
+    expect(prompt).not.toContain('the "dev"x`y" branch');
+  });
+
+  it('names the analyzed branch and the excluded paths', async () => {
+    const prompt = await buildOrientationPrompt('https://example.com/repo.git', 'dev', [
+      'docs/',
+      'vendor/locked',
+    ]);
+    expect(prompt).toContain('The analysis covers the "dev" branch');
+    expect(prompt).toContain('- `docs/`');
+    expect(prompt).toContain('- `vendor/locked`');
+    expect(prompt).not.toContain('none.');
+  });
+
   it('ends with the required tool-call instruction', async () => {
-    expect(await buildOrientationPrompt('repo')).toContain(TOOL_CALL_FRAGMENT);
+    expect(await buildOrientationPrompt('repo', 'main')).toContain(TOOL_CALL_FRAGMENT);
   });
 });
 
@@ -75,6 +100,7 @@ describe('buildUserPrompt', () => {
   function userInput(overrides: Partial<UserPromptInput> = {}): UserPromptInput {
     return {
       repo: 'https://example.com/repo.git',
+      branch: 'main',
       name: 'Alice',
       email: 'alice@example.com',
       emails: ['alice@example.com'],
@@ -131,6 +157,65 @@ describe('buildUserPrompt', () => {
   it('renders an unbounded range side as plain language', async () => {
     const prompt = await buildUserPrompt(userInput({ range: { since: '', until: '' } }));
     expect(prompt).toContain('the beginning to now (UTC)');
+  });
+
+  it('scopes the analysis to the branch and enumerates the excluded paths', async () => {
+    const prompt = await buildUserPrompt(
+      userInput({ branch: 'dev', ignore: ['docs/', 'vendor/locked'] }),
+    );
+    expect(prompt).toContain('(UTC) on the "dev" branch');
+    expect(prompt).toContain('The following paths are excluded from the analysis');
+    expect(prompt).toContain('- `docs/`');
+    expect(prompt).toContain('- `vendor/locked`');
+    expect(prompt).not.toContain('none.');
+
+    const withoutExclusions = await buildUserPrompt(userInput({ branch: 'main' }));
+    expect(withoutExclusions).toContain('on the "main" branch');
+    expect(withoutExclusions).toContain('none.');
+  });
+
+  it('strips backticks from ignored path patterns so they cannot break the code spans', async () => {
+    // A backtick terminates a Markdown code span (CommonMark ignores
+    // backslash escapes inside code spans), so it is stripped — a
+    // backtick in an ignored path is pathological anyway. Line breaks
+    // are collapsed so a pattern cannot inject text outside the span.
+    const prompt = await buildUserPrompt(userInput({ ignore: ['a`b]', 'c\\d'] }));
+    expect(prompt).toContain('- `ab]`');
+    expect(prompt).toContain('- `c\\d`');
+    expect(prompt).not.toContain('- `a`b]`');
+  });
+
+  it('normalizes ignored path patterns like the deterministic matcher', async () => {
+    // The deterministic matcher trims each pattern and drops the
+    // whitespace-only ones; the prompt must render the same: a
+    // whitespace-only pattern is a useless bullet telling the LLM a
+    // path is excluded that the filters actually drop, so it degrades
+    // to "none.".
+    const prompt = await buildUserPrompt(userInput({ ignore: ['  ', ' docs/ '] }));
+    expect(prompt).toContain('- `docs/`');
+    expect(prompt).not.toContain('- ``');
+    expect(prompt).not.toContain('none.');
+
+    const onlyWhitespace = await buildUserPrompt(userInput({ ignore: ['   '] }));
+    expect(onlyWhitespace).toContain('none.');
+  });
+
+  it('renders the branch-delta scope note when a base is in effect', async () => {
+    const prompt = await buildUserPrompt(userInput({ base: 'master' }));
+    expect(prompt).toContain('scoped to the delta from the "master" branch');
+    expect(prompt).toContain("not yet on it are this contributor's work");
+    expect(prompt).toContain('keep the commit count as given.');
+  });
+
+  it('omits the scope note without a base (full history)', async () => {
+    const prompt = await buildUserPrompt(userInput());
+    expect(prompt).not.toContain('scoped to the delta');
+    expect(prompt).not.toContain('{{scopeNote}}');
+  });
+
+  it('escapes the base name in the scope note so it cannot break out', async () => {
+    const prompt = await buildUserPrompt(userInput({ base: 'main"x`y' }));
+    expect(prompt).toContain('delta from the "main\\"x\\`y" branch');
   });
 
   it('leaves no placeholder unrendered', async () => {

@@ -2,7 +2,12 @@
 
 Analyze the repository at {{repo}} for dev-perf. This session
 establishes the repository context that the contributor analysis uses
-later.
+later. The analysis covers {{branch}}; scope your exploration to it.
+
+Changes to the following paths are excluded from the analysis — do not
+attribute or weigh them, even when they surface while you inspect the
+repository:
+{{ignoredPaths}}
 
 Explore the repository with the read tools and read-only git commands
 as needed. Produce a compact repository context covering:

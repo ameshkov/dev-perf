@@ -259,7 +259,7 @@ export function buildTrendReport(options: BuildTrendReportOptions): TrendReport 
   }));
   const repos = [
     ...new Set(options.periods.flatMap((period) => period.repositories.map((repo) => repo.repo))),
-  ];
+  ].map((repo) => ({ repo }));
   return {
     schemaVersion: 2,
     generatedAt: GENERATED_AT,

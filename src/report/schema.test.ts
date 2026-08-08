@@ -12,7 +12,7 @@ function validReport(): unknown {
     schemaVersion: 1,
     generatedAt: '2026-08-03T12:00:00.000Z',
     parameters: {
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git', branch: 'main' }],
       since: '2026-01-01',
       until: '2026-06-30',
       model: 'gpt-4.1',
@@ -115,6 +115,20 @@ describe('reportSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a legacy string repos entry and normalizes it to a spec', () => {
+    const report = validReport() as {
+      parameters: { repos?: unknown };
+    };
+    report.parameters.repos = ['https://github.com/org/repo.git'];
+
+    const result = reportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parameters.repos).toEqual([{ repo: 'https://github.com/org/repo.git' }]);
+    }
+  });
+
   it('rejects each invalid field with the failing path', () => {
     const mutations: Array<{ path: string; mutate: (report: any) => void }> = [
       {
@@ -133,6 +147,12 @@ describe('reportSchema', () => {
         path: 'parameters.repos',
         mutate: (report) => {
           report.parameters.repos = [];
+        },
+      },
+      {
+        path: 'parameters.repos.0.repo',
+        mutate: (report) => {
+          report.parameters.repos[0].repo = '';
         },
       },
       {
@@ -294,7 +314,7 @@ describe('trendReportSchema', () => {
       schemaVersion: 2,
       generatedAt: '2026-08-03T12:00:00.000Z',
       parameters: {
-        repos: ['https://github.com/org/repo.git'],
+        repos: [{ repo: 'https://github.com/org/repo.git', branch: 'main' }],
         since: '2026-01-01',
         until: '2026-06-30',
         unit: 'month',

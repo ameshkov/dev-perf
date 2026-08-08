@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
-import { gitLog, runGit } from '../repo/git.js';
+import { gitLog, gitRevParse, runGit } from '../repo/git.js';
 import { parseCommitLog, readCommits, resolveBoundDate } from './commits.js';
 
 /** Known shas used in the golden parse tests (any 40-hex values). */
@@ -399,6 +399,63 @@ describe('readCommits', () => {
     try {
       expect(await readCommits(repo.dir)).toEqual([]);
       expect(await readCommits(repo.dir, { since: '2026-01-01T00:00:00Z' })).toEqual([]);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+});
+
+describe('readCommits branch-delta exclusion', () => {
+  it('returns only the commits not reachable from the excluded base', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'base',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-02T10:00:00Z',
+        message: 'main work',
+        files: [{ path: 'b.txt', content: 'b\n' }],
+      },
+    ]);
+    try {
+      const mainHead = await gitRevParse(repo.dir, ['HEAD']);
+      // dev branches from main and adds one commit; the delta vs main
+      // is exactly the dev-only commit.
+      await runGit(repo.dir, ['checkout', '-b', 'dev']);
+      await runGit(repo.dir, ['config', 'user.name', 'Alice']);
+      await runGit(repo.dir, ['config', 'user.email', 'alice@example.com']);
+      await runGit(
+        repo.dir,
+        ['commit', '--allow-empty', '--date=2026-01-03T10:00:00Z', '-m', 'dev only'],
+        { env: { GIT_COMMITTER_DATE: '2026-01-03T10:00:00Z' } },
+      );
+
+      const commits = await readCommits(repo.dir, { exclude: mainHead });
+      expect(commits.map((commit) => commit.subject)).toEqual(['dev only']);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('excludes everything when the excluded base is the branch head itself', async () => {
+    // The pipeline guards against this — a branch is never emptied by
+    // its own delta — and the empty result here documents why that
+    // guard exists.
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'base',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    try {
+      const head = await gitRevParse(repo.dir, ['HEAD']);
+      expect(await readCommits(repo.dir, { exclude: head })).toEqual([]);
     } finally {
       await removeFixtureRepo(repo);
     }

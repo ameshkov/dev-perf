@@ -6,6 +6,7 @@
  */
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { repoStats, userMetrics } from '../deterministic/metrics.js';
+import type { RepoSpec } from '../repo/repo-spec.js';
 import { reportSchema, trendReportSchema } from './schema.js';
 import type { LlmAnalysis, PeriodUnit, Report, Repository, TrendReport, User } from './schema.js';
 
@@ -28,8 +29,13 @@ export interface RepositoryEntryInput {
   clonePath: string;
   /** Branch the clone was checked out on. */
   branch: string;
+  /** The resolved base branch the analysis was scoped against
+   * (branch-delta), when one was in effect. */
+  baseBranch?: string;
   /** Head commit sha of the clone. */
   head: string;
+  /** Gitignore-style paths excluded from the analysis, when any. */
+  ignoredPaths?: string[];
   /** Analyzed author-date range (UTC instants). */
   range: AnalyzedRange;
   /** Author groups of the range, one per user. */
@@ -43,8 +49,8 @@ export interface RepositoryEntryInput {
 
 /** Everything the v1 assembler needs for the report document. */
 interface ReportInput {
-  /** Repositories analyzed, as given on the command line. */
-  repos: string[];
+  /** Repositories analyzed, as full specs, in input order. */
+  repos: RepoSpec[];
   /** Analyzed author-date range (UTC instants). */
   range: AnalyzedRange;
   /** Model used for LLM analysis; absent when LLM was disabled. */
@@ -67,8 +73,8 @@ interface TrendPeriodInput {
 
 /** Everything the trend assembler needs for the report document. */
 export interface TrendReportInput {
-  /** Repositories analyzed, as given on the command line. */
-  repos: string[];
+  /** Repositories analyzed, as full specs, in input order. */
+  repos: RepoSpec[];
   /** Analyzed author-date range (UTC instants). */
   range: AnalyzedRange;
   /** Period unit the range was split into; absent without `--unit`. */
@@ -100,6 +106,10 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
     clonePath: input.clonePath,
     branch: input.branch,
     head: input.head,
+    ...(input.baseBranch === undefined ? {} : { baseBranch: input.baseBranch }),
+    ...(input.ignoredPaths === undefined || input.ignoredPaths.length === 0
+      ? {}
+      : { ignoredPaths: [...input.ignoredPaths] }),
     range: input.range,
     stats: repoStats(input.groups),
     users: input.groups.map((group) => userEntry(group, input.llmResults)),

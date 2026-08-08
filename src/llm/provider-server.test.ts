@@ -327,6 +327,8 @@ describe('LLM against a mocked provider server', () => {
     const results = await withRuntime((service) =>
       analyzeRepositoryLLM({
         repo: 'https://example.com/repo.git',
+        branch: 'main',
+        head: 'cafebabe12345678',
         cloneDir,
         entryDir,
         config: { ...config(), providerUrl: mock.baseUrl },
@@ -367,6 +369,8 @@ describe('LLM against a mocked provider server', () => {
   it('talks to the provider with the resolved base URL, the API key, and the report tool', async () => {
     const input = (service: ReturnType<typeof createSessionService>): AnalyzeRepoInput => ({
       repo: 'https://example.com/repo.git',
+      branch: 'main',
+      head: 'cafebabe12345678',
       cloneDir,
       entryDir,
       config: { ...config(), providerUrl: mock.baseUrl },
@@ -392,6 +396,8 @@ describe('LLM against a mocked provider server', () => {
   it('sends the static system prompts to the provider', async () => {
     const input = (service: ReturnType<typeof createSessionService>): AnalyzeRepoInput => ({
       repo: 'https://example.com/repo.git',
+      branch: 'main',
+      head: 'cafebabe12345678',
       cloneDir,
       entryDir,
       config: { ...config(), providerUrl: mock.baseUrl },
@@ -424,7 +430,7 @@ describe('LLM against a mocked provider server', () => {
       );
       const context = await service.promptSession(
         handle,
-        await buildOrientationPrompt('https://example.com/repo.git'),
+        await buildOrientationPrompt('https://example.com/repo.git', 'main'),
         'repo',
       );
 
@@ -438,6 +444,8 @@ describe('LLM against a mocked provider server', () => {
   it('runs a rerun from the LLM result cache without touching the provider again', async () => {
     const input = (service: ReturnType<typeof createSessionService>): AnalyzeRepoInput => ({
       repo: 'https://example.com/repo.git',
+      branch: 'main',
+      head: 'cafebabe12345678',
       cloneDir,
       entryDir,
       config: { ...config(), providerUrl: mock.baseUrl },

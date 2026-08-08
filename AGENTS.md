@@ -86,7 +86,7 @@ dev-perf/
 │   ├── run-config.ts          # Per-line run configuration dump for the startup log
 │   ├── version.ts             # Application version from package.json
 │   ├── repo/                  # Clone/cache management
-│   ├── deterministic/         # Deterministic analysis (commits, identity, metrics, languages)
+│   ├── deterministic/         # Deterministic analysis (commits, identity, ignore filtering, metrics, languages, base resolution)
 │   ├── llm/                   # LLM agentic layer (runtime, tools, prompts, sessions, orchestration)
 │   ├── compile/               # Compile layer: JSON report → markdown report with charts
 │   ├── trend/                 # Time-based period splitting
@@ -96,6 +96,7 @@ dev-perf/
 │                              # and compiled-CLI e2e tests
 ├── scripts/                   # Build-time asset copying and the knip exclude bootstrap
 ├── docs/
+│   ├── configuration.md       # Full configuration reference
 │   └── design.md              # Full design document
 ├── Dockerfile                 # Multi-stage image: Node.js + git + bash runtime
 └── Root config: package.json, tsconfig*.json, vitest.config.ts,

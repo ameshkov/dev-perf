@@ -10,6 +10,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseCompileOptions, resolveCompileOptions } from './compile/options.js';
+import { parseReportOptions, resolveReportOptions } from './config.js';
 import { loadDevPerfConfig, resolveConfigPath, resolveDevPerfConfig } from './config-file.js';
 
 /** A temp directory shared across the tests of this file. */
@@ -130,6 +132,96 @@ describe('loadDevPerfConfig', () => {
         'include-users': ['Alice'],
       },
     });
+  });
+
+  it('accepts structured repos entries with a branch and ignored paths', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const file = path.join(dir, 'config.yaml');
+    await writeFile(
+      file,
+      [
+        'repos:',
+        '  - https://github.com/org/repo.git',
+        '  - repo: https://github.com/org/other.git',
+        '    branch: dev',
+        '    ignore:',
+        '      - docs/',
+        '      - vendor/locked',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadDevPerfConfig(file)).resolves.toEqual({
+      repos: [
+        'https://github.com/org/repo.git',
+        {
+          repo: 'https://github.com/org/other.git',
+          branch: 'dev',
+          ignore: ['docs/', 'vendor/locked'],
+        },
+      ],
+    });
+  });
+
+  it('accepts a kebab base-branch key on a structured repos entry', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const file = path.join(dir, 'config.yaml');
+    await writeFile(
+      file,
+      [
+        'repos:',
+        '  - repo: https://github.com/org/other.git',
+        '    branch: release/v5',
+        '    base-branch: master',
+        '  - repo: https://github.com/org/full.git',
+        "    base-branch: ''",
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadDevPerfConfig(file)).resolves.toEqual({
+      repos: [
+        { repo: 'https://github.com/org/other.git', branch: 'release/v5', base: 'master' },
+        // The empty-string base-branch is the full-history opt-out.
+        { repo: 'https://github.com/org/full.git', base: '' },
+      ],
+    });
+  });
+
+  it('rejects a camelCase base key on a structured repos entry', async () => {
+    // Only the kebab `base-branch` is a config key; the camelCase `base`
+    // reuses the shared spec field name and would otherwise slip past
+    // `.strict()` and be silently discarded when both keys are set.
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const camel = path.join(dir, 'camel.yaml');
+    await writeFile(camel, 'repos:\n  - repo: r\n    base: master\n');
+    // The rejected entry collapses to `repos.0: Invalid input` in the
+    // union — the entry is rejected loudly, never accepted.
+    await expect(loadDevPerfConfig(camel)).rejects.toThrow(/repos\.0/);
+
+    const both = path.join(dir, 'both.yaml');
+    await writeFile(both, 'repos:\n  - repo: r\n    base: master\n    base-branch: dev\n');
+    await expect(loadDevPerfConfig(both)).rejects.toThrow(/repos\.0/);
+  });
+
+  it('rejects malformed structured repos entries, naming the item', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    // Each malformed entry must be rejected loudly instead of parsed.
+    const unknown = path.join(dir, 'unknown.yaml');
+    await writeFile(unknown, 'repos:\n  - repo: r\n    branch: dev\n    extra: true\n');
+    await expect(loadDevPerfConfig(unknown)).rejects.toThrow(/repos\.0: Invalid input/);
+
+    const empty = path.join(dir, 'empty.yaml');
+    await writeFile(empty, 'repos:\n  - repo: ""\n');
+    await expect(loadDevPerfConfig(empty)).rejects.toThrow(
+      /repos\.0\.repo: a repository URL or local path is required/,
+    );
+
+    const emptyPattern = path.join(dir, 'empty-pattern.yaml');
+    await writeFile(emptyPattern, 'repos:\n  - repo: r\n    ignore: [""]\n');
+    await expect(loadDevPerfConfig(emptyPattern)).rejects.toThrow(
+      /repos\.0\.ignore\.0: an ignore pattern must be non-empty/,
+    );
   });
 
   it('accepts the compile.report key and rejects unknown compile keys', async () => {
@@ -271,5 +363,25 @@ describe('loadDevPerfConfig', () => {
     await expect(loadDevPerfConfig('/nonexistent/config.yaml')).rejects.toThrow(
       /config file not found or unreadable: "\/nonexistent\/config.yaml"/,
     );
+  });
+
+  it('keeps the committed config.example.yaml valid for report and compile', async () => {
+    // The example config is the starting point users copy; it must load
+    // and stay valid for both commands to resolve their options.
+    const example = new URL('../config.example.yaml', import.meta.url);
+    const config = await loadDevPerfConfig(example.pathname, {
+      DEV_PERF_MODEL: 'gpt-4.1',
+      DEV_PERF_PROVIDER_URL: 'https://api.openai.com/v1',
+      DEV_PERF_API_KEY: 'token',
+    });
+    expect(config['llm']).toBe(false);
+
+    const report = parseReportOptions(resolveReportOptions(config));
+    expect(report.repos.length).toBeGreaterThan(0);
+    expect(report.since).toBeDefined();
+
+    const compile = parseCompileOptions(resolveCompileOptions(config));
+    expect(compile.report).toBe('output/report.json');
+    expect(compile.output).toBe('output/report');
   });
 });

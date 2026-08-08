@@ -14,7 +14,8 @@
  */
 import { z } from 'zod';
 import type { DevPerfConfig } from '../config-file.js';
-import { parseRepoSpec } from '../repo/repo-spec.js';
+import { parseRepoConfigItem } from '../repo/repo-spec.js';
+import type { RepoConfigItem } from '../repo/repo-spec.js';
 import { emailMapEntrySchema, usersMapToEntries } from '../util/email-map.js';
 import type { EmailMapEntry } from '../util/email-map.js';
 
@@ -185,20 +186,18 @@ function cleanList(entries: string[] | undefined): string[] {
 }
 
 /**
- * Strips the `#branch` suffix off each repository entry: the report
- * entries carry the bare clone target (a `#branch` suffix was already
- * split off by `parseRepoSpec` when the report was produced), so the
- * repo selection must match those bare targets. Without this, a
- * branch-qualified entry like `https://host/org/repo.git#dev` would
- * never match and silently drop every repository from the compiled
- * output.
+ * Normalizes each repository config entry — a plain string or a
+ * structured map — to its bare clone target, the form the report's
+ * repository entries carry. The `compile` repo selection matches those
+ * bare targets, so a structured entry targeting one repository picks
+ * the matching report entries.
  *
- * @param entries - The raw config repo list, if any.
- * @returns The bare clone targets, `#branch` suffixes removed; absent
- * when the config key was absent.
+ * @param entries - The raw config repo list, if any; each entry a URL/path
+ * string or a `{ repo, branch?, base?, ignore? }` map.
+ * @returns The clone targets; absent when the config key was absent.
  */
-function cleanRepos(entries: string[] | undefined): string[] | undefined {
-  return entries?.map((spec) => parseRepoSpec(spec).repo);
+function cleanRepos(entries: RepoConfigItem[] | undefined): string[] | undefined {
+  return entries?.map((item) => parseRepoConfigItem(item).repo);
 }
 
 /**

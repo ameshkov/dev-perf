@@ -89,6 +89,25 @@ describe('assembleRepository', () => {
     expect(repository.users[1].llm).toEqual({ status: 'skipped', contributions: [] });
   });
 
+  it('records the ignored paths on the repository entry when configured', () => {
+    const repository = assembleRepository(repoInput({ ignoredPaths: ['docs/', 'vendor/'] }));
+
+    expect(repository.ignoredPaths).toEqual(['docs/', 'vendor/']);
+  });
+
+  it('omits the ignored paths key when none are configured', () => {
+    expect('ignoredPaths' in assembleRepository(repoInput())).toBe(false);
+  });
+
+  it('records the base branch on the repository entry when scoped', () => {
+    const repository = assembleRepository(repoInput({ baseBranch: 'origin/main' }));
+    expect(repository.baseBranch).toBe('origin/main');
+  });
+
+  it('omits the baseBranch key when no branch-delta is in effect', () => {
+    expect('baseBranch' in assembleRepository(repoInput())).toBe(false);
+  });
+
   it('emits every email of an identity merged through the email map', () => {
     const repository = assembleRepository(
       repoInput({
@@ -179,7 +198,7 @@ describe('assembleRepository with LLM results', () => {
 describe('assembleReport', () => {
   it('builds a validated report document with schema defaults applied', () => {
     const report = assembleReport({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       range: RANGE,
       llmEnabled: false,
       generatedAt: '2026-08-03T12:00:00.000Z',
@@ -192,7 +211,7 @@ describe('assembleReport', () => {
       contributions: [],
     });
     expect(report.parameters).toEqual({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       since: '2026-01-01T00:00:00.000Z',
       until: '2026-06-30T00:00:00.000Z',
       llmEnabled: false,
@@ -205,7 +224,7 @@ describe('assembleReport', () => {
 
   it('omits the model from parameters when LLM analysis is disabled', () => {
     const report = assembleReport({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       range: RANGE,
       llmEnabled: false,
       generatedAt: '2026-08-03T12:00:00.000Z',
@@ -231,7 +250,7 @@ describe('assembleTrendReport', () => {
   it('builds a validated trend report with one period per period input', () => {
     const january = assembleRepository(repoInput());
     const report = assembleTrendReport({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       range: RANGE,
       unit: 'month',
       llmEnabled: false,
@@ -251,7 +270,7 @@ describe('assembleTrendReport', () => {
     expect(report.schemaVersion).toBe(2);
     expect(report.generatedAt).toBe('2026-08-03T12:00:00.000Z');
     expect(report.parameters).toEqual({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       since: '2026-01-01T00:00:00.000Z',
       until: '2026-06-30T00:00:00.000Z',
       unit: 'month',
@@ -275,7 +294,7 @@ describe('assembleTrendReport', () => {
 
   it('omits the unit and model keys from parameters without --unit', () => {
     const report = assembleTrendReport({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ repo: 'https://github.com/org/repo.git' }],
       range: RANGE,
       llmEnabled: false,
       generatedAt: '2026-08-03T12:00:00.000Z',
@@ -290,7 +309,7 @@ describe('assembleTrendReport', () => {
   it('rejects an assembled document without periods', () => {
     expect(() =>
       assembleTrendReport({
-        repos: ['https://github.com/org/repo.git'],
+        repos: [{ repo: 'https://github.com/org/repo.git' }],
         range: RANGE,
         llmEnabled: false,
         generatedAt: '2026-08-03T12:00:00.000Z',

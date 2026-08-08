@@ -16,6 +16,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import type { ReportOptions } from './config.js';
+import { parseRepoSpec } from './repo/repo-spec.js';
 import { createLlmRuntime } from './llm/runtime.js';
 import { createSessionService } from './llm/session.js';
 import type { SessionHandle, SessionService } from './llm/session.js';
@@ -203,7 +204,7 @@ describe('runPipeline with parallel LLM analysis', () => {
     try {
       const report = await runPipeline(
         options({
-          repos: [alice.url, bob.url],
+          repos: [parseRepoSpec(alice.url), parseRepoSpec(bob.url)],
           cacheDir,
           parallel: 2,
           since: '2026-01-01T00:00:00Z',

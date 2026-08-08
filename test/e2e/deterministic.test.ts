@@ -162,7 +162,7 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
     schemaVersion: 2,
     generatedAt: expect.any(String),
     parameters: {
-      repos: [repo.url],
+      repos: [{ repo: repo.url }],
       since: SINCE_RESOLVED,
       until: UNTIL_RESOLVED,
       llmEnabled: false,
@@ -307,6 +307,10 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain(`range: ${SINCE_RESOLVED} to ${UNTIL_RESOLVED}`);
       expect(stderr).toContain('reading commits');
       expect(stderr).toContain('3 commits from 2 authors');
+      // Each repository's analysis is bracketed by its own start/end
+      // pair, naming the repo spec and closing with a duration.
+      expect(stderr).toContain(`starting analysis of "${repo.url}"`);
+      expect(stderr).toMatch(/finished analysis of ".+" in \d+ ms/);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
@@ -331,7 +335,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       expect(stderr).toContain('starting report');
       expect(stderr).toMatch(/finished report in \d+ ms/);
       // …but nothing else: progress lines stay hidden in quiet mode.
-      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit/);
+      expect(stderr).not.toMatch(/cloned|cloning|reading|range:|commit|analysis/);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);
@@ -356,12 +360,15 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
 
       const written = JSON.parse(await readFile(outFile, 'utf8')) as {
         schemaVersion: number;
-        parameters: { repos: string[]; llmEnabled: boolean };
+        parameters: { repos: Array<{ repo: string }>; llmEnabled: boolean };
         periods: Array<{ repositories: Array<{ users: unknown[] }> }>;
       };
       expect(trendReportSchema.safeParse(written).success).toBe(true);
       expect(written.schemaVersion).toBe(2);
-      expect(written.parameters).toMatchObject({ repos: [repo.url], llmEnabled: false });
+      expect(written.parameters).toMatchObject({
+        repos: [{ repo: repo.url }],
+        llmEnabled: false,
+      });
       expect(written.periods[0].repositories[0].users).toHaveLength(2);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -582,7 +589,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     }
   });
 
-  it('analyzes a specific branch via the repo#branch spec, isolated in its own cache entry', async () => {
+  it('analyzes a specific branch via the structured branch key, isolated in its own cache entry', async () => {
     const repo = await buildFixtureRepo([
       {
         author: { name: 'Alice', email: 'alice@example.com' },
@@ -611,13 +618,14 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
     const devHead = await gitRevParse(repo.dir, ['HEAD']);
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
     try {
-      // The config carries the branch-scoped repo spec (#dev), so the
+      // The config carries the branch-scoped structured entry, so the
       // entry hash and the reported branch follow it.
       await writeFile(
         path.join(cacheDir, 'config.yaml'),
         [
           'repos:',
-          `  - ${repo.url}#dev`,
+          `  - repo: ${repo.url}`,
+          '    branch: dev',
           `since: ${SINCE}`,
           `until: ${UNTIL}`,
           'llm: false',
@@ -630,7 +638,7 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       });
 
       const report = JSON.parse(stdout) as {
-        parameters: { repos: string[] };
+        parameters: { repos: Array<{ repo: string; branch?: string }> };
         periods: Array<{
           repositories: Array<{
             repo: string;
@@ -643,20 +651,120 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       };
       expect(trendReportSchema.safeParse(report).success).toBe(true);
       const entry = report.periods[0].repositories[0];
-      expect(entry).toMatchObject({ repo: repo.url, branch: 'dev', head: devHead });
-      expect(entry.stats.totalCommits).toBe(2);
-      // The parameters list the spec as given, with the branch suffix.
-      expect(report.parameters.repos).toEqual([`${repo.url}#dev`]);
+      // The non-default `dev` branch is scoped to its delta vs the
+      // base (origin/main), so only the dev-only commit is analyzed.
+      expect(entry).toMatchObject({
+        repo: repo.url,
+        branch: 'dev',
+        head: devHead,
+        baseBranch: 'origin/main',
+      });
+      expect(entry.stats.totalCommits).toBe(1);
+      // The parameters list the full spec as given, branch included.
+      expect(report.parameters.repos).toEqual([{ repo: repo.url, branch: 'dev' }]);
       // The branch-scoped cache entry holds the clone.
       expect(entry.clonePath).toBe(path.join(cacheDir, entryHash(repo.url, 'dev'), 'repo'));
-      // The startup dump lists the spec as given, branch suffix and all.
-      expect(stderr).toContain(`    - ${repo.url}#dev`);
+      // The startup dump lists the full spec as given, branch included.
+      expect(stderr).toContain(`    - ${repo.url} (branch: dev)`);
       // clone.json records the checked-out branch.
       const cloneInfo = await readFile(
         path.join(cacheDir, entryHash(repo.url, 'dev'), 'clone.json'),
         'utf8',
       );
       expect(cloneInfo).toContain('"branch": "dev"');
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('honors a structured repos entry with a branch and ignored paths', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'docs: ignored only',
+        files: [{ path: 'docs/guide.md', content: 'guide\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-02T11:00:00Z',
+        message: 'feat: mixed commit',
+        files: [
+          { path: 'src/app.ts', content: 'line1\nline2\n' },
+          { path: 'docs/changelog.md', content: 'changelog\n' },
+        ],
+      },
+      {
+        author: { name: 'Bob', email: 'bob@example.com' },
+        date: '2026-01-03T09:00:00Z',
+        message: 'feat: util',
+        files: [{ path: 'src/util.ts', content: 'u\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    try {
+      // The config carries a structured repos entry: the branch is
+      // recorded, and the docs/ paths are excluded from the analysis.
+      await writeFile(
+        path.join(cacheDir, 'config.yaml'),
+        [
+          'repos:',
+          `  - repo: ${repo.url}`,
+          '    branch: main',
+          '    ignore:',
+          '      - docs/',
+          `since: ${SINCE}`,
+          `until: ${UNTIL}`,
+          'llm: false',
+          `cache-dir: ${cacheDir}`,
+          'verbose: true',
+          '',
+        ].join('\n'),
+      );
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
+
+      const report = JSON.parse(stdout) as {
+        parameters: {
+          repos: Array<{ repo: string; branch?: string; ignore?: string[] }>;
+          llmEnabled: boolean;
+        };
+        periods: Array<{
+          repositories: Array<{
+            repo: string;
+            branch: string;
+            ignoredPaths: string[];
+            clonePath: string;
+            stats: { totalCommits: number };
+            users: Array<{ name: string; deterministic: { commits: number; linesAdded: number } }>;
+          }>;
+        }>;
+      };
+      expect(trendReportSchema.safeParse(report).success).toBe(true);
+      const entry = report.periods[0].repositories[0];
+      expect(entry).toMatchObject({
+        repo: repo.url,
+        branch: 'main',
+        ignoredPaths: ['docs/'],
+      });
+      // The docs-only commit is dropped; the mixed commit keeps only
+      // its non-ignored file.
+      expect(entry.stats.totalCommits).toBe(2);
+      const alice = entry.users.find((user) => user.name === 'Alice');
+      expect(alice?.deterministic).toMatchObject({ commits: 1, linesAdded: 2 });
+      // The parameters list the full spec — clone target, branch, and
+      // the ignored paths.
+      expect(report.parameters).toMatchObject({
+        repos: [{ repo: repo.url, branch: 'main', ignore: ['docs/'] }],
+        llmEnabled: false,
+      });
+      // The startup dump lists the full spec with its ignored paths,
+      // and the verbose ignored-paths line names it and the excluded
+      // paths.
+      expect(stderr).toContain(`    - ${repo.url} (branch: main, ignore: docs/)`);
+      expect(stderr).toContain(`ignored paths for "${repo.url}": "docs/"`);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);

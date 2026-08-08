@@ -7,7 +7,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportOptions } from './config.js';
 import { resolveCacheDir } from './repo/cache.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 import { maskSecret, runConfig, runConfigLines } from './run-config.js';
+
+/** Wraps plain spec strings into `RepoSpec` entries for the options. */
+function repoSpecs(...specs: string[]): RepoSpec[] {
+  return specs.map((spec) => ({ repo: spec }));
+}
 
 /** Defaults for a deterministic-only run. */
 function options(overrides: Partial<ReportOptions> = {}): ReportOptions {
@@ -27,7 +33,7 @@ describe('runConfig', () => {
     const repos = ['https://github.com/org/repo.git'];
     const config = runConfig(
       options({
-        repos,
+        repos: repoSpecs(...repos),
         since: '2026-01-01',
         until: '2026-06-30',
         unit: 'month',
@@ -44,11 +50,11 @@ describe('runConfig', () => {
         parallel: 3,
         verbose: true,
       }),
-      repos,
+      repoSpecs(...repos),
     );
 
     expect(config).toStrictEqual({
-      repos,
+      repos: repoSpecs(...repos),
       since: '2026-01-01',
       until: '2026-06-30',
       unit: 'month',
@@ -68,7 +74,7 @@ describe('runConfig', () => {
   });
 
   it('resolves the default cache directory and applies defaults', () => {
-    const config = runConfig(options({ repos: ['r'] }), ['r']);
+    const config = runConfig(options({ repos: repoSpecs('r') }), repoSpecs('r'));
 
     expect(config.cacheDir).toBe(resolveCacheDir());
     expect(config.refresh).toBe(false);
@@ -81,7 +87,7 @@ describe('runConfig', () => {
   });
 
   it('omits unset optional keys', () => {
-    const config = runConfig(options({ repos: ['r'] }), ['r']);
+    const config = runConfig(options({ repos: repoSpecs('r') }), repoSpecs('r'));
 
     expect('since' in config).toBe(false);
     expect('until' in config).toBe(false);
@@ -93,22 +99,22 @@ describe('runConfig', () => {
   });
 
   it('reports the deduplicated repository list', () => {
-    const config = runConfig(options({ repos: ['a', 'b'] }), ['a']);
+    const config = runConfig(options({ repos: repoSpecs('a', 'b') }), repoSpecs('a'));
 
-    expect(config.repos).toEqual(['a']);
+    expect(config.repos).toEqual([{ repo: 'a' }]);
   });
 
   it('surfaces email mappings and the config file when set', () => {
     const config = runConfig(
       options({
-        repos: ['r'],
+        repos: repoSpecs('r'),
         maps: [
           { email: 'alice@example.com', name: 'Alice Smith' },
           { email: 'alice@work.com', name: 'Alice Smith' },
         ],
         configFile: 'config.yaml',
       }),
-      ['r'],
+      repoSpecs('r'),
     );
 
     expect(config.maps).toEqual(['alice@example.com=Alice Smith', 'alice@work.com=Alice Smith']);
@@ -116,7 +122,7 @@ describe('runConfig', () => {
   });
 
   it('omits maps and the config file when they were not given', () => {
-    const config = runConfig(options({ repos: ['r'] }), ['r']);
+    const config = runConfig(options({ repos: repoSpecs('r') }), repoSpecs('r'));
 
     expect('maps' in config).toBe(false);
     expect('configFile' in config).toBe(false);
@@ -139,7 +145,7 @@ describe('runConfigLines', () => {
     const repos = ['https://github.com/org/repo.git'];
     const lines = runConfigLines(
       options({
-        repos,
+        repos: repoSpecs(...repos),
         since: '2026-01-01',
         until: '2026-06-30',
         unit: 'month',
@@ -156,7 +162,7 @@ describe('runConfigLines', () => {
         parallel: 3,
         verbose: true,
       }),
-      repos,
+      repoSpecs(...repos),
     );
 
     expect(lines).toEqual([
@@ -182,21 +188,32 @@ describe('runConfigLines', () => {
   });
 
   it('lists every repository as a nested dash item', () => {
-    const lines = runConfigLines(options({ repos: ['a', 'b'] }), ['a', 'b']);
+    const lines = runConfigLines(options({ repos: repoSpecs('a', 'b') }), repoSpecs('a', 'b'));
 
     expect(lines.slice(0, 4)).toEqual(['configuration:', '  repos:', '    - a', '    - b']);
+  });
+
+  it('renders structured repo specs with branch, base, and ignored paths', () => {
+    const lines = runConfigLines(
+      options({
+        repos: [{ repo: 'r', branch: 'dev', base: 'main', ignore: ['docs/'] }],
+      }),
+      [{ repo: 'r', branch: 'dev', base: 'main', ignore: ['docs/'] }],
+    );
+
+    expect(lines).toContain('    - r (branch: dev, base: main, ignore: docs/)');
   });
 
   it('lists the email mappings as nested dash items', () => {
     const lines = runConfigLines(
       options({
-        repos: ['r'],
+        repos: repoSpecs('r'),
         maps: [
           { email: 'alice@example.com', name: 'Alice Smith' },
           { email: 'alice@work.com', name: 'Alice Smith' },
         ],
       }),
-      ['r'],
+      repoSpecs('r'),
     );
 
     expect(lines).toContain('  maps:');
@@ -205,7 +222,7 @@ describe('runConfigLines', () => {
   });
 
   it('shows the resolved defaults and omits unset optional fields', () => {
-    const lines = runConfigLines(options({ repos: ['r'] }), ['r']);
+    const lines = runConfigLines(options({ repos: repoSpecs('r') }), repoSpecs('r'));
 
     expect(lines).toEqual([
       'configuration:',
@@ -223,7 +240,7 @@ describe('runConfigLines', () => {
   });
 
   it('renders the deduplicated repository list', () => {
-    const lines = runConfigLines(options({ repos: ['a', 'b'] }), ['a']);
+    const lines = runConfigLines(options({ repos: repoSpecs('a', 'b') }), repoSpecs('a'));
 
     expect(lines).toContain('    - a');
     expect(lines).not.toContain('    - b');

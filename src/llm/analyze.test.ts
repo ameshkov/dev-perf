@@ -188,6 +188,8 @@ function inputFor(
 ): AnalyzeRepoInput {
   return {
     repo: 'https://example.com/repo.git',
+    branch: 'main',
+    head: 'cafebabe12345678',
     cloneDir,
     entryDir: path.dirname(llmDir),
     config: CONFIG,
@@ -330,6 +332,9 @@ describe('analyzeRepositoryLLM', () => {
       payload: LlmToolPayload;
       cacheVersion: number;
       repo: string;
+      branch: string;
+      head: string;
+      ignore: string[] | undefined;
       email: string;
       emails: string[];
       since: string;
@@ -340,8 +345,11 @@ describe('analyzeRepositoryLLM', () => {
     };
     // The key parts the filename hash is derived from, self-described.
     expect(cached.payload.overview).toBe(PAYLOAD_A.overview);
-    expect(cached.cacheVersion).toBe(3);
+    expect(cached.cacheVersion).toBe(6);
     expect(cached.repo).toBe('https://example.com/repo.git');
+    expect(cached.branch).toBe('main');
+    expect(cached.head).toBe('cafebabe12345678');
+    expect(cached.ignore).toBeUndefined();
     expect(cached.email).toBe('alice@example.com');
     expect(cached.emails).toEqual(['alice@example.com']);
     expect(cached.since).toBe(RANGE.since);
@@ -429,6 +437,105 @@ describe('analyzeRepositoryLLM', () => {
 
     expect(merged.prompts.length).toBeGreaterThan(0);
     expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+  });
+
+  it('keys cached results by the branch and the ignored paths', async () => {
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM({ ...inputFor(first, [alice]), ignore: ['docs/'] });
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    // A run on a different branch (same exclusions) must not reuse the
+    // branch-specific result.
+    const otherBranch = stub(true, PAYLOAD_B);
+    const branchResults = await analyzeRepositoryLLM({
+      ...inputFor(otherBranch, [alice]),
+      branch: 'dev',
+      ignore: ['docs/'],
+    });
+    expect(otherBranch.prompts.length).toBeGreaterThan(0);
+    expect(branchResults[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+
+    // A run with different exclusions on the same branch must not reuse
+    // the earlier result either.
+    const otherIgnore = stub(true, PAYLOAD_A);
+    await analyzeRepositoryLLM({ ...inputFor(otherIgnore, [alice]), ignore: ['vendor/'] });
+    expect(otherIgnore.prompts.length).toBeGreaterThan(0);
+  });
+
+  it('keys cached results by the base branch of the branch-delta', async () => {
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM({ ...inputFor(first, [alice]), base: 'main' });
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    // A run without the base (full history) must not reuse the delta
+    // result — the analysis covers a different commit pool and a
+    // different prompt.
+    const fullHistory = stub(true, PAYLOAD_B);
+    const fullResults = await analyzeRepositoryLLM(inputFor(fullHistory, [alice]));
+    expect(fullHistory.prompts.length).toBeGreaterThan(0);
+    expect(fullResults[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+  });
+
+  it('keys cached results by the head sha, so an advancing branch tip re-runs', async () => {
+    // A branch keeps its *name* as it advances; only the head sha moves.
+    // The cached result must not be reused when the head changed — the
+    // deterministic commit set the analysis describes is different.
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM(inputFor(first, [alice]));
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    const advanced = stub(true, PAYLOAD_B);
+    const results = await analyzeRepositoryLLM({
+      ...inputFor(advanced, [alice]),
+      head: 'deadbeef98765432',
+    });
+    expect(advanced.prompts.length).toBeGreaterThan(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+  });
+
+  it('keys cached results by the base exclusion sha, so a base advance re-runs', async () => {
+    // A base branch keeps its *name* as it advances; only the resolved
+    // exclusion sha moves. A delta run with the same base name but a
+    // different exclusion sha covers a different commit set and must
+    // not reuse the earlier result.
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM({
+      ...inputFor(first, [alice]),
+      base: 'main',
+      exclude: '1111111111111111',
+    });
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    const advancedBase = stub(true, PAYLOAD_B);
+    const results = await analyzeRepositoryLLM({
+      ...inputFor(advancedBase, [alice]),
+      base: 'main',
+      exclude: '2222222222222222',
+    });
+    expect(advancedBase.prompts.length).toBeGreaterThan(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
+  });
+
+  it('reuses a delta cache hit when head, base, and exclude match', async () => {
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    const delta: Partial<AnalyzeRepoInput> = {
+      base: 'main',
+      exclude: '1111111111111111',
+    };
+    await analyzeRepositoryLLM({ ...inputFor(first, [alice]), ...delta });
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    // Identical key parts (same head, base, and exclusion sha) reuse the
+    // cached analysis without prompting.
+    const second = stub(false, PAYLOAD_B);
+    const results = await analyzeRepositoryLLM({ ...inputFor(second, [alice]), ...delta });
+    expect(second.prompts).toHaveLength(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_A.overview);
   });
 
   it('reuses cached results for users with hits while analyzing the rest', async () => {

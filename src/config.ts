@@ -1,8 +1,9 @@
 /**
  * Resolution and validation of the report options from the YAML config
  * file. `resolveReportOptions` maps the kebab-case config keys to the
- * camelCase validated shape (repos from the `repos` key, numbers pass
- * through typed, `users-map` parsed into mapping entries), and
+ * camelCase validated shape (repos from the `repos` key, each entry
+ * normalized to a repository spec, numbers pass through typed,
+ * `users-map` parsed into mapping entries), and
  * `parseReportOptions` validates them against `reportOptionsSchema`.
  * The config file is the single source of options — the CLI carries no
  * flags beyond `--config`. The cross-field rules: when LLM analysis is
@@ -14,6 +15,8 @@
  */
 import { z } from 'zod';
 import type { DevPerfConfig } from './config-file.js';
+import { parseRepoConfigItem, repoSpecSchema } from './repo/repo-spec.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 import { emailMapEntrySchema, usersMapToEntries } from './util/email-map.js';
 import type { EmailMapEntry } from './util/email-map.js';
 import { periodUnitSchema } from './report/index.js';
@@ -25,8 +28,9 @@ import { periodUnitSchema } from './report/index.js';
  * options, so this is the input to `parseReportOptions`.
  */
 export interface ResolvedReportOptions {
-  /** Repositories to analyze (URLs or local paths). */
-  repos: string[];
+  /** Repositories to analyze, normalized to specs (URLs or local paths
+   * plus optional branch and ignored paths). */
+  repos: RepoSpec[];
   /** Start date (author date, UTC; any git date format). */
   since?: string;
   /** End date (author date, UTC; any git date format; default: today). */
@@ -76,8 +80,8 @@ export interface ResolvedReportOptions {
  */
 export const reportOptionsSchema = z
   .object({
-    /** Repositories to analyze (URLs or local paths); at least one. */
-    repos: z.array(z.string()).min(1, 'at least one repository is required'),
+    /** Repositories to analyze (normalized specs); at least one. */
+    repos: z.array(repoSpecSchema).min(1, 'at least one repository is required'),
     /** Start date (author date, UTC; any git date format). */
     since: z.string().optional(),
     /** End date (author date, UTC; any git date format; default: today). */
@@ -187,7 +191,7 @@ export function resolveReportOptions(
 ): ResolvedReportOptions {
   const maps = usersMapToEntries(config['users-map'] ?? {});
   return {
-    repos: config.repos ?? [],
+    repos: (config.repos ?? []).map(parseRepoConfigItem),
     since: config.since,
     until: config.until,
     unit: config.unit,

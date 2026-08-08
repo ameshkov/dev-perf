@@ -105,7 +105,7 @@ an unset or empty variable errors naming the file and the variable.
 
 | Key | Commands | Notes |
 | --- | --- | --- |
-| `repos` | report, compile | Repositories (URL or path); `repo#branch` analyzes that branch; `compile` keep-filter |
+| `repos` | report, compile | Repositories (URL or path) as a string or `{ repo, branch?, base-branch?, ignore? }`; a structured `branch` analyzes that branch as a delta vs the base (default: the repo's own default branch, then `main` → `master`); `ignore` excludes gitignore-style paths; `compile` keep-filter |
 | `since` / `until` | report | Analyzed author-date range (§5.1) |
 | `unit` | report | Period split; requires `since` |
 | `output` | report | JSON report file |
@@ -148,14 +148,31 @@ and uses a logical `pi/home/` agent home that is never created on disk
 - Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
   needed for the date range, but blobs are fetched on demand when the deterministic
   layer reads numstat data or the LLM agent requests a diff. Falls back to a full
-  clone when the hosting does not support partial clones. A `#branch` suffix on a
-  repository argument (`url#branch`) adds `--branch <branch>` to the clone, so that
-  repository is analyzed on the given branch instead of its default.
+  clone when the hosting does not support partial clones. A structured
+  `repos` entry (`{ repo, branch?, base?, ignore? }`, written as
+  `base-branch` in the config file) carries the branch to analyze, the base branch
+  the analysis is scoped against, plus the gitignore-style
+  paths excluded for that repository alone. A non-default branch is analyzed as a
+  branch-delta: only the commits reachable from its head but not from the base
+  (`git log HEAD --not <base>`, §5.1). The default base prefers the repository's
+  own default branch (resolved from `refs/remotes/origin/HEAD`), then `main`
+  before a stale leftover `master` (an explicit base resolves as `<base>` then
+  `origin/<base>`). A base that is the
+  analyzed branch head itself, or an unresolvable base, falls back to the full
+  history (never an error); `base-branch: ''` opts out into the full history.
 - Cache reuse: if `repo/` exists and `clone.json` matches the URL, skip cloning;
   the cache entry is keyed by the URL *and* the requested branch, so branch-specific
-  clones and LLM results never collide. `refresh` forces a re-clone. LLM results
-  are cached under the same entry and reused when parameters match; `refresh`
-  invalidates both (§6.6). On re-clone the old dir is removed.
+  clones and LLM results never collide. Concurrent clones of the same entry (the
+  parallel analysis of specs that share a URL and branch but differ in base or
+  ignored paths) are serialized per entry, so one entry is never cloned twice at
+  once. `refresh` forces a re-clone. LLM results
+  are cached under the same entry and reused when parameters match; the cache key
+  includes the branch, its head sha, the base and base sha, and the ignored paths
+  — so an advancing branch or base re-keys instead of reusing a stale analysis —
+  and bumps a version whenever the
+  analysis behavior changes, so switching either invalidates the corresponding
+  results; `refresh` invalidates everything (§6.6). On re-clone the old dir is
+  removed.
 - All git operations go through a small `execa`-based wrapper (`src/repo/git.ts`).
 
 ## 5. Deterministic analysis
@@ -169,6 +186,12 @@ and uses a logical `pi/home/` agent home that is never created on disk
     --pretty=format:%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e \
     --numstat --no-renames
   ```
+
+  For a branch-delta scope the same log adds the base exclusion:
+  `git log HEAD --not <base> --since=... --until=...` (the positive side is named
+  explicitly — `git log --not <base>` without a prior rev defaults to nothing).
+  The caller drops the exclusion when the base sha equals the analyzed head, so a
+  branch is never emptied by its own delta.
 
   Fields: `sha`, parent shas (`%P` — lets us detect merge commits), author name,
   author email, author date (ISO 8601), subject; followed by numstat rows
@@ -217,6 +240,14 @@ contribution.
 
 ### 5.4 Filtering
 
+- **Ignored paths** — a repository's configured `ignore` patterns
+  (gitignore-style, no `!` negation) drop the matching files right after
+  the commits are read and before they are grouped by author
+  (`src/deterministic/path-ignore.ts`): an ignored-only commit is dropped
+  entirely, a mixed commit keeps only its non-ignored files, and merge
+  commits (no numstat rows) are always kept. The single filtering point
+  makes both the deterministic metrics and the LLM commit list
+  exclusion-free.
 - **No exclusions** — bots (`[bot]` suffix, `dependabot`, `renovate`, …) and every
   other author are counted like anyone else.
 - **Merge commits** — counted, but reported separately so the line numbers are
@@ -297,13 +328,17 @@ binary on `PATH`:
   sessions do not re-explore.
 - **Per-user session**: the system prompt carries only who the agent is and the
   environment (the tool surface) — no per-run task details; the user
-  prompt carries the analysis task — identity, date range, and repo — together
+  prompt carries the analysis task — identity, date range, repo, the
+  analyzed **branch**, and the repository's **excluded paths** — together
   with the repo context and the user's commit list (sha, date, subject, numstat
-  totals, files). A merged identity (§5.3) is introduced to the agent by all of
-  its emails, so it treats commits authored under any of them as one
-  contributor's work. The agent then decides what to look at (via tools) and
-  finishes by calling the report tool with its analysis (§6.5). The context
-  lives in the same turn — no separate no-reply injection.
+  totals, files). The branch and the excluded paths are also named in the
+  orientation prompt (§5.4), so the agent scopes its exploration to the analyzed
+  branch and does not attribute or weigh changes under ignored paths even when
+  `git show`/`git log` surfaces them. A merged identity (§5.3) is introduced to
+  the agent by all of its emails, so it treats commits authored under any of
+  them as one contributor's work. The agent then decides what to look at (via
+  tools) and finishes by calling the report tool with its analysis
+  (§6.5). The context lives in the same turn — no separate no-reply injection.
 - Auto-compaction and auto-retry are enabled explicitly via
   `SettingsManager.inMemory({ compaction: { enabled: true }, retry: {
   enabled: true } })`.
@@ -381,16 +416,23 @@ rather than averaged into one description.
 ### 6.6 Caching and token usage
 
 - LLM analysis results are cached in the cache directory
-  (`<cache-dir>/<hash>/llm/`), keyed by (repo, identity, since, until, model,
-  context and output limits) — the identity is the full lowercased email set, not
-  just the primary email, so a newly merged identity (§5.3) can never reuse a
-  stale result cached for one of its constituent emails. The cache version is
+  (`<cache-dir>/<hash>/llm/`), keyed by (repo, branch, head sha, base, base
+  exclusion sha, ignored paths,
+  identity, since, until, model, context and output limits) — the identity is
+  the full lowercased email set, not just the primary email, so a newly merged
+  identity (§5.3) can never reuse a stale result cached for one of its
+  constituent emails; the branch, head sha, base, base sha, and ignored paths
+  are part of the key so switching any of them never reuses the wrong analysis,
+  and — because the head and base *shas* (not just the names) are keyed — an
+  advancing branch or base re-keys the cache instead of reusing a stale
+  analysis whose commit set no longer matches. The cache version is
   bumped whenever the analysis behavior changes, invalidating entries written by
   older versions. A rerun with the same parameters reuses them; `refresh`
   invalidates the cache and re-runs everything. The cached file stores all
-  cache-key components (repo, primary email, email set, range, model, limits)
-  next to the payload, so each file is self-describing; the filename hash
-  encodes the same components.
+  cache-key components (repo, branch, head, base, base sha, ignored paths,
+  primary email, email
+  set, range, model, limits) next to the payload, so each file is self-describing;
+  the filename hash encodes the same components.
 - `llm: false` produces the deterministic-only report (also the CI mode).
 - The report includes `tokenUsage` (non-cached input, cached read, and output
   tokens, read from the pi session's `getSessionStats()`). There is no cost
@@ -419,14 +461,17 @@ empty.
 {
   schemaVersion: 2,
   generatedAt: ISO,
-  parameters: { repos: [...], since, until, unit?, model?, llmEnabled },
+  parameters: {
+    repos: [ { repo, branch?, base?, ignore? }, ... ],
+    since, until, unit?, model?, llmEnabled
+  },
   periods: [
     {
       since: ISO (UTC instant, inclusive),
       until: ISO (UTC instant, inclusive),
       repositories: [
         {
-          repo, clonePath, branch, head,
+          repo, clonePath, branch, baseBranch?, head, ignoredPaths?,
           range: { since, until },
           stats: { totalCommits, totalUsers, topLanguages: [...] },
           users: [
@@ -482,6 +527,7 @@ dev-perf/
 │   │   ├── commits.ts                  # git log --numstat parsing
 │   │   ├── metrics.ts
 │   │   ├── identity.ts                 # email normalization + grouping
+│   │   ├── path-ignore.ts              # gitignore-style ignore filtering (§5.4)
 │   │   └── languages.ts                # extension → language map
 │   ├── llm/
 │   │   ├── runtime.ts                   # in-process pi ModelRuntime + provider registration

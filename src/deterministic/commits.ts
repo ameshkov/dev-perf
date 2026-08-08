@@ -68,14 +68,23 @@ export interface Commit {
 }
 
 /**
- * Date range the scan is bounded by and filtered to. Date-only bounds
- * are normalized to a fixed time of day (`normalizeBoundDate`).
+ * Date range the scan is bounded by and filtered to, plus an optional
+ * base commit the scan excludes. Date-only bounds are normalized to a
+ * fixed time of day (`normalizeBoundDate`).
  */
 export interface CommitRange {
   /** Start bound, any git date format; both ends of the range inclusive. */
   since?: string;
   /** End bound, any git date format; both ends of the range inclusive. */
   until?: string;
+  /**
+   * Base commit sha to exclude (branch-delta): only commits reachable
+   * from the branch head but not from this commit are scanned
+   * (`git log HEAD --not <sha>`). Must not equal the branch head — the
+   * caller drops the exclusion in that case, so the analyzed branch is
+   * never emptied by its own delta.
+   */
+  exclude?: string;
 }
 
 /**
@@ -107,7 +116,8 @@ function normalizeBoundDate(date: string): string {
 /**
  * Applies the date-only midnight normalization to both sides of a
  * range, so the scan bound and the in-code filter agree with the
- * resolved range reported in the output.
+ * resolved range reported in the output. The optional base exclusion
+ * passes through untouched.
  *
  * @param range - The range as given on the command line.
  * @returns The range with date-only bounds normalized.
@@ -116,6 +126,7 @@ function normalizeRange(range: CommitRange): CommitRange {
   return {
     since: range.since === undefined ? undefined : normalizeBoundDate(range.since),
     until: range.until === undefined ? undefined : normalizeBoundDate(range.until),
+    ...(range.exclude === undefined ? {} : { exclude: range.exclude }),
   };
 }
 
@@ -194,7 +205,9 @@ function parseNumstatRow(line: string): CommitFile {
  * dates. Bounds are resolved by git's own date parser under `TZ=UTC`;
  * a date-only bound is normalized to UTC midnight
  * (`normalizeBoundDate`), so the range starts at the beginning of the
- * boundary days regardless of when the analysis runs. An empty
+ * boundary days regardless of when the analysis runs. An optional
+ * `range.exclude` (branch-delta) restricts the scan to commits not
+ * reachable from that base commit. An empty
  * repository yields an empty list.
  *
  * @param repoDir - The repository working tree.
@@ -216,18 +229,26 @@ export async function readCommits(repoDir: string, range: CommitRange = {}): Pro
 
 /**
  * Runs the single-pass `git log` with the `%x1f`/`%x1e` record format,
- * bounded by commit dates via `--since`/`--until` when given. An empty
+ * bounded by commit dates via `--since`/`--until` when given, and — for
+ * branch-delta — scoped to the commits not reachable from the excluded
+ * base via `HEAD --not <sha>`. The positive side is named explicitly
+ * (`HEAD`) because `git log --not <sha>` without a prior rev defaults
+ * to nothing, not to the branch head. An empty
  * repository fails git log with "does not have any commits yet"; that
  * is caught here and reported as an empty log.
  *
  * @param repoDir - The repository working tree.
- * @param range - Scan bounds (commit dates).
+ * @param range - Scan bounds (commit dates) and the optional base
+ * exclusion.
  * @returns The raw git log output.
  * @throws {GitError} When git log fails for a reason other than an
  * empty repository.
  */
 async function gitLogBounded(repoDir: string, range: CommitRange): Promise<string> {
   const args = ['log'];
+  if (range.exclude !== undefined) {
+    args.push('HEAD', '--not', range.exclude);
+  }
   if (range.since !== undefined) {
     args.push(`--since=${range.since}`);
   }

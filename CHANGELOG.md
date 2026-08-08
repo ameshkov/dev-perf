@@ -10,82 +10,111 @@ and this project adheres to
 
 ### Added
 
-- `compile.report` config key: the input JSON report file for the
-  `compile` step (replaces the `compile <report>` positional argument).
-- A YAML config file shared by `report` and `compile`: `--config <path>`
-  selects it, else `./config.yaml` auto-loads from the working directory
-  when it exists, and the config file is the single source of options.
-  Top-level keys apply to both commands (repos, users-map, verbose);
-  `compile`-only keys live under a nested `compile` section (`report`,
-  `output`, `include-users`, `exclude-users`, `exclude-repos`).
-  `${ENV_VAR}` references inside the file are expanded from the
-  environment (a `.env` file provides them), so the LLM provider
-  configuration and API key stay out of version control;
-  `config.example.yaml` is the starting template.
-- `report` now merges author identities at report time through the
-  config `users-map` key (an `email: name` mapping): emails mapping to
-  the same display name merge into one identity under that name during
-  analysis, so deterministic metrics are exact, the LLM layer runs one
-  session per merged person (naming every email of the identity, so a
-  merged person's commits are analyzed as one contributor), and the
-  JSON report carries the full `emails` list for each identity.
-- Per-repository branch selection: append `#branch` to a `repos` config
-  entry to analyze that repository's given branch instead of its
-  default — every repository of a run can pick its own branch
-  (`https://github.com/org/repo.git#dev` analyzes the `dev` branch
-  alone). Each branch is cached under its own cache entry, so switching
-  branches never reuses the wrong clone, and the report entry records
-  the analyzed branch.
+- A YAML config file as the single source of options, shared by
+  `report` and `compile`: `--config <path>` selects it, else
+  `./config.yaml` is auto-loaded from the working directory when it
+  exists. Top-level keys apply to both commands (`repos`, `users-map`,
+  `verbose`), `report`-only keys sit next to them (`since`, `until`,
+  `unit`, `output`, `cache-dir`, `refresh`, `llm`, `model`,
+  `provider-url`, `api-key`, the `limit-*` keys, `llm-retries`,
+  `parallel`), and `compile`-only keys live under a nested `compile`
+  section (`report`, `output`, `include-users`, `exclude-users`,
+  `exclude-repos`). Unknown keys are rejected.
+- `${ENV_VAR}` references in the config are expanded from the
+  environment — with a `.env` file in the working directory
+  auto-loaded at startup — before YAML parsing, so the LLM provider
+  configuration and API key stay out of version control. An unset or
+  empty variable errors out at load.
+- Identity merging at report time via the `users-map` key (an
+  `email: name` mapping): emails mapping to the same display name
+  merge into one identity during analysis — deterministic metrics are
+  exact, the LLM runs one session per merged person, and the JSON
+  report carries the full `emails` list of the identity.
+- Per-repository analysis via a structured `repos` entry
+  `{ repo, branch?, base-branch?, ignore? }`:
+    - `branch` analyzes that repository's branch instead of its
+      default; each branch is cached under its own cache entry, and
+      the report entry records it.
+    - `base-branch` scopes a non-default branch to the commits not yet
+      on the base (per-release attribution); it defaults to the
+      repository's own default branch (from `origin/HEAD`, then `main`
+      before `master`), an explicit `base-branch` overrides it, and
+      `''` restores full history. The report entry records the resolved
+      `baseBranch`.
+    - `ignore` excludes gitignore-style paths for that repository
+      alone: commits whose files all fall under ignored paths are
+      dropped, and a mixed commit keeps only its non-ignored files, in
+      both the deterministic metrics and the LLM analysis. The report
+      entry records `ignoredPaths`.
+- Always-visible stderr start/end markers for every command
+  (`starting report` / `finished report in <ms> ms`, and the same for
+  `compile`), logged even when the run fails.
+- The LLM result cache is now keyed by the clone's head and resolved
+  base commit shas (plus branch and ignored paths), so an advancing
+  branch or base re-runs the analysis instead of reusing a stale result.
 
 ### Changed
 
+- The report's `parameters.repos` and the startup configuration dump
+  record each analyzed repository as a full spec — the clone target
+  plus the branch, base scoping, and ignored paths — instead of a bare
+  URL string, so entries analyzing the same repository differently
+  (e.g. at different branches) are distinguishable; `compile` still
+  reads older reports whose entries were plain strings.
+- The README is shortened: the full configuration reference moved to
+  `docs/configuration.md` and the README shows a simple configuration
+  instead.
 - The CLI is reduced to the single `--config` option: `report` and
-  `compile` are step selectors (exactly one step per run) and every
-  functional setting lives in the config file. All `report` flags
-  (`--since`, `--until`, `--unit`, `--output`, `--cache-dir`,
-  `--refresh`, `--no-llm`, `--model`, `--provider-url`, `--api-key`,
-  the `limit-*` keys, `--llm-retries`, `--map`, `--parallel`,
-  `--verbose`) and the `[repo...]` positional were removed, as were the
-  `compile` flags (`--output`, `--map`, `--include-user`,
-  `--exclude-user`, `--repo`, `--exclude-repo`) and its `<report>`
-  positional (see `compile.report` above).
-- Every command run now logs start/end markers to stderr — `starting
-  report` then `finished report in <ms> ms` (and the same for
-  `compile`) — bracketing the command's execution so its beginning and
-  end (with duration) are always visible in the log, even without
-  verbose.
-- Configuration moved from the `DEV_PERF_*` / `DEV_PERF_COMPILE_*`
-  environment variables to the YAML config file. The `DEV_PERF_*`
-  option layer is removed; `.env` remains only as the source for
-  `${ENV_VAR}` expansion inside the config. `--maps-file` is replaced
-  by the config `users-map` key, and the `compile` `<report>` argument
-  is replaced by the `compile.report` config key.
+  `compile` are step selectors, and every functional setting lives in
+  the config file. All `report` flags and the `[repo...]` positional,
+  and all `compile` flags and its `<report>` positional, were removed.
+- The `DEV_PERF_*` / `DEV_PERF_COMPILE_*` environment-variable option
+  layer is removed; `.env` remains only as the source for `${ENV_VAR}`
+  expansion. `--maps-file` becomes the `users-map` config key, and the
+  `compile <report>` positional becomes `compile.report`.
+- Validation errors name the config key the value came from
+  (`compile.include-users`, `users-map`, `provider-url`, ...) instead
+  of CLI flags.
+- Scoped per-repository log labels carry the analyzed branch
+  (`repo#branch`) instead of an order-based suffix.
+- The default base branch prefers the repository's own default
+  (resolved from `origin/HEAD`) before a stale leftover `master`; an
+  unresolvable *default* base is logged at info instead of warning on
+  every run, while an unresolvable *configured* base still warns.
 
 ### Fixed
 
-- A `repos` entry with a `#branch` suffix (e.g.
-  `https://github.com/org/repo.git#dev`) no longer silently drops every
-  repository from the `compile` output: the `#branch` suffix is stripped
-  before the repo selection is matched against the report entries, so
-  the same branch-qualified `repos` config works for both `report` and
-  `compile`.
-- The `finished report in <ms> ms` / `finished compile in <ms> ms` end
-  marker is now logged for failed runs too, so the start/end marker pair
-  brackets every run even when it errors.
-- A `${ENV_VAR}` reference whose value contains `#` or a newline now
-  fails loudly at config load instead of silently corrupting the
-  parsed config (a `#` would truncate the value as a YAML comment, a
-  newline could inject extra keys).
-- `users-map` display names may now contain commas: config mappings are
-  parsed straight from the YAML instead of being re-split like
-  comma-separated lists (which mangled names such as `Doe, John`).
-- `--config ""` is treated as no config file, so the `config.yaml`
-  autoload still applies.
-- Validation errors always name the config key the value came from
-  (`compile.include-users`, `compile.exclude-repos`, `users-map`,
-  `provider-url`, ...) — there are no CLI flags to name anymore, and
-  the missing-`api-key` error points to the `api-key` config key as the
-  source.
+- The committed `config.example.yaml` now sets `compile.report`, so a
+  `compile` run against the copied example config no longer fails with
+  `compile.report: the report file is required`.
+- A `${ENV_VAR}` value containing `#` or a newline fails loudly
+  instead of silently corrupting the parsed YAML.
+- `users-map` display names may contain commas: mappings are parsed
+  straight from the YAML instead of being re-split like
+  comma-separated lists.
+- `--config ""` counts as no config, so the `config.yaml` autoload
+  still applies.
+- Ignored-path matching matches git: a trailing `/` or `**` excludes a
+  directory subtree only (never a file sharing the name), a middle
+  `**` never matches a concatenated path, consecutive `**` segments
+  behave as one, and pattern whitespace is trimmed.
+- `git commit --allow-empty` commits are not dropped by ignore
+  filtering.
+- Two `repos` entries analyzing the same repository/branch with
+  different ignore lists or base scoping are no longer treated as
+  duplicates; concurrent clones of one cache entry are serialized so a
+  parallel run never re-clones the same directory twice.
+- A camelCase `base` key on a structured `repos` entry is rejected
+  loudly — `base-branch` is the only valid spelling.
+- A genuine git failure while resolving the base branch surfaces as an
+  error instead of being mistaken for a missing base and silently
+  analyzing full history.
+- Branch names and ignored-path patterns are escaped and normalized
+  before being rendered into the LLM prompts, so a repository-derived
+  value cannot break out of quoting or code spans.
+- When ignored paths exclude a repository's entire history, the run
+  warns naming the repository instead of quietly producing an empty
+  entry.
 
 ## [v1.0.0] - 2026-08-06
 

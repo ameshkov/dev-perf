@@ -245,6 +245,55 @@ describe('ensureClone', () => {
     }
   });
 
+  it('shares one clone between concurrent calls on the same cache entry', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    try {
+      // The parallel analysis of specs that share a URL and branch (but
+      // differ in base or ignored paths) calls ensureClone concurrently
+      // on the same entry. Both must resolve to the same repoDir and
+      // head — never two clones racing on the same directory.
+      const [first, second] = await Promise.all([
+        ensureClone(fixture.dir, { cacheDir }),
+        ensureClone(fixture.dir, { cacheDir }),
+      ]);
+      expect(first.entryDir).toBe(second.entryDir);
+      expect(first.repoDir).toBe(second.repoDir);
+      expect(first.head).toBe(second.head);
+      expect(first.head).toBe(await gitRevParse(fixture.dir, ['HEAD']));
+
+      // A later call reuses the (now cached) clone.
+      const third = await ensureClone(fixture.dir, { cacheDir });
+      expect(third.reused).toBe(true);
+      expect(third.repoDir).toBe(first.repoDir);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('shares one clone between concurrent branch clones on the same entry', async () => {
+    const fixture = await buildFixture();
+    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
+    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
+    const cacheDir = await tempCacheDir();
+    try {
+      const [dev, devAgain] = await Promise.all([
+        ensureClone(fixture.dir, { cacheDir, branch: 'dev' }),
+        ensureClone(fixture.dir, { cacheDir, branch: 'dev' }),
+      ]);
+      expect(dev.entryDir).toBe(devAgain.entryDir);
+      expect(dev.repoDir).toBe(devAgain.repoDir);
+      expect(dev.head).toBe(devHead);
+      // A second branch uses a different entry and is not affected.
+      const main = await ensureClone(fixture.dir, { cacheDir, branch: 'main' });
+      expect(main.entryDir).not.toBe(dev.entryDir);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
   it('clones the requested branch and records it in clone.json', async () => {
     const fixture = await buildFixture();
     // main has two commits; dev branches from main with one extra commit.

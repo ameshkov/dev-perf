@@ -2,25 +2,56 @@
 # Copy this file to config.yaml and fill in real values. config.yaml is
 # gitignored; --config <path> selects a file explicitly, otherwise
 # ./config.yaml is auto-loaded from the working directory when it
-# exists. The config file is the single source of options — the CLI
-# carries no flags beyond --config, so every setting lives here.
+# exists. Every value can still be overridden by a command-line flag —
+# the flag wins.
 #
 # Two kinds of keys share the file: top-level keys are read by both
 # `report` and `compile` (repos, users-map, verbose); `compile`-only
 # keys live under the nested `compile` section.
 
-# Repositories to analyze (report), or to keep in the report (compile).
-# URLs or local paths, one per dash item. Append #branch to analyze
-# that repository's branch instead of its default (each repository of a
-# run can pick its own branch):
+# Repositories to analyze when no <repo...> arguments are passed
+# (report), or to keep in the report (compile). URLs or local paths,
+# one per dash item. Append #branch to analyze that repository's branch
+# instead of its default, or use a structured map with an optional
+# branch and gitignore-style paths to exclude from that repository's
+# analysis (a trailing / excludes a directory subtree, a pattern without
+# / matches a basename at any depth, slash-carrying patterns are
+# root-anchored; no ! negation):
 repos:
-  - https://github.com/AdguardTeam/AdguardBrowserExtension.git
-  # - https://github.com/org/repo.git#dev
-  # - /path/to/local/repo#release-2
+  # Full master branch analysis
+  - repo: https://github.com/AdguardTeam/AdguardBrowserExtension.git
+    branch: master
+    ignore:
+      - Extension/filters/
+  # Analyze the release/v5.5 branch diff to master since it's not merged yet
+  # and it may contain some important work.
+  - repo: https://github.com/AdguardTeam/AdguardBrowserExtension.git
+    branch: release/v5.5
+    base-branch: master
+    ignore:
+      - Extension/filters/
+  # Full master branch analysis
+  - repo: https://github.com/AdguardTeam/tsurlfilter.git
+    branch: master
+  # Large task with a separate branch
+  - repo: https://github.com/AdguardTeam/tsurlfilter.git
+    branch: release/agtree-v5
+    base-branch: master
+  # Separate branch for the browser extension v5.5 release
+  - repo: https://github.com/AdguardTeam/tsurlfilter.git
+    branch: release/browser-extension-v5.5
+    base-branch: master
+#   - repo: https://github.com/org/other.git
+#     branch: release/v5
+#     base-branch: main            # scope to the delta vs main
+#     # base-branch: ''            # empty string = full history
+#     ignore:
+#       - docs/
+#       - vendor/
 
 # Analyzed author-date range (any git date format):
-since: 2025-08-01
-until: 2026-08-01
+since: 2025-07-01
+until: 2026-07-01
 
 # Split the range into UTC-aligned periods
 # (day/week/month/quarter/year). Requires since:
@@ -73,15 +104,15 @@ users-map:
   's.belov@adguard.com': 'Sergei Belov'
 
 # Analyze up to N repositories in parallel (default: 1):
-# parallel: 2
+parallel: 4
 
 # Verbose logging:
 # verbose: true
 
 # `compile`-only keys under the nested `compile` section; the shared
 # keys above (repos, users-map, verbose) also apply to `compile`.
-# report is the input JSON report file (as written by `report`) and
-# output is the markdown report output directory:
+# report is the input JSON report (as written by `report` to the
+# `output` key above); output is the markdown report output directory:
 compile:
   report: output/report.json
   output: output/report

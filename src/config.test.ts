@@ -239,7 +239,7 @@ describe('reportOptionsSchema', () => {
 
   it('rejects duplicate mapped emails under the users-map key', () => {
     const result = reportOptionsSchema.safeParse({
-      repos: ['https://github.com/org/repo.git'],
+      repos: [{ spec: 'https://github.com/org/repo.git', repo: 'https://github.com/org/repo.git' }],
       llm: false,
       maps: [
         { email: 'a@example.com', name: 'One' },
@@ -306,7 +306,25 @@ describe('resolveReportOptions', () => {
   it('defaults repositories to an empty list', () => {
     expect(resolveReportOptions({}).repos).toEqual([]);
     expect(resolveReportOptions({ repos: ['https://github.com/org/a.git'] }).repos).toEqual([
-      'https://github.com/org/a.git',
+      { repo: 'https://github.com/org/a.git' },
+    ]);
+  });
+
+  it('normalizes structured repos entries into specs with branch and ignored paths', () => {
+    const resolved = resolveReportOptions({
+      repos: [
+        'https://github.com/org/a.git',
+        { repo: 'https://github.com/org/b.git', branch: 'dev', ignore: ['docs/'] },
+      ],
+    });
+
+    expect(resolved.repos).toEqual([
+      { repo: 'https://github.com/org/a.git' },
+      {
+        repo: 'https://github.com/org/b.git',
+        branch: 'dev',
+        ignore: ['docs/'],
+      },
     ]);
   });
 
@@ -326,7 +344,7 @@ describe('parseReportOptions', () => {
     expect(options.limitContext).toBe(262144);
     expect(options.limitOutput).toBe(2048);
     expect(options.llmRetries).toBe(2);
-    expect(options.repos).toEqual(['https://github.com/org/repo.git']);
+    expect(options.repos).toEqual([{ repo: 'https://github.com/org/repo.git' }]);
   });
 
   it('accepts an LLM-enabled run configured entirely from the config file', () => {
@@ -385,7 +403,7 @@ describe('parseReportOptions', () => {
   it('rejects duplicate mapped emails, naming the users-map key', () => {
     expect(() =>
       parseReportOptions({
-        repos: ['r'],
+        repos: [{ repo: 'r' }],
         llm: false,
         maps: [
           { email: 'a@example.com', name: 'One' },
@@ -398,7 +416,7 @@ describe('parseReportOptions', () => {
   it('reports every duplicated email in one pass', () => {
     expect(() =>
       parseReportOptions({
-        repos: ['r'],
+        repos: [{ repo: 'r' }],
         llm: false,
         maps: [
           { email: 'a@example.com', name: 'One' },
@@ -408,6 +426,15 @@ describe('parseReportOptions', () => {
         ],
       }),
     ).toThrow(/email 'a@example\.com' is mapped more than once[\s\S]*email 'b@example\.com'/);
+  });
+
+  it('rejects an invalid repository spec, naming its path', () => {
+    expect(() => parseReportOptions({ repos: [{ repo: '' }], llm: false })).toThrow(
+      /repos\.0\.repo: a repository URL or local path is required/,
+    );
+    expect(() => parseReportOptions({ repos: [{ repo: 'r', ignore: [''] }], llm: false })).toThrow(
+      /repos\.0\.ignore\.0: an ignore pattern must be non-empty/,
+    );
   });
 
   it('reports a clean validation error for a null or undefined input', () => {

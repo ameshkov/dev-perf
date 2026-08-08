@@ -6,6 +6,7 @@
  * defaults to `"skipped"`.
  */
 import { z } from 'zod';
+import { repoSpecSchema } from '../repo/repo-spec.js';
 
 /**
  * Per-language contribution counts: cloc-style counting
@@ -490,8 +491,15 @@ export const repositorySchema = z.object({
   clonePath: z.string(),
   /** Branch the clone was checked out on. */
   branch: z.string(),
+  /** The resolved base branch the analysis was scoped against
+   * (branch-delta): the entry's commits are those not reachable from
+   * it, when delta analysis was in effect. */
+  baseBranch: z.string().optional(),
   /** Head commit sha of the clone. */
   head: z.string(),
+  /** Gitignore-style paths excluded from the analysis of this
+   * repository, when any were configured. */
+  ignoredPaths: z.array(z.string()).optional(),
   /** Analyzed date range (author dates, UTC). */
   range: z.object({
     /** Start of the range. */
@@ -512,14 +520,31 @@ export const repositorySchema = z.object({
 export type Repository = z.infer<typeof repositorySchema>;
 
 /**
+ * One `parameters.repos` entry: the full spec of an analyzed
+ * repository — the clone target plus its optional branch, the base the
+ * analysis is scoped against, and the ignored paths. The entry schema
+ * reuses `repoSpecSchema` (the same validation as the resolved config
+ * specs), and additionally accepts a legacy plain-string entry — a bare
+ * clone target — from reports written before the spec was recorded;
+ * both forms normalize to a spec, so the report type always carries
+ * `RepoSpec[]`.
+ */
+const repoSpecEntrySchema = z.preprocess(
+  (value) => (typeof value === 'string' ? { repo: value } : value),
+  repoSpecSchema,
+);
+
+/**
  * Parameters of the analysis run that produced the report.
  *
  * @internal Exported for tests only; referenced by `reportSchema`
  * within the module. Not part of the public module API.
  */
 export const parametersSchema = z.object({
-  /** Repositories analyzed, as given on the command line. */
-  repos: z.array(z.string()).min(1),
+  /** Repositories analyzed, as full specs — the clone target plus the
+   * branch, base scoping, and ignored paths used for the analysis — in
+   * input order, one per analyzed entry. */
+  repos: z.array(repoSpecEntrySchema).min(1),
   /** Start of the analyzed range (author date, UTC). */
   since: z.string(),
   /** End of the analyzed range (author date, UTC). */

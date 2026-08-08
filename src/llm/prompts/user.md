@@ -2,7 +2,14 @@
 
 Analyze the git contributions of {{name}} ({{email}}){{identityNote}} in
 the repository at {{repo}}. The analysis covers commits whose author
-date lies in the range {{since}} to {{until}} (UTC).
+date lies in the range {{since}} to {{until}} (UTC) on {{branch}}.
+
+{{scopeNote}}
+
+The following paths are excluded from the analysis — do not attribute
+or weigh changes inside them, even when they appear while you inspect
+the commits:
+{{ignoredPaths}}
 
 ## Repository context
 

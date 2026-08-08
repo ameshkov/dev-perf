@@ -10,6 +10,8 @@
  */
 import type { ReportOptions } from './config.js';
 import { resolveCacheDir } from './repo/cache.js';
+import { repoSpecLabel } from './repo/repo-spec.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 
 /** Replacement for a short secret that must not be shown at all. */
 const FULLY_MASKED = '***';
@@ -23,8 +25,8 @@ const SECRET_EDGE_LENGTH = 4;
  * matching the report JSON style.
  */
 interface RunConfig {
-  /** Repositories to analyze, deduplicated, in input order. */
-  repos: string[];
+  /** Repositories to analyze, deduplicated, in input order, as full specs. */
+  repos: RepoSpec[];
   /** Start bound as given, if any. */
   since?: string;
   /** End bound as given, if any. */
@@ -93,7 +95,7 @@ export function maskSecret(secret: string): string {
  * `runConfigLines` within the module. Not part of the public module
  * API.
  */
-export function runConfig(options: ReportOptions, repos: readonly string[]): RunConfig {
+export function runConfig(options: ReportOptions, repos: readonly RepoSpec[]): RunConfig {
   return {
     repos: [...repos],
     // Optional keys stay absent (not `undefined`) when unset,
@@ -132,13 +134,16 @@ export function runConfig(options: ReportOptions, repos: readonly string[]): Run
  * @returns The config lines, without the logger's timestamp/level
  * prefix.
  */
-export function runConfigLines(options: ReportOptions, repos: readonly string[]): string[] {
+export function runConfigLines(options: ReportOptions, repos: readonly RepoSpec[]): string[] {
   const lines = ['configuration:'];
   for (const [key, value] of Object.entries(runConfig(options, repos))) {
     if (Array.isArray(value)) {
       lines.push(`  ${key}:`);
       for (const item of value) {
-        lines.push(`    - ${item}`);
+        // The `repos` items are specs and render with their branch,
+        // base, and ignored paths; the other array fields (`maps`) are
+        // plain strings.
+        lines.push(`    - ${typeof item === 'string' ? item : repoSpecLabel(item)}`);
       }
     } else {
       lines.push(`  ${key}: ${String(value)}`);

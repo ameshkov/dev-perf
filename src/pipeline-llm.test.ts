@@ -15,6 +15,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import type { ReportOptions } from './config.js';
+import { parseRepoSpec } from './repo/repo-spec.js';
 import { createLlmRuntime } from './llm/runtime.js';
 import type { LlmRuntimeConfig } from './llm/runtime.js';
 import { createSessionService } from './llm/session.js';
@@ -189,7 +190,7 @@ describe('runPipeline with LLM analysis', () => {
     try {
       const report = await runPipeline(
         options({
-          repos: [repo.url],
+          repos: [parseRepoSpec(repo.url)],
           cacheDir,
           since: '2026-01-01T00:00:00Z',
           until: '2026-01-31T23:59:59Z',
@@ -238,7 +239,7 @@ describe('runPipeline with LLM analysis', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const { dispose } = stubRuntime({ callTool: false, payload: PAYLOAD, replyText: 'ok' });
     try {
-      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 0 });
+      const runOptions = options({ repos: [parseRepoSpec(repo.url)], cacheDir, llmRetries: 0 });
       await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .*: LLM analysis for Alice did not call devperf_report/,
       );
@@ -275,7 +276,7 @@ describe('runPipeline with LLM analysis', () => {
       promptError,
     });
     try {
-      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 0 });
+      const runOptions = options({ repos: [parseRepoSpec(repo.url)], cacheDir, llmRetries: 0 });
       await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .*: analysis of Alice <alice@example.com> \(session ses_\d+\) failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:50664/,
       );
@@ -300,7 +301,7 @@ describe('runPipeline with LLM analysis', () => {
     vi.mocked(createLlmRuntime).mockRejectedValue(new Error('pi runtime unavailable'));
     try {
       await expect(
-        runPipeline(options({ repos: [repo.url], cacheDir, llmRetries: 0 })),
+        runPipeline(options({ repos: [parseRepoSpec(repo.url)], cacheDir, llmRetries: 0 })),
       ).rejects.toThrow(/LLM analysis failed for .*: pi runtime unavailable/);
     } finally {
       await removeFixtureRepo(repo);
@@ -317,7 +318,9 @@ describe('runPipeline with LLM analysis', () => {
       },
     ]);
     try {
-      const report = await runPipeline(options({ repos: [repo.url], cacheDir, llm: false }));
+      const report = await runPipeline(
+        options({ repos: [parseRepoSpec(repo.url)], cacheDir, llm: false }),
+      );
 
       expect(createLlmRuntime).not.toHaveBeenCalled();
       expect(report.parameters.llmEnabled).toBe(false);
@@ -338,7 +341,7 @@ describe('runPipeline with LLM analysis', () => {
     ]);
     try {
       const report = await runPipeline(
-        options({ repos: [repo.url], cacheDir, since: '2026-01-01T00:00:00Z' }),
+        options({ repos: [parseRepoSpec(repo.url)], cacheDir, since: '2026-01-01T00:00:00Z' }),
       );
 
       expect(createLlmRuntime).not.toHaveBeenCalled();
@@ -367,7 +370,7 @@ describe('runPipeline with LLM analysis', () => {
     try {
       const report = await runPipeline(
         options({
-          repos: [repo.url],
+          repos: [parseRepoSpec(repo.url)],
           cacheDir,
           unit: 'month',
           since: '2026-01-01T00:00:00Z',
@@ -434,7 +437,7 @@ describe('runPipeline with LLM analysis', () => {
       promptFailures: 1,
     });
     try {
-      const report = await runPipeline(options({ repos: [repo.url], cacheDir }));
+      const report = await runPipeline(options({ repos: [parseRepoSpec(repo.url)], cacheDir }));
 
       // Two attempts: the first analysis prompt fails, the retry
       // succeeds and the report is written with the completed analysis.
@@ -469,7 +472,7 @@ describe('runPipeline with LLM analysis', () => {
       promptFailures: 99,
     });
     try {
-      const runOptions = options({ repos: [repo.url], cacheDir, llmRetries: 1 });
+      const runOptions = options({ repos: [parseRepoSpec(repo.url)], cacheDir, llmRetries: 1 });
       await expect(runPipeline(runOptions)).rejects.toThrow(
         /LLM analysis failed for .* after 2 attempts: .*analysis of Alice <alice@example.com>.*failed: fetch failed/,
       );
@@ -497,7 +500,7 @@ describe('runPipeline with LLM analysis', () => {
     vi.mocked(createLlmRuntime).mockRejectedValueOnce(new Error('pi runtime unavailable'));
     const { dispose } = stubRuntime({ callTool: true, payload: PAYLOAD, replyText: 'ok' });
     try {
-      const report = await runPipeline(options({ repos: [repo.url], cacheDir }));
+      const report = await runPipeline(options({ repos: [parseRepoSpec(repo.url)], cacheDir }));
 
       expect(createLlmRuntime).toHaveBeenCalledTimes(2);
       // Only the second (successful) runtime needs disposing.

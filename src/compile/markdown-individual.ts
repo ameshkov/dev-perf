@@ -12,6 +12,7 @@ import { userSlug } from './chart-util.js';
 import type { ChartData, CountRow, UserSeries } from './chart-data.js';
 import { SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
 import type { EmailMap } from '../util/email-map.js';
+import { repoSpecLabel } from '../repo/repo-spec.js';
 import { bullets, chartAsset, chartBlock, formatInt, table } from './markdown-util.js';
 import { statisticsTable, userSummaryLine } from './markdown-user.js';
 import type { CompileOptions } from './options.js';
@@ -207,7 +208,7 @@ function appendixSection(data: ChartData, options: CompileOptions, emailMap: Ema
     `### Parameters\n\n${table(
       ['Parameter', 'Value'],
       [
-        ['Repositories', data.parameters.repos.join(', ')],
+        ['Repositories', data.parameters.repos.map(repoSpecLabel).join(', ')],
         ['Range', `${data.parameters.since} → ${data.parameters.until}`],
         ['Period unit', data.parameters.unit ?? '-'],
         ['Model', data.parameters.model ?? '-'],

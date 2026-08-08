@@ -38,6 +38,18 @@ export interface EnsureCloneOptions {
   gitBinary?: string;
 }
 
+/**
+ * In-flight clone promises keyed by cache entry directory: the pipeline
+ * analyzes repositories in parallel, and two specs that share a URL and
+ * branch but differ in their base or ignored paths are distinct
+ * analyses that land on the *same* cache entry. Without this lock the
+ * two would call `ensureClone` on the same entry concurrently and race
+ * on its `repo/` directory (a concurrent `rm`/`mkdir`/clone). Instead
+ * the first caller clones and later callers await the same in-flight
+ * promise, so one entry is cloned exactly once per run.
+ */
+const inFlightClones = new Map<string, Promise<CloneResult>>();
+
 /** Result of `ensureClone`. */
 export interface CloneResult {
   /** Absolute path of the clone's cache entry directory
@@ -109,9 +121,14 @@ export function cloneTarget(repo: string): string {
  * one is given) and falls back to a full clone when the hosting
  * rejects partial clones. Writes `clone.json` after cloning. The
  * cache entry is keyed by the URL and the requested branch, so
- * different branches never share a cache entry. The clone start,
- * naming the cache entry directory, is logged through the scoped
- * logger (verbose); the caller logs the outcome with its duration.
+ * different branches never share a cache entry. Concurrent calls for
+ * the *same* entry (the parallel analysis of specs that share a URL and
+ * branch but differ in base or ignored paths) share one clone: the
+ * first caller clones and the rest await the same in-flight promise,
+ * so the entry's `repo/` directory is never touched by two clones at
+ * once. The clone start, naming the cache entry directory, is logged
+ * through the scoped logger (verbose); the caller logs the outcome
+ * with its duration.
  *
  * @param url - Repository URL or local path as given on the command line.
  * @param options - Cache directory, refresh flag, branch, and git overrides.
@@ -125,6 +142,44 @@ export async function ensureClone(
   const log = options.log ?? createScopedLog();
   const cacheDir = resolveCacheDir(options.cacheDir);
   const entryDir = cacheEntryDir(cacheDir, url, options.branch);
+
+  // Share the in-flight clone of a sibling spec that landed on the same
+  // cache entry, instead of racing on its `repo/` directory.
+  const inFlight = inFlightClones.get(entryDir);
+  if (inFlight !== undefined) {
+    return inFlight;
+  }
+
+  const clone = cloneIntoEntry(entryDir, url, options, log);
+  inFlightClones.set(entryDir, clone);
+  try {
+    return await clone;
+  } finally {
+    if (inFlightClones.get(entryDir) === clone) {
+      inFlightClones.delete(entryDir);
+    }
+  }
+}
+
+/**
+ * The single clone body `ensureClone` protects with its in-flight lock:
+ * reuses the cached clone when it matches, or removes the old `repo/`
+ * and clones fresh (with a full-clone fallback on hosts that reject
+ * partial clones), recording the clone identity in `clone.json`.
+ *
+ * @param entryDir - The cache entry directory to clone into.
+ * @param url - Repository URL or local path as given on the command line.
+ * @param options - Cache directory, refresh flag, branch, and git overrides.
+ * @param log - The repository's scoped logger for clone warnings.
+ * @returns The clone location and identity.
+ * @throws {GitError} When cloning fails and the fallback does not apply.
+ */
+async function cloneIntoEntry(
+  entryDir: string,
+  url: string,
+  options: EnsureCloneOptions,
+  log: ScopedLog,
+): Promise<CloneResult> {
   const gitOptions = { gitBinary: options.gitBinary };
 
   const cached = await readCloneInfo(entryDir);

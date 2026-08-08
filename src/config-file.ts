@@ -16,6 +16,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
+import { repoEntryFields } from './repo/repo-spec.js';
+import type { RepoConfigEntry } from './repo/repo-spec.js';
 import { errorDetail } from './util/error.js';
 
 /** Config file auto-loaded from the working directory when it exists. */
@@ -23,6 +25,40 @@ const AUTO_CONFIG_FILE = 'config.yaml';
 
 /** Matches every `${ENV_VAR}` reference expanded before YAML parsing. */
 const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+/**
+ * A structured `repos` config entry: the bare clone target plus an
+ * optional branch to analyze, an optional `base-branch` the analysis is
+ * scoped against (branch-delta), and gitignore-style paths to exclude
+ * for that repository alone. Unknown keys are rejected. The field
+ * validations come from `repoEntryFields` — the same constraints the
+ * spec schema uses, so the config-file validation and spec normalization
+ * can never drift — with the kebab `base-branch` key renamed to the
+ * schema's camelCase `base` before validation. The rename happens in a
+ * `preprocess` (not a `transform`), so the schema stays a plain object
+ * and a field-level rejection keeps its precise error path
+ * (`repos.0.repo: …`) inside the union; an unknown-key rejection still
+ * collapses to `repos.0: Invalid input` in the union.
+ */
+const repoConfigEntrySchema: z.ZodType<RepoConfigEntry, unknown> = z.preprocess((value) => {
+  // Rename the kebab `base-branch` key to the schema's camelCase
+  // `base`; everything else passes through. A non-object value (the
+  // union's string arm) is returned unchanged.
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+  const { 'base-branch': base, base: camelBase, ...rest } = value as Record<string, unknown>;
+  // Only the kebab `base-branch` is a config key. The camelCase `base`
+  // is the shared spec field's name: it would otherwise slip past
+  // `.strict()` and be silently discarded when both keys are set.
+  // Reroute it to a name the strict schema does not know so the entry
+  // is rejected loudly instead of accepted as the kebab form.
+  return {
+    ...rest,
+    ...(base === undefined ? {} : { base }),
+    ...(camelBase === undefined ? {} : { baseCamel: camelBase }),
+  };
+}, z.object(repoEntryFields).strict());
 
 /**
  * The `compile`-only keys under the nested `compile` section of the
@@ -63,8 +99,10 @@ const compileConfigSchema = z
  */
 const configFileSchema = z
   .object({
-    /** Repositories to analyze when none are passed on the command line. */
-    repos: z.array(z.string()).optional(),
+    /** Repositories to analyze when none are passed on the command line;
+     * each entry is a URL/path string or a map with an optional branch
+     * and ignored paths. */
+    repos: z.array(z.union([z.string(), repoConfigEntrySchema])).optional(),
     /** Start date (author date, UTC; any git date format). */
     since: z.string().optional(),
     /** End date (author date, UTC; any git date format). */

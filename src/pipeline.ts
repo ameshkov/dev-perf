@@ -20,7 +20,6 @@ import { analyzeRepository } from './analyze-repo.js';
 import { assembleTrendReport } from './report/index.js';
 import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
-import { parseRepoSpec } from './repo/repo-spec.js';
 import type { RepoSpec } from './repo/repo-spec.js';
 import { runConfigLines } from './run-config.js';
 import { splitPeriods } from './trend/periods.js';
@@ -58,8 +57,9 @@ interface RunAnalysis {
  * stdout or the `output` file. Duplicate repository specs are
  * analyzed once (their entries are identical anyway, and parallel
  * analysis of the same cache entry would race); the report parameters
- * list the unique repos in input order. The run starts by logging the
- * application version and the full resolved configuration to stderr
+ * list one full repository spec per analyzed entry, in input order. The
+ * run starts by logging the application version and the full resolved
+ * configuration to stderr
  * through the logger — one indented line per config field, always
  * printed even in quiet mode — so the effective settings are visible
  * before the analysis, and even when the run fails before the report
@@ -105,10 +105,9 @@ export async function runPipeline(options: ReportOptions): Promise<TrendReport> 
     // metrics merge exactly and the LLM phase runs one session per
     // merged identity.
     const emailMap = loadEmailMap(options.maps ?? []);
-    // Each repository argument may carry its own `#branch` suffix; the
-    // parsed specs drive the clone (branch) and the report entries.
-    const specs = repos.map(parseRepoSpec);
-    const analyzed = await analyzeAllRepos(options, specs, emailMap);
+    // Each repository spec may carry its own branch and ignored paths;
+    // the specs drive the clone (branch) and the report entries.
+    const analyzed = await analyzeAllRepos(options, repos, emailMap);
     const report = assembleTrendReport({
       repos,
       range: analyzed.range,
@@ -178,7 +177,7 @@ async function analyzeAllRepos(
     log: firstLog,
   });
   firstLog.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first.spec}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${first.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   const range = await resolveRange(clone.repoDir, options.since, options.until);
   const periods = splitPeriods(range, options.unit);
@@ -251,22 +250,40 @@ async function analyzeReposInParallel(
 
 /**
  * Removes duplicate repository specs, preserving input order. Duplicate
- * URLs would race on the same cache entry (concurrent re-clone and LLM
- * writes), and their report entries are identical anyway; a warning
+ * specs — same repo, same branch, same base scoping, and same ignored
+ * paths — would race on the same cache entry (concurrent re-clone and
+ * LLM writes) and their report entries are identical anyway; a warning
  * names each dropped duplicate.
+ * The dedupe key is the full spec identity — the repo, the analyzed
+ * branch, the base the analysis is scoped against (branch-delta), and
+ * the ignore patterns — so two structured entries that share a repo but
+ * use different branches, bases, or exclusions are distinct specs,
+ * never silently merged. The ignore patterns are sorted before the key
+ * is built, so a different listing order is not a different spec; and
+ * the base distinguishes the default delta (`undefined`) from the
+ * full-history opt-out (`''`), which are distinct analyses.
  *
- * @param repos - The repository specs as given on the command line.
+ * @param repos - The repository specs as resolved from the config.
  * @returns The unique specs, in input order.
  */
-function dedupeRepos(repos: readonly string[]): string[] {
+function dedupeRepos(repos: readonly RepoSpec[]): RepoSpec[] {
   const seen = new Set<string>();
-  const unique: string[] = [];
+  const unique: RepoSpec[] = [];
   for (const repo of repos) {
-    if (seen.has(repo)) {
-      logWarn(`duplicate repository skipped: "${repo}"`);
+    // The ignore list is sorted before joining, so two specs listing the
+    // same patterns in a different order build the same key and the
+    // second one is dropped instead of racing on a shared cache entry.
+    const ignoreKey = (repo.ignore === undefined ? [] : [...repo.ignore].sort()).join('\u0000');
+    // `base: undefined` (the default main/master delta) and `base: ''`
+    // (the full-history opt-out) are distinct analyses, so each gets a
+    // distinct key.
+    const baseKey = repo.base === undefined ? '<default>' : repo.base;
+    const key = `${repo.repo}\u0000${repo.branch ?? ''}\u0000${baseKey}\u0000${ignoreKey}`;
+    if (seen.has(key)) {
+      logWarn(`duplicate repository skipped: "${repo.repo}"`);
       continue;
     }
-    seen.add(repo);
+    seen.add(key);
     unique.push(repo);
   }
   return unique;
@@ -287,10 +304,11 @@ function repoLabel(repo: string): string {
 
 /**
  * One scoped logger per repository, computed once in input order:
- * colliding basenames get a `#2`, `#3`, … suffix so parallel progress
- * lines stay distinguishable. Labels come from the full spec as given
- * (a `#branch` suffix included), so two branches of one repository stay
- * distinguishable in the log.
+ * colliding repository labels get a `#2`, `#3`, … suffix so parallel
+ * progress lines stay distinguishable. The label carries the analyzed
+ * branch when one is in effect (`repo#branch`), so two entries analyzing
+ * the same repository — e.g. at different branches — stay
+ * distinguishable in the log without depending on order.
  *
  * @param specs - The deduplicated repository specs.
  * @returns The scoped loggers, aligned with `specs`.
@@ -298,7 +316,8 @@ function repoLabel(repo: string): string {
 function scopedLogs(specs: readonly RepoSpec[]): ScopedLog[] {
   const seen = new Map<string, number>();
   return specs.map((spec) => {
-    const base = repoLabel(spec.spec);
+    const branch = spec.branch === undefined || spec.branch === '' ? '' : `#${spec.branch}`;
+    const base = `${repoLabel(spec.repo)}${branch}`;
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     return createScopedLog(count === 0 ? base : `${base}#${count + 1}`);

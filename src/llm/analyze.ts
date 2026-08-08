@@ -20,6 +20,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { AuthorGroup } from '../deterministic/identity.js';
+import { hasIgnorePaths } from '../deterministic/path-ignore.js';
 import { llmDir } from '../repo/cache.js';
 import type { AnalyzedRange, LlmAnalysis, LlmToolPayload } from '../report/index.js';
 import { llmToolPayloadSchema, tokenUsageSchema } from '../report/index.js';
@@ -52,7 +53,7 @@ const CACHE_KEY_LENGTH = 16;
  * the cached-result layout — so stale entries written by an older
  * version are never silently reused after an upgrade.
  */
-const LLM_CACHE_VERSION = 3 as const;
+const LLM_CACHE_VERSION = 6 as const;
 
 /**
  * The persisted LLM result for one user: the
@@ -71,6 +72,18 @@ const cachedResultSchema = z.object({
   cacheVersion: z.literal(LLM_CACHE_VERSION),
   /** Repository URL or local path the analysis ran on. */
   repo: z.string(),
+  /** The effective analyzed branch of the clone. */
+  branch: z.string(),
+  /** Head commit sha of the analyzed clone. */
+  head: z.string(),
+  /** The resolved base branch the analysis was scoped against
+   * (branch-delta), when one was in effect. */
+  base: z.string().optional(),
+  /** The resolved base commit sha of the branch-delta exclusion, when
+   * one was in effect. */
+  exclude: z.string().optional(),
+  /** Gitignore-style paths excluded from the analysis, if any. */
+  ignore: z.array(z.string()).optional(),
   /** Lowercased author email the analysis belongs to (the identity's primary email). */
   email: z.string(),
   /** Every lowercased email of the identity, sorted. */
@@ -94,6 +107,19 @@ type CachedResult = z.infer<typeof cachedResultSchema>;
 export interface AnalyzeRepoInput {
   /** Repository URL or local path as given on the command line. */
   repo: string;
+  /** The effective checked-out branch of the clone being analyzed. */
+  branch: string;
+  /** Head commit sha of the analyzed clone. */
+  head: string;
+  /** The resolved base branch the analysis was scoped against
+   * (branch-delta), when one was in effect. */
+  base?: string;
+  /** The resolved base commit sha that the branch-delta exclusion
+   * scans against, when one was in effect (the commit set of the
+   * analysis is `head --not exclude`). */
+  exclude?: string;
+  /** Gitignore-style paths excluded for this repository, if any. */
+  ignore?: string[];
   /** The clone's working tree (session and runtime directory). */
   cloneDir: string;
   /** The cache entry directory (holds the `llm/` results dir). */
@@ -190,7 +216,7 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   );
   const context = await input.service.promptSession(
     session,
-    await buildOrientationPrompt(input.repo),
+    await buildOrientationPrompt(input.repo, input.branch, input.ignore),
     input.repo,
   );
   await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
@@ -229,6 +255,9 @@ async function analyzeUser(
   try {
     const analysisPrompt = await buildUserPrompt({
       repo: input.repo,
+      branch: input.branch,
+      ...(input.base === undefined ? {} : { base: input.base }),
+      ...(hasIgnorePaths(input.ignore) ? { ignore: input.ignore } : {}),
       name: group.name,
       email: group.email,
       emails: group.emails,
@@ -353,6 +382,11 @@ function cachedResultPath(input: AnalyzeRepoInput, group: AuthorGroup): string {
  * itself, so the two can never drift. Keying by the identity's email
  * set — not just the primary email — stops a newly merged identity from
  * reusing a stale result cached for one of its constituent emails. The
+ * analyzed branch, its head sha, and the base the analysis was scoped
+ * against are part of the key too: the head and the resolved base sha
+ * (together with `since`/`until`/`ignore`) fully determine the commit
+ * set, so an advancing branch or base — which keeps the same *name* —
+ * still re-keys the cache instead of reusing a stale analysis. The
  * cache version invalidates stale entries when prompt templates, the
  * tool schema, or the result layout change.
  *
@@ -364,6 +398,11 @@ function llmCacheKeyParts(input: AnalyzeRepoInput, group: AuthorGroup) {
   return {
     cacheVersion: LLM_CACHE_VERSION,
     repo: input.repo,
+    branch: input.branch,
+    head: input.head,
+    ...(input.base === undefined ? {} : { base: input.base }),
+    ...(input.exclude === undefined ? {} : { exclude: input.exclude }),
+    ...(hasIgnorePaths(input.ignore) ? { ignore: [...input.ignore].sort() } : {}),
     email: group.email,
     emails: group.emails,
     since: input.range.since,

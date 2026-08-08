@@ -1,31 +1,26 @@
 /**
- * Per-repository analysis: clone/cache reuse, commit reading and author
- * grouping for the run's whole range, the LLM phase when enabled (one
- * in-process pi runtime per repo, shared by all its periods, replaced
- * with a fresh runtime when an attempt fails), and per-period report
- * assembly. `analyzeRepository` is the single entry; the pipeline runs
- * it once per repository — in parallel up to `parallel` — with the
- * run's resolved range and periods.
+ * Per-repository analysis entry: clone/cache reuse, branch-delta base
+ * resolution, commit reading and author grouping for the run's whole
+ * range, and the LLM phase when enabled (orchestrated in
+ * `src/llm/repo-phase.ts`, per-period assembly in `src/llm/repo-period.ts`).
+ * `analyzeRepository` is the single entry; the pipeline runs it once
+ * per repository — in parallel up to `parallel` — with the run's
+ * resolved range and periods.
  */
-import path from 'node:path';
 import type { ReportOptions } from './config.js';
+import { resolveBaseSha } from './deterministic/base.js';
 import { readCommits } from './deterministic/commits.js';
+import type { Commit } from './deterministic/commits.js';
 import type { AuthorGroup } from './deterministic/identity.js';
 import { groupByAuthor } from './deterministic/identity.js';
-import { analyzeRepositoryLLM } from './llm/analyze.js';
-import { createLlmRuntime } from './llm/runtime.js';
-import type { LlmRuntime, LlmRuntimeConfig } from './llm/runtime.js';
-import { createSessionService } from './llm/session.js';
-import type { SessionService } from './llm/session.js';
-import { assembleRepository } from './report/index.js';
-import type { AnalyzedRange, LlmAnalysis, Repository } from './report/index.js';
+import { filterCommitsIgnoring, hasIgnorePaths } from './deterministic/path-ignore.js';
+import { runLlmPhase } from './llm/repo-phase.js';
+import type { AnalyzedRange, Repository } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
 import type { RepoSpec } from './repo/repo-spec.js';
-import { filterGroupsForPeriod } from './trend/periods.js';
 import type { EmailMap } from './util/email-map.js';
-import { errorDetail } from './util/error.js';
-import { pluralize, rangeBound } from './util/format.js';
+import { pluralize } from './util/format.js';
 import type { ScopedLog } from './util/log.js';
 
 /** One repository analyzed across all periods of the run. */
@@ -38,14 +33,6 @@ interface RepoAnalysis {
   repositories: Repository[];
 }
 
-/** The repo's LLM phase: one pi runtime and its session service. */
-interface LlmPhase {
-  /** The in-process runtime, disposed by the caller. */
-  runtime: LlmRuntime;
-  /** The session service bound to the runtime. */
-  service: SessionService;
-}
-
 /**
  * Analyzes one repository across the run's periods: ensures the clone
  * (reusing the cache when possible), reads the commits of the whole
@@ -55,10 +42,12 @@ interface LlmPhase {
  * its bounds, an LLM analysis for its active users, and an assembled
  * repository entry. The range and periods come from the run — the
  * pipeline resolved them from the first clone before the parallel
- * phase.
+ * phase. The analysis is bracketed by a verbose start/end log pair
+ * (`starting analysis of ...` then `finished analysis of ... in <ms>
+ * ms`), its end line closed even when the analysis fails.
  *
  * @param repo - The repository spec as given (URL or local path, with
- * an optional `#branch` suffix selecting the branch to analyze).
+ * an optional branch selecting the branch to analyze).
  * @param options - Validated CLI options.
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
@@ -80,6 +69,63 @@ export async function analyzeRepository(
   emailMap: EmailMap,
 ): Promise<RepoAnalysis> {
   const startedAt = Date.now();
+  // The per-repo start/end pair brackets the whole analysis: the start
+  // right before the clone, then a finish line with the duration after
+  // the LLM phase settles — in `finally`, so a failing repository
+  // still closes the marker it opened (mirroring the run-level
+  // `starting report` / `finished report in <ms> ms` pair).
+  log.info(`starting analysis of "${repo.repo}"`);
+  try {
+    // The clone and the branch-delta base resolution run before the
+    // commit scan; the resolved base name travels to the report entry and
+    // the LLM phase, the base sha narrows the scan.
+    const { clone, exclude, baseName } = await prepareClone(repo, options, log);
+    // Reading the whole-range commit history is the dominant git cost on
+    // a large repository; log that it started so the user sees what
+    // dev-perf is doing instead of a silent wait. The aggregated count
+    // (`N commits from M authors`) is logged once this returns.
+    log.info(`reading commits`);
+    const commits = await readCommits(clone.repoDir, {
+      since: options.since,
+      until: options.until,
+      ...(exclude === undefined ? {} : { exclude }),
+    });
+    const groups = filterAndGroup(repo, commits, emailMap, log);
+
+    const repositories = await runLlmPhase(
+      repo,
+      clone,
+      periods,
+      groups,
+      options,
+      log,
+      exclude,
+      baseName,
+    );
+    return { range, periods, repositories };
+  } finally {
+    log.info(`finished analysis of "${repo.repo}" in ${Date.now() - startedAt} ms`);
+  }
+}
+
+/**
+ * Clones (or reuses the cached clone of) the repository and resolves
+ * its branch-delta base. The clone progress line and the base outcome
+ * are logged here, before the (dominant) commit scan.
+ *
+ * @param repo - The repository spec as given.
+ * @param options - Validated CLI options.
+ * @param log - The repository's scoped logger.
+ * @returns The clone, the base-commit exclusion sha, and the resolved
+ * base name.
+ * @throws {GitError} When a clone or a base resolution fails.
+ */
+async function prepareClone(
+  repo: RepoSpec,
+  options: ReportOptions,
+  log: ScopedLog,
+): Promise<{ clone: CloneResult; exclude: string | undefined; baseName: string | undefined }> {
+  const startedAt = Date.now();
   const clone = await ensureClone(repo.repo, {
     cacheDir: options.cacheDir,
     refresh: options.refresh,
@@ -87,294 +133,90 @@ export async function analyzeRepository(
     log,
   });
   log.info(
-    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.spec}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
+    `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
-  // Reading the whole-range commit history is the dominant git cost on
-  // a large repository; log that it started so the user sees what
-  // dev-perf is doing instead of a silent wait. The aggregated count
-  // (`N commits from M authors`) is logged once this returns.
-  log.info(`reading commits`);
-  const commits = await readCommits(clone.repoDir, { since: options.since, until: options.until });
-  const groups = groupByAuthor(commits, emailMap);
-  log.info(`${pluralize(commits.length, 'commit')} from ${pluralize(groups.length, 'author')}`);
-
-  const repositories = await runLlmPhase(repo, clone, periods, groups, options, log);
-  return { range, periods, repositories };
+  // Resolve the branch-delta base once, after the clone, and log the
+  // outcome before the commit scan starts.
+  const { exclude, baseName } = await resolveBranchDelta(repo, clone, log);
+  return { clone, exclude, baseName };
 }
 
 /**
- * Runs a repository's LLM phase with automatic retries: the analysis
- * (runtime creation plus per-period sessions) is attempted up to
- * `1 + llmRetries` times, and every failed attempt is retried with a
- * fresh in-process runtime, so the next attempt starts from a clean
- * slate. Completed per-user analyses are cached and reused across
- * attempts, so a retry only re-runs the sessions that failed. The
- * analysis succeeds as soon as one attempt completes; when every
- * attempt fails, the error names the repository and the attempt count.
- * With `llmRetries: 0` the original error is rethrown unchanged (fail
- * fast).
+ * Removes the repository's ignored-path commits and groups the rest by
+ * author. The ignored paths are applied here, once, so both the
+ * deterministic metrics and the LLM commit list are exclusion-free;
+ * without any patterns the list passes through untouched. The ignored
+ * paths and the resulting counts are logged.
  *
- * @param repo - The repository spec, as given with its optional branch.
- * @param clone - The clone the analysis runs in.
- * @param periods - The run's period bounds.
- * @param groups - The author groups of the whole range.
- * @param options - Validated CLI options.
+ * @param repo - The repository spec as given.
+ * @param commits - The commits of the whole range, newest first.
+ * @param emailMap - The compiled email mappings for identity merging.
  * @param log - The repository's scoped logger.
- * @returns One assembled repository entry per period.
- * @throws {Error} When every LLM attempt fails; the message names the
- * repo — and the period when `unit` is set — plus the underlying
- * cause.
+ * @returns The author groups of the filtered commits.
  */
-async function runLlmPhase(
+function filterAndGroup(
   repo: RepoSpec,
-  clone: CloneResult,
-  periods: AnalyzedRange[],
-  groups: AuthorGroup[],
-  options: ReportOptions,
+  commits: Commit[],
+  emailMap: EmailMap,
   log: ScopedLog,
-): Promise<Repository[]> {
-  const attempts = 1 + options.llmRetries;
-  let lastError: Error | undefined;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    if (attempt > 1) {
-      log.warn(
-        `LLM: attempt ${attempt - 1} of ${attempts} failed; ` +
-          `recreating the LLM runtime and retrying: ${errorDetail(lastError)}`,
-      );
-    }
-    let llm: LlmPhase | undefined;
-    try {
-      llm = await startLlmRuntime(repo, clone, groups, options, log);
-      return await assemblePeriods(repo, clone, periods, groups, llm, options, log);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(errorDetail(error));
-    } finally {
-      // Fully dispose the runtime and its sessions so the next attempt
-      // starts from a clean slate.
-      await closeLlmPhase(llm, log);
-    }
-  }
-  if (attempts === 1) {
-    // No retries configured: surface the original error unchanged.
-    throw lastError ?? new Error(`LLM analysis failed for ${repo.spec}`);
-  }
-  throw new Error(
-    `LLM analysis failed for ${repo.spec} after ${attempts} attempts: ${errorDetail(lastError)}`,
-    { cause: lastError },
-  );
-}
-
-/**
- * Starts the repo's LLM phase when enabled and the range has authors:
- * one in-process pi runtime with its session service, shared by all of
- * the repo's periods. Returns `undefined` when LLM analysis is
- * disabled or the repo has no authors in the range.
- *
- * @param repo - The repository spec, as given with its optional branch.
- * @param clone - The clone the analysis runs in.
- * @param groups - The author groups of the whole range.
- * @param options - Validated CLI options.
- * @param log - The repository's scoped logger.
- * @returns The runtime and its session service, or `undefined`.
- * @throws {Error} When the runtime cannot be created; the message names
- * the repo and the underlying cause.
- */
-async function startLlmRuntime(
-  repo: RepoSpec,
-  clone: CloneResult,
-  groups: AuthorGroup[],
-  options: ReportOptions,
-  log: ScopedLog,
-): Promise<LlmPhase | undefined> {
-  if (!options.llm || groups.length === 0) {
-    if (options.llm) {
-      log.info(`LLM: no authors in the range; skipping LLM analysis`);
-    }
-    return undefined;
-  }
-  try {
-    const runtime = await createLlmRuntime(clone.repoDir, llmRuntimeConfig(options), log);
-    return {
-      runtime,
-      service: createSessionService(runtime, path.dirname(clone.repoDir), log),
-    };
-  } catch (error) {
-    // errorDetail walks the cause chain.
-    throw new Error(`LLM analysis failed for ${repo.spec}: ${errorDetail(error)}`, {
-      cause: error,
-    });
-  }
-}
-
-/**
- * Assembles one repository entry per period: each period gets the
- * groups' commits filtered to its bounds, an LLM analysis for its
- * active users, and an assembled repository entry.
- *
- * @param repo - The repository spec, as given with its optional branch.
- * @param clone - The clone the analysis runs in.
- * @param periods - The run's period bounds.
- * @param groups - The author groups of the whole range.
- * @param llm - The repo's LLM phase, or `undefined` when disabled.
- * @param options - Validated CLI options.
- * @param log - The repository's scoped logger.
- * @returns One assembled repository entry per period.
- * @throws {Error} When the LLM phase fails; the message names the repo
- * — and the period when `unit` is set — plus the underlying cause.
- */
-async function assemblePeriods(
-  repo: RepoSpec,
-  clone: CloneResult,
-  periods: AnalyzedRange[],
-  groups: AuthorGroup[],
-  llm: LlmPhase | undefined,
-  options: ReportOptions,
-  log: ScopedLog,
-): Promise<Repository[]> {
-  const repositories: Repository[] = [];
-  for (const period of periods) {
-    const filtered = filterGroupsForPeriod(groups, period);
-    let llmResults: ReadonlyMap<string, LlmAnalysis> | undefined;
-    if (llm !== undefined) {
-      try {
-        llmResults = await analyzePeriodLlm(
-          repo,
-          clone,
-          period,
-          filtered,
-          options,
-          llm.service,
-          log,
-        );
-      } catch (error) {
-        const where =
-          options.unit === undefined
-            ? ''
-            : ` in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`;
-        throw new Error(`LLM analysis failed for ${repo.spec}${where}: ${errorDetail(error)}`, {
-          cause: error,
-        });
+): AuthorGroup[] {
+  const ignore = repo.ignore;
+  const filtered = hasIgnorePaths(ignore) ? filterCommitsIgnoring(commits, ignore) : commits;
+  if (hasIgnorePaths(ignore)) {
+    log.info(`ignored paths for "${repo.repo}": ${ignore.map((path) => `"${path}"`).join(', ')}`);
+    if (filtered.length < commits.length) {
+      const dropped = commits.length - filtered.length;
+      const message = `${pluralize(dropped, 'commit')} dropped by ignored paths for "${repo.repo}"`;
+      // A config that excluded the entire history is almost certainly a
+      // misconfiguration: surface it as a warning instead of a quiet
+      // under-count. A partial drop is normal and stays at `info`.
+      if (filtered.length === 0) {
+        log.warn(`${message}; the report for this repository will be empty`);
+      } else {
+        log.info(message);
       }
     }
-    repositories.push(
-      assembleRepository({
-        repo: repo.repo,
-        clonePath: clone.repoDir,
-        branch: clone.branch,
-        head: clone.head,
-        range: period,
-        groups: filtered,
-        llmResults,
-      }),
-    );
   }
-  return repositories;
+  const groups = groupByAuthor(filtered, emailMap);
+  log.info(`${pluralize(filtered.length, 'commit')} from ${pluralize(groups.length, 'author')}`);
+  return groups;
 }
 
 /**
- * Shuts the repo's LLM phase down. Both steps run independently, each
- * guarded by its own try/catch, so a session-shutdown failure never
- * skips runtime disposal (which removes the in-memory API key). A
- * shutdown failure is logged but does not mask an analysis error.
+ * Resolves the branch-delta base of a clone and logs the outcome: the
+ * analysis scopes to the commits reachable from the branch head but not
+ * from the base (per-release attribution). A base that is the analyzed
+ * branch head itself means full history — a branch is never emptied by
+ * its own delta — and an unresolvable explicit base falls back to full
+ * history with a warning instead of failing. The resolved base *name*
+ * (e.g. `origin/main`) travels to the report entry and the LLM phase;
+ * only the delta's sha narrows the commit scan.
  *
- * @param llm - The repo's LLM phase, or `undefined` when none started.
- * @param log - The repository's scoped logger.
- */
-async function closeLlmPhase(llm: LlmPhase | undefined, log: ScopedLog): Promise<void> {
-  if (llm === undefined) {
-    return;
-  }
-  try {
-    await llm.service.close();
-  } catch (error) {
-    log.warn(`LLM session shutdown failed: ${errorDetail(error)}`);
-  }
-  try {
-    await llm.runtime.dispose();
-  } catch (error) {
-    log.warn(`LLM runtime shutdown failed: ${errorDetail(error)}`);
-  }
-}
-
-/**
- * Runs the LLM phase for one period of a repository: the repo's
- * in-process runtime is reused, and `analyzeRepositoryLLM` produces
- * one analysis per user with commits in the period (cached results
- * reused unless `refresh`). Users without commits in the period get
- * no analysis — their report entries stay skipped. Returns `undefined`
- * when no user has commits in the period.
- *
- * @param repo - The repository spec, as given with its optional branch.
+ * @param repo - The repository spec, as given with its optional base.
  * @param clone - The clone the analysis runs in.
- * @param period - The period bounds (UTC instants).
- * @param groups - The period's author groups (zero-commit groups kept).
- * @param options - Validated CLI options.
- * @param service - The session service bound to the repo's runtime.
  * @param log - The repository's scoped logger.
- * @returns Completed analyses keyed by lowercased author email, or
- * `undefined` when the period has no active users.
- * @throws {Error} When an analysis fails; the message names the user
- * and session plus the underlying cause.
+ * @returns The base-commit exclusion sha and the resolved base name,
+ * when delta analysis is in effect.
  */
-async function analyzePeriodLlm(
+async function resolveBranchDelta(
   repo: RepoSpec,
   clone: CloneResult,
-  period: AnalyzedRange,
-  groups: AuthorGroup[],
-  options: ReportOptions,
-  service: SessionService,
   log: ScopedLog,
-): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
-  const active = groups.filter((group) => group.commits.length > 0);
-  if (active.length === 0) {
-    log.info(
-      `LLM: no authors in period ${rangeBound(period.since)} to ${rangeBound(period.until)}; skipping`,
-    );
-    return undefined;
+): Promise<{ exclude: string | undefined; baseName: string | undefined }> {
+  const base = await resolveBaseSha(clone.repoDir, repo.base, clone.head);
+  const delta = base !== undefined && base.sha !== clone.head ? base : undefined;
+  if (delta !== undefined) {
+    log.info(`analyzing "${repo.repo}" excluding base "${delta.base}"`);
+  } else if (base !== undefined) {
+    log.info(`base "${base.base}" is the head of "${repo.repo}"; analyzing the full history`);
+  } else if (repo.base !== undefined && repo.base !== '') {
+    log.warn(`base branch "${repo.base}" not found for "${repo.repo}"; analyzing the full history`);
+  } else if (repo.base === undefined) {
+    // A repository with no resolvable default base (`main` → `master`)
+    // degrades to full history — a normal, benign fallback, so it is
+    // logged at `info` rather than `warn`; only an explicitly
+    // configured base that cannot be resolved merits a warning.
+    log.info(`no base branch (main/master) found for "${repo.repo}"; analyzing the full history`);
   }
-  const results = await analyzeRepositoryLLM({
-    repo: repo.repo,
-    cloneDir: clone.repoDir,
-    entryDir: path.dirname(clone.repoDir),
-    config: llmRuntimeConfig(options),
-    range: period,
-    groups: active,
-    service,
-    refresh: options.refresh === true,
-    log,
-  });
-  log.info(
-    `LLM: analyzed ${pluralize(results.length, 'user')} in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`,
-  );
-  return new Map(results.map((result) => [result.email, result.llm]));
-}
-
-/**
- * Builds the pi runtime configuration from the validated CLI options.
- * `parseReportOptions` guarantees `model`, `providerUrl` and `apiKey`
- * (the key may come from the config file `api-key` key) whenever LLM
- * analysis is enabled; the guard is defensive for direct pipeline
- * callers.
- *
- * @param options - Validated CLI options (LLM enabled).
- * @returns The runtime configuration.
- * @throws {Error} When a required LLM option is missing — unreachable
- * after `parseReportOptions`, possible only when options are constructed
- * by hand.
- */
-function llmRuntimeConfig(options: ReportOptions): LlmRuntimeConfig {
-  if (
-    options.model === undefined ||
-    options.providerUrl === undefined ||
-    options.apiKey === undefined
-  ) {
-    throw new Error('model, provider URL and API key are required for LLM analysis');
-  }
-  return {
-    providerUrl: options.providerUrl,
-    model: options.model,
-    apiKey: options.apiKey,
-    limitContext: options.limitContext,
-    limitOutput: options.limitOutput,
-  };
+  return { exclude: delta?.sha, baseName: delta?.base };
 }

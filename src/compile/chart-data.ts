@@ -7,6 +7,7 @@
  * `charts.ts` and `markdown.ts`.
  */
 import type { ContributionSize, PeriodUnit, User } from '../report/index.js';
+import type { RepoSpec } from '../repo/repo-spec.js';
 import type { FilteredReport } from './filter.js';
 import { combinePeriodUsers } from './filter.js';
 import { periodLabel } from './period-label.js';
@@ -159,8 +160,8 @@ interface BusFactor {
 export interface ChartData {
   /** Report parameters plus the generation timestamp. */
   parameters: {
-    /** Repositories analyzed, as given on the command line. */
-    repos: string[];
+    /** Repositories analyzed, as full specs, in input order. */
+    repos: RepoSpec[];
     /** Start of the analyzed range (UTC instant). */
     since: string;
     /** End of the analyzed range (UTC instant). */

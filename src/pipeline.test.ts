@@ -9,6 +9,8 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../test/fixtures/repo-builder.js';
 import type { ReportOptions } from './config.js';
+import { parseRepoSpec } from './repo/repo-spec.js';
+import type { RepoSpec } from './repo/repo-spec.js';
 import { runPipeline } from './pipeline.js';
 import { entryHash } from './repo/cache.js';
 import { gitRevParse } from './repo/git.js';
@@ -56,7 +58,7 @@ describe('runPipeline', () => {
     try {
       const report = await runPipeline(
         options({
-          repos: [repo.url],
+          repos: [parseRepoSpec(repo.url)],
           cacheDir,
           since: '2026-01-01T00:00:00Z',
           until: '2026-01-31T23:59:59Z',
@@ -68,7 +70,7 @@ describe('runPipeline', () => {
         schemaVersion: 2,
         generatedAt: expect.any(String),
         parameters: {
-          repos: [repo.url],
+          repos: [{ repo: repo.url }],
           since: '2026-01-01T00:00:00.000Z',
           until: '2026-01-31T23:59:59.000Z',
           llmEnabled: false,
@@ -169,7 +171,9 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     const outFile = path.join(cacheDir, 'report.json');
     try {
-      const report = await runPipeline(options({ repos: [repo.url], cacheDir, output: outFile }));
+      const report = await runPipeline(
+        options({ repos: [parseRepoSpec(repo.url)], cacheDir, output: outFile }),
+      );
       const written = JSON.parse(await readFile(outFile, 'utf8')) as unknown;
       expect(trendReportSchema.safeParse(written).success).toBe(true);
       expect(written).toStrictEqual(report);
@@ -191,7 +195,7 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     try {
       const report = await runPipeline(
-        options({ repos: [repo.url], cacheDir, since: '2026-01-01T00:00:00Z' }),
+        options({ repos: [parseRepoSpec(repo.url)], cacheDir, since: '2026-01-01T00:00:00Z' }),
       );
       expect(report.parameters.since).toBe('2026-01-01T00:00:00.000Z');
       expect(report.parameters.until).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
@@ -213,7 +217,7 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     try {
       const report = await runPipeline(
-        options({ repos: [repo.url], cacheDir, since: '2026-01-01T00:00:00Z' }),
+        options({ repos: [parseRepoSpec(repo.url)], cacheDir, since: '2026-01-01T00:00:00Z' }),
       );
       expect(report.periods[0].repositories[0].users).toEqual([]);
       expect(report.periods[0].repositories[0].head).toBe('');
@@ -247,7 +251,7 @@ describe('runPipeline', () => {
     try {
       const report = await runPipeline(
         options({
-          repos: [repo.url],
+          repos: [parseRepoSpec(repo.url)],
           cacheDir,
           unit: 'month',
           since: '2026-01-01T00:00:00Z',
@@ -348,7 +352,12 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     try {
       const report = await runPipeline(
-        options({ repos: [repo.url], cacheDir, since: '2026-01-01', until: '2026-03-01' }),
+        options({
+          repos: [parseRepoSpec(repo.url)],
+          cacheDir,
+          since: '2026-01-01',
+          until: '2026-03-01',
+        }),
       );
 
       // The date-only `until` resolves to the start of its day, so the
@@ -367,7 +376,7 @@ describe('runPipeline', () => {
       // after February: exactly two periods, no zero-length third one.
       const monthly = await runPipeline(
         options({
-          repos: [repo.url],
+          repos: [parseRepoSpec(repo.url)],
           cacheDir,
           unit: 'month',
           since: '2026-01-01',
@@ -411,16 +420,19 @@ describe('runPipeline', () => {
     ]);
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     try {
-      const repos = [first.url, second.url];
+      const specs = [parseRepoSpec(first.url), parseRepoSpec(second.url)];
+      const repos = specs.map((spec) => spec.repo);
       // Explicit bounds keep the two runs' resolved ranges identical:
       // the default `until: today` resolves to the current wall-clock
       // instant, so back-to-back runs could disagree by a second and
       // spuriously fail the comparison.
       const range = { since: '2026-01-01T00:00:00Z', until: '2026-01-31T23:59:59Z' };
-      const serial = await runPipeline(options({ repos, cacheDir, parallel: 1, ...range }));
-      const parallel = await runPipeline(options({ repos, cacheDir, parallel: 2, ...range }));
+      const serial = await runPipeline(options({ repos: specs, cacheDir, parallel: 1, ...range }));
+      const parallel = await runPipeline(
+        options({ repos: specs, cacheDir, parallel: 2, ...range }),
+      );
 
-      expect(parallel.parameters.repos).toEqual(repos);
+      expect(parallel.parameters.repos).toEqual(specs);
       expect(parallel.periods).toHaveLength(1);
       expect(parallel.periods[0].repositories.map((entry) => entry.repo)).toEqual(repos);
       // The two runs differ only in the generation timestamp.
@@ -444,11 +456,13 @@ describe('runPipeline', () => {
     const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const report = await runPipeline(options({ repos: [repo.url, repo.url], cacheDir }));
+      const report = await runPipeline(
+        options({ repos: [parseRepoSpec(repo.url), parseRepoSpec(repo.url)], cacheDir }),
+      );
 
       // One entry, listed once in the parameters — not two identical
       // copies.
-      expect(report.parameters.repos).toEqual([repo.url]);
+      expect(report.parameters.repos).toEqual([{ repo: repo.url }]);
       expect(report.periods[0].repositories).toHaveLength(1);
       const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
       expect(stderr).toContain(`duplicate repository skipped: "${repo.url}"`);
@@ -458,4 +472,60 @@ describe('runPipeline', () => {
       await removeFixtureRepo(repo);
     }
   });
+
+  it('keeps two entries for the same repository with different ignored paths', async () => {
+    // Dedupe keys on the whole spec identity — repo, branch, and the
+    // ignored paths — so two `repos` entries that share a repo but
+    // exclude different paths are distinct and both analyzed.
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [
+          { path: 'src/a.txt', content: 'a\n' },
+          { path: 'docs/b.md', content: 'b\n' },
+        ],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-pipeline-cache-'));
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const report = await runPipeline(
+        options({
+          repos: [
+            parseSpecWithIgnore(repo.url, ['docs/']),
+            parseSpecWithIgnore(repo.url, ['src/']),
+          ],
+          cacheDir,
+        }),
+      );
+
+      // Both entries survive dedupe, each recording its own ignored
+      // paths; no duplicate warning is emitted.
+      const ignored = report.periods[0].repositories.map((entry) => entry.ignoredPaths);
+      expect(ignored).toEqual([['docs/'], ['src/']]);
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).not.toContain('duplicate repository skipped');
+    } finally {
+      vi.restoreAllMocks();
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
 });
+
+/**
+ * A repository spec with ignored paths, as a structured config entry
+ * would normalize to.
+ *
+ * @param repo - The repository URL or local path.
+ * @param ignore - Gitignore-style paths to exclude.
+ * @returns The repository spec.
+ */
+function parseSpecWithIgnore(repo: string, ignore: string[]): RepoSpec {
+  return {
+    repo,
+    ignore: [...ignore],
+  };
+}

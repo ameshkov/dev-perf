@@ -228,7 +228,7 @@ describe('cli', () => {
       const result = trendReportSchema.safeParse(JSON.parse(await readFile(outFile, 'utf8')));
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.parameters.repos).toEqual([repo.url]);
+        expect(result.data.parameters.repos).toEqual([{ repo: repo.url }]);
         expect(result.data.parameters.llmEnabled).toBe(false);
         expect(result.data.periods[0].repositories).toHaveLength(1);
         expect(result.data.periods[0].repositories[0].users).toHaveLength(1);
