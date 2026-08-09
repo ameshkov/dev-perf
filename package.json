@@ -1,6 +1,6 @@
 {
   "name": "dev-perf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Measure developer contributions to git repositories and produce a JSON report of per-user metrics",
   "license": "MIT",
   "type": "module",

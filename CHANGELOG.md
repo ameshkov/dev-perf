@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [v1.1.0] - 2026-08-10
+
 ### Added
 
 - A YAML config file as the single source of options, shared by
@@ -97,5 +99,6 @@ and this project adheres to
   `linux/amd64` and `linux/arm64`, sandboxing the analysis away from
   the host.
 
-[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.0.0...HEAD
+[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.1.0...HEAD
+[v1.1.0]: https://github.com/ameshkov/dev-perf/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.0.0
