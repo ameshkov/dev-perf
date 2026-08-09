@@ -28,6 +28,7 @@ import { errorDetail } from '../util/error.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 import type { ScopedLog } from '../util/log.js';
 import type { LlmRuntimeConfig } from './runtime.js';
+import type { SessionLimitHit } from './session-limits.js';
 import {
   buildOrientationPrompt,
   buildOrientationSystemPrompt,
@@ -136,6 +137,10 @@ export interface AnalyzeRepoInput {
   log: ScopedLog;
   /** True to ignore cached results and re-run everything. */
   refresh: boolean;
+  /** The session limit the previous attempt exceeded, when this run is
+   * a retry after such a failure — rendered into the prompts so the
+   * model works less thoroughly but faster. */
+  limitHit?: SessionLimitHit;
 }
 
 /** The completed LLM analysis of one user, keyed for the assembler. */
@@ -216,7 +221,7 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   );
   const context = await input.service.promptSession(
     session,
-    await buildOrientationPrompt(input.repo, input.branch, input.ignore),
+    await buildOrientationPrompt(input.repo, input.branch, input.ignore, input.limitHit),
     input.repo,
   );
   await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
@@ -264,6 +269,7 @@ async function analyzeUser(
       range: input.range,
       repoContext: orientation.context,
       commits: group.commits,
+      limitHit: input.limitHit,
     });
     const payload = await enforceReport(input, group, session, analysisPrompt);
     const usage = input.service.getUsage(session);

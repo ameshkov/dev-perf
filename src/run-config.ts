@@ -70,6 +70,10 @@ interface RunConfig {
   limitOutput: number;
   /** Retries for a failed LLM analysis. */
   llmRetries: number;
+  /** Max wall-clock time per LLM session, in seconds, when set. */
+  llmMaxTime?: number;
+  /** Max agent turns per LLM session, when set. */
+  llmMaxTurns?: number;
   /** Email-to-name mappings (`email=name`), when any were given. */
   usersMap?: string[];
   /** Config file the options were resolved from, when one was in effect. */
@@ -130,6 +134,10 @@ export function runConfig(options: ReportOptions, repos: readonly RepoSpec[]): R
     limitContext: options.limitContext,
     limitOutput: options.limitOutput,
     llmRetries: options.llmRetries,
+    // Optional keys stay absent (not `undefined`) when unset, matching
+    // the JSON output: an unlimited session shows no limit line.
+    ...(options.llmMaxTime === undefined ? {} : { llmMaxTime: options.llmMaxTime }),
+    ...(options.llmMaxTurns === undefined ? {} : { llmMaxTurns: options.llmMaxTurns }),
     ...(options.maps === undefined || options.maps.length === 0
       ? {}
       : { usersMap: options.maps.map((entry) => `${entry.email}=${entry.name}`) }),

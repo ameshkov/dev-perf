@@ -13,6 +13,8 @@ import type { ReportOptions } from '../config.js';
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { createLlmRuntime } from './runtime.js';
 import type { LlmRuntime } from './runtime.js';
+import { sessionLimitFrom } from './session-limits.js';
+import type { SessionLimitHit } from './session-limits.js';
 import { createSessionService } from './session.js';
 import type { SessionService } from './session.js';
 import { assemblePeriods, llmRuntimeConfig } from './repo-period.js';
@@ -69,6 +71,9 @@ export async function runLlmPhase(
 ): Promise<Repository[]> {
   const attempts = 1 + options.llmRetries;
   let lastError: Error | undefined;
+  // The session limit a failed attempt exceeded, so the next attempt's
+  // prompts can tell the model to be less thorough but faster.
+  let limitHit: SessionLimitHit | undefined;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (attempt > 1) {
       log.warn(
@@ -89,9 +94,14 @@ export async function runLlmPhase(
         log,
         exclude,
         baseName,
+        limitHit,
       );
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(errorDetail(error));
+      // Only a session-limit failure carries this over: a retry that
+      // failed for some other reason must not keep telling the model to
+      // work faster.
+      limitHit = sessionLimitFrom(error) ?? undefined;
     } finally {
       // Fully dispose the runtime and its sessions so the next attempt
       // starts from a clean slate.
@@ -137,10 +147,17 @@ async function startLlmRuntime(
     return undefined;
   }
   try {
-    const runtime = await createLlmRuntime(clone.repoDir, llmRuntimeConfig(options), log);
+    const runtimeConfig = llmRuntimeConfig(options);
+    // The same limits bound every session of this repo's analysis; `0`
+    // means "no limit" (the default when the config leaves them unset).
+    const sessionLimits = {
+      maxTimeMs: (options.llmMaxTime ?? 0) * 1000,
+      maxTurns: options.llmMaxTurns ?? 0,
+    };
+    const runtime = await createLlmRuntime(clone.repoDir, runtimeConfig, log);
     return {
       runtime,
-      service: createSessionService(runtime, path.dirname(clone.repoDir), log),
+      service: createSessionService(runtime, path.dirname(clone.repoDir), log, sessionLimits),
     };
   } catch (error) {
     // errorDetail walks the cause chain.

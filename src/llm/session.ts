@@ -9,6 +9,12 @@
  * system prompt, an in-memory settings and session manager, the tool
  * allowlist (including pi's unshielded `bash`, see `SESSION_TOOLS`)
  * plus the `devperf_report` custom tool, and thinking disabled.
+ * Optional per-session limits (`createSessionService`'s `SessionLimits`)
+ * bound every LLM session: a max wall-clock time and a max number of
+ * agent turns — counted from the session's event stream — after which
+ * the in-flight prompt is aborted and fails with a descriptive error,
+ * so a stuck or endlessly tool-calling session cannot consume the
+ * budget of the whole run.
  * Analysis prompts run through
  * `promptSessionUntilReport`, which resolves as soon as the
  * `devperf_report` tool call starts (the session is aborted so the
@@ -22,7 +28,6 @@
  * `subscribeSessionEventLog` (`src/llm/session-events.ts`).
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import {
   DefaultResourceLoader,
   createAgentSession,
@@ -37,7 +42,10 @@ import { readJsonFile } from '../util/json.js';
 import { createScopedLog } from '../util/log.js';
 import type { ScopedLog } from '../util/log.js';
 import type { LlmRuntime } from './runtime.js';
+import { promptForReport } from './session-report.js';
 import { subscribeSessionEventLog } from './session-events.js';
+import { limitsFrom, runPromptWithLimits } from './session-limits.js';
+import type { SessionLimits, SessionLimitsState } from './session-limits.js';
 import { REPORT_TOOL_NAME, buildReportTool } from './tools.js';
 
 /** One in-process session, scoped to the clone directory. */
@@ -46,6 +54,14 @@ export interface SessionHandle {
   id: string;
   /** The clone directory the session was created in. */
   directory: string;
+}
+
+/** One created session: the pi session plus its limit state. */
+interface SessionEntry {
+  /** The pi session prompts run on. */
+  session: AgentSession;
+  /** The session's running max-time / max-turns limit state. */
+  limits: SessionLimitsState;
 }
 
 /**
@@ -110,25 +126,29 @@ export interface SessionService {
  * report files the `devperf_report` tool writes).
  * @param log - The repository's scoped logger for the heartbeat
  * progress lines and usage warnings (defaults to the global logger).
+ * @param limits - Per-session max-time and max-turns bounds applied to
+ * every session the service creates; `0` disables a limit (defaults to
+ * no limits).
  * @returns The session service for that runtime.
  */
 export function createSessionService(
   runtime: LlmRuntime,
   entryDir: string,
   log: ScopedLog = createScopedLog(),
+  limits: SessionLimits = { maxTimeMs: 0, maxTurns: 0 },
 ): SessionService {
-  const sessions = new Map<string, AgentSession>();
+  const sessions = new Map<string, SessionEntry>();
   return {
     createSession: (directory, title, systemPrompt) =>
-      createSessionWith(runtime, entryDir, directory, title, systemPrompt, log, sessions),
+      createSessionWith(runtime, entryDir, directory, title, systemPrompt, log, sessions, limits),
     promptSession: (handle, text, label) => promptSessionWith(handle, text, label, log, sessions),
     promptSessionUntilReport: (handle, text, llmDirPath, label) =>
       promptSessionUntilReportWith(handle, text, llmDirPath, label, log, sessions),
     getUsage: (handle) => getUsageWith(handle, sessions),
     close: async () => {
       const count = sessions.size;
-      for (const session of sessions.values()) {
-        session.dispose();
+      for (const entry of sessions.values()) {
+        entry.session.dispose();
       }
       sessions.clear();
       log.info(`LLM: disposed ${count} session(s)`);
@@ -150,7 +170,9 @@ export function createSessionService(
  * @param title - Human-readable session title.
  * @param systemPrompt - The rendered orientation or user system prompt.
  * @param log - The repository's scoped logger.
- * @param sessions - The service's session registry (id → pi session).
+ * @param sessions - The service's session registry (id → session entry).
+ * @param limits - The per-session limits every session is created with;
+ * each session holds its own running state (deadline and turn budget).
  * @returns The session handle.
  * @throws {Error} When the pi session cannot be created.
  */
@@ -161,7 +183,8 @@ async function createSessionWith(
   title: string,
   systemPrompt: string,
   log: ScopedLog,
-  sessions: Map<string, AgentSession>,
+  sessions: Map<string, SessionEntry>,
+  limits: SessionLimits,
 ): Promise<SessionHandle> {
   const reportId = randomUUID();
   const settingsManager = SettingsManager.inMemory({
@@ -197,7 +220,7 @@ async function createSessionWith(
   });
   session.setSessionName(title);
   subscribeSessionEventLog(session, reportId, log);
-  sessions.set(reportId, session);
+  sessions.set(reportId, { session, limits: limitsFrom(limits) });
   log.info(`LLM: session "${reportId}" created (${title})`);
   return { id: reportId, directory };
 }
@@ -215,22 +238,26 @@ async function createSessionWith(
  * @param log - The repository's scoped logger for progress lines.
  * @param sessions - The service's session registry.
  * @returns The final assistant text.
- * @throws {Error} When the prompt fails; the session is aborted first.
+ * @throws {Error} When the prompt fails (including when the session's
+ * max-time or max-turns limit is exceeded); the session is aborted
+ * first.
  */
 async function promptSessionWith(
   handle: SessionHandle,
   text: string,
   label: string,
   log: ScopedLog,
-  sessions: Map<string, AgentSession>,
+  sessions: Map<string, SessionEntry>,
 ): Promise<string> {
-  const session = requireSession(handle, sessions);
+  const entry = requireSession(handle, sessions);
   const stopHeartbeat = startHeartbeat(log, label, 'the LLM reply', handle.id);
   try {
-    await session.prompt(text);
-    return session.getLastAssistantText() ?? '';
+    await runPromptWithLimits(entry.session, entry.limits, log, handle.id, 'the LLM reply', () =>
+      entry.session.prompt(text),
+    );
+    return entry.session.getLastAssistantText() ?? '';
   } catch (error) {
-    await abortSession(session);
+    await abortSession(entry.session);
     throw error;
   } finally {
     stopHeartbeat();
@@ -278,12 +305,19 @@ async function promptSessionUntilReportWith(
   llmDirPath: string,
   label: string,
   log: ScopedLog,
-  sessions: Map<string, AgentSession>,
+  sessions: Map<string, SessionEntry>,
 ): Promise<LlmToolPayload | undefined> {
-  const session = requireSession(handle, sessions);
+  const entry = requireSession(handle, sessions);
   const stopHeartbeat = startHeartbeat(log, label, REPORT_TOOL_NAME, handle.id);
   try {
-    const found = await promptForReport(session, handle.id, text, llmDirPath);
+    const found = await promptForReport(
+      entry.session,
+      handle.id,
+      text,
+      llmDirPath,
+      log,
+      entry.limits,
+    );
     if (found !== undefined) {
       return found;
     }
@@ -295,169 +329,20 @@ async function promptSessionUntilReportWith(
 }
 
 /**
- * Sends the analysis prompt and resolves as soon as the session's
- * `devperf_report` tool call starts. The tool-call start event carries
- * the parsed arguments; a valid payload is written to the report file
- * and the running session is aborted so the orchestration does not
- * wait for the agent to finish. The promise resolves only once the
- * report file is on disk, keeping the file-based convention
- * authoritative. When the turn ends cleanly without calling the tool,
- * `undefined` is returned; when a prompt or report-write fails, the
- * error is rejected so a real failure surfaces instead of being masked
- * as "did not call the tool". The abort-induced rejection of a detected
- * tool call is expected and swallowed — the write path settles with the
- * payload.
- *
- * @param session - The pi session to prompt.
- * @param reportId - The session/report id that names the report file.
- * @param text - The prompt text.
- * @param llmDirPath - The entry's `llm/` directory holding the report
- * files.
- * @returns The validated analysis payload, or `undefined` when the turn
- * ended without calling the tool.
- */
-function promptForReport(
-  session: AgentSession,
-  reportId: string,
-  text: string,
-  llmDirPath: string,
-): Promise<LlmToolPayload | undefined> {
-  return new Promise((resolve, reject) => {
-    const settler = createSettler(resolve, reject);
-    let sawReport = false;
-    settler.setUnsubscribe(
-      session.subscribe((event) => {
-        if (event.type !== 'tool_execution_start' || event.toolName !== REPORT_TOOL_NAME) {
-          return;
-        }
-        const payload = readValidatedPayload(event.args);
-        if (payload === undefined) {
-          return;
-        }
-        sawReport = true;
-        // Write the report from the parsed arguments so the orchestration
-        // can settle even if the tool body did not run, then stop the
-        // still-running turn. The prompt settles only once the file is on
-        // disk, keeping the file-based convention authoritative.
-        void (async () => {
-          try {
-            await writeReportFile(llmDirPath, reportId, payload);
-            settler.settle(payload);
-          } catch (error) {
-            settler.fail(error);
-          }
-        })();
-        void session.abort().catch(() => {});
-      }),
-    );
-    void session.prompt(text).then(
-      () => {
-        // A clean turn-end without a tool call settles as undefined; if
-        // a report was seen, the write path above settles with it.
-        if (!sawReport) {
-          settler.settle(undefined);
-        }
-      },
-      (error) => {
-        // The abort-induced rejection from a detected tool call is
-        // expected; any other rejection is a real failure that must
-        // surface instead of being masked as "did not call the tool".
-        if (!sawReport) {
-          settler.fail(error);
-        }
-      },
-    );
-  });
-}
-
-/**
- * A one-shot promise settler that settles exactly once, unsubscribing
- * the session event listener on first settlement so no late event or
- * prompt callback can double-settle (or settle after the promise was
- * already rejected by a report-write failure).
- *
- * @param resolve - Resolves the outer promise with a payload.
- * @param reject - Rejects the outer promise with an error.
- * @returns The settler.
- */
-function createSettler(
-  resolve: (payload: LlmToolPayload | undefined) => void,
-  reject: (error: unknown) => void,
-): {
-  /** Resolves once, on first call. */
-  settle(payload: LlmToolPayload | undefined): void;
-  /** Rejects once, on first call. */
-  fail(error: unknown): void;
-  /** Registers the unsubscribe function called on first settlement. */
-  setUnsubscribe(unsubscribe: () => void): void;
-} {
-  let settled = false;
-  let unsubscribe: () => void = () => {};
-  const settleOnce = (fn: () => void): void => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    unsubscribe();
-    fn();
-  };
-  return {
-    settle: (payload) => settleOnce(() => resolve(payload)),
-    fail: (error) => settleOnce(() => reject(error)),
-    setUnsubscribe(fn) {
-      unsubscribe = fn;
-    },
-  };
-}
-
-/**
- * Looks up the pi session behind a handle, throwing when it is not
- * registered (a session used after `close()`).
+ * Looks up the pi session entry behind a handle, throwing when it is
+ * not registered (a session used after `close()`).
  *
  * @param handle - The session handle.
  * @param sessions - The service's session registry.
- * @returns The pi session.
+ * @returns The session entry (pi session plus its limit state).
  * @throws {Error} When the handle is unknown to the service.
  */
-function requireSession(handle: SessionHandle, sessions: Map<string, AgentSession>): AgentSession {
-  const session = sessions.get(handle.id);
-  if (session === undefined) {
+function requireSession(handle: SessionHandle, sessions: Map<string, SessionEntry>): SessionEntry {
+  const entry = sessions.get(handle.id);
+  if (entry === undefined) {
     throw new Error(`no LLM session registered for "${handle.id}"`);
   }
-  return session;
-}
-
-/**
- * Validates a `devperf_report` tool-call argument object against the
- * shared report schema.
- *
- * @param args - The parsed tool-call arguments.
- * @returns The validated payload, or `undefined` when invalid.
- */
-function readValidatedPayload(args: unknown): LlmToolPayload | undefined {
-  const result = llmToolPayloadSchema.safeParse(args);
-  return result.success ? result.data : undefined;
-}
-
-/**
- * Writes a session's validated report file inside the entry's `llm/`
- * directory.
- *
- * @param llmDirPath - The cache entry's `llm/` directory.
- * @param sessionID - The session id.
- * @param payload - The validated analysis payload.
- */
-async function writeReportFile(
-  llmDirPath: string,
-  sessionID: string,
-  payload: LlmToolPayload,
-): Promise<void> {
-  await mkdir(llmDirPath, { recursive: true });
-  await writeFile(
-    sessionReportPath(llmDirPath, sessionID),
-    `${JSON.stringify(payload, null, 2)}\n`,
-    'utf8',
-  );
+  return entry;
 }
 
 /**
@@ -542,8 +427,8 @@ export async function readSessionReport(
  * @param sessions - The service's session registry.
  * @returns The token usage of the session.
  */
-function getUsageWith(handle: SessionHandle, sessions: Map<string, AgentSession>): TokenUsage {
-  const stats = requireSession(handle, sessions).getSessionStats();
+function getUsageWith(handle: SessionHandle, sessions: Map<string, SessionEntry>): TokenUsage {
+  const stats = requireSession(handle, sessions).session.getSessionStats();
   return {
     input: stats.tokens.input,
     cacheRead: stats.tokens.cacheRead,

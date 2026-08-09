@@ -26,6 +26,9 @@ describe('reportOptionsSchema', () => {
       expect(result.data.llmRetries).toBe(2);
       expect(result.data.parallel).toBe(1);
       expect(result.data.refresh).toBeUndefined();
+      // The session limits stay absent (unlimited) unless configured.
+      expect(result.data.llmMaxTime).toBeUndefined();
+      expect(result.data.llmMaxTurns).toBeUndefined();
     }
   });
 
@@ -172,6 +175,37 @@ describe('reportOptionsSchema', () => {
     }
   });
 
+  it('passes llm-max-time and llm-max-turns through and rejects invalid values', () => {
+    const ok = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'llm-max-time': 120, 'llm-max-turns': 10 }),
+    );
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.llmMaxTime).toBe(120);
+      expect(ok.data.llmMaxTurns).toBe(10);
+    }
+
+    for (const value of [0, -1, 1.5, 'abc']) {
+      const time = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), 'llm-max-time': value as never }),
+      );
+      expect(time.success, `expected llm-max-time ${String(value)} to be rejected`).toBe(false);
+      if (!time.success) {
+        const paths = time.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('llmMaxTime');
+      }
+
+      const turns = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), 'llm-max-turns': value as never }),
+      );
+      expect(turns.success, `expected llm-max-turns ${String(value)} to be rejected`).toBe(false);
+      if (!turns.success) {
+        const paths = turns.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('llmMaxTurns');
+      }
+    }
+  });
+
   it('accepts parallel one and rejects invalid values', () => {
     const one = reportOptionsSchema.safeParse(
       resolveReportOptions({ ...validConfig(), parallel: 1 }),
@@ -270,6 +304,8 @@ describe('resolveReportOptions', () => {
       'limit-context': 128,
       'limit-output': 64,
       'llm-retries': 3,
+      'llm-max-time': 120,
+      'llm-max-turns': 10,
       parallel: 4,
       verbose: true,
     });
@@ -287,6 +323,8 @@ describe('resolveReportOptions', () => {
       limitContext: 128,
       limitOutput: 64,
       llmRetries: 3,
+      llmMaxTime: 120,
+      llmMaxTurns: 10,
       parallel: 4,
       verbose: true,
     });
@@ -344,6 +382,8 @@ describe('parseReportOptions', () => {
     expect(options.limitContext).toBe(262144);
     expect(options.limitOutput).toBe(2048);
     expect(options.llmRetries).toBe(2);
+    expect(options.llmMaxTime).toBeUndefined();
+    expect(options.llmMaxTurns).toBeUndefined();
     expect(options.repos).toEqual([{ repo: 'https://github.com/org/repo.git' }]);
   });
 

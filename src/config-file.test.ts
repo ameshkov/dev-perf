@@ -106,6 +106,8 @@ describe('loadDevPerfConfig', () => {
         'llm: false',
         'parallel: 4',
         'limit-context: 128',
+        'llm-max-time: 120',
+        'llm-max-turns: 10',
         'users-map:',
         "  'alice@example.com': 'Alice Smith'",
         'verbose: true',
@@ -124,6 +126,8 @@ describe('loadDevPerfConfig', () => {
       llm: false,
       parallel: 4,
       'limit-context': 128,
+      'llm-max-time': 120,
+      'llm-max-turns': 10,
       'users-map': { 'alice@example.com': 'Alice Smith' },
       verbose: true,
       compile: {

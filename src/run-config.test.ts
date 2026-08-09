@@ -50,6 +50,8 @@ describe('runConfig', () => {
         limitContext: 1000,
         limitOutput: 2000,
         llmRetries: 0,
+        llmMaxTime: 120,
+        llmMaxTurns: 10,
         parallel: 3,
         verbose: true,
       }),
@@ -71,6 +73,8 @@ describe('runConfig', () => {
       limitContext: 1000,
       limitOutput: 2000,
       llmRetries: 0,
+      llmMaxTime: 120,
+      llmMaxTurns: 10,
       parallel: 3,
       verbose: true,
     });
@@ -99,6 +103,8 @@ describe('runConfig', () => {
     expect('model' in config).toBe(false);
     expect('providerUrl' in config).toBe(false);
     expect('apiKey' in config).toBe(false);
+    expect('llmMaxTime' in config).toBe(false);
+    expect('llmMaxTurns' in config).toBe(false);
   });
 
   it('reports the deduplicated repository list', () => {
@@ -165,6 +171,8 @@ describe('runConfigLines', () => {
         limitContext: 1000,
         limitOutput: 2000,
         llmRetries: 0,
+        llmMaxTime: 120,
+        llmMaxTurns: 10,
         parallel: 3,
         verbose: true,
       }),
@@ -188,6 +196,8 @@ describe('runConfigLines', () => {
       '  limit-context: 1000',
       '  limit-output: 2000',
       '  llm-retries: 0',
+      '  llm-max-time: 120',
+      '  llm-max-turns: 10',
       '  parallel: 3',
       '  verbose: true',
     ]);

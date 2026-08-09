@@ -94,6 +94,20 @@ describe('buildOrientationPrompt', () => {
   it('ends with the required tool-call instruction', async () => {
     expect(await buildOrientationPrompt('repo', 'main')).toContain(TOOL_CALL_FRAGMENT);
   });
+
+  it('renders the retry advice after a session limit, and omits it otherwise', async () => {
+    const plain = await buildOrientationPrompt('https://example.com/repo.git', 'main');
+    expect(plain).not.toContain('less thorough');
+
+    const retry = await buildOrientationPrompt('https://example.com/repo.git', 'main', undefined, {
+      kind: 'time',
+      cap: 60,
+      sessionId: 'ses_1',
+    });
+    expect(retry).toContain('the 60-second max-time cap');
+    expect(retry).toContain('less thorough but faster');
+    expect(retry).toContain('Retry after a session limit');
+  });
 });
 
 describe('buildUserPrompt', () => {
@@ -152,6 +166,19 @@ describe('buildUserPrompt', () => {
     const prompt = await buildUserPrompt(userInput());
     expect(prompt).toContain('Alice (alice@example.com) in');
     expect(prompt).not.toContain('treat commits from all of the email addresses');
+  });
+
+  it('renders the retry advice after a session limit, and omits it otherwise', async () => {
+    const plain = await buildUserPrompt(userInput());
+    expect(plain).not.toContain('less thorough');
+    expect(plain).not.toContain('Retry after a session limit');
+
+    const retry = await buildUserPrompt(
+      userInput({ limitHit: { kind: 'turns', cap: 50, sessionId: 'ses_1' } }),
+    );
+    expect(retry).toContain('50-turn max-turns');
+    expect(retry).toContain('less thorough but faster');
+    expect(retry).toContain('Retry after a session limit');
   });
 
   it('renders an unbounded range side as plain language', async () => {

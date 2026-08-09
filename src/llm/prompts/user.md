@@ -4,6 +4,8 @@ Analyze the git contributions of {{name}} ({{email}}){{identityNote}} in
 the repository at {{repo}}. The analysis covers commits whose author
 date lies in the range {{since}} to {{until}} (UTC) on {{branch}}.
 
+{{retryAdvice}}
+
 {{scopeNote}}
 
 The following paths are excluded from the analysis — do not attribute

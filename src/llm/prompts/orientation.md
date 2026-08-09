@@ -4,6 +4,8 @@ Analyze the repository at {{repo}} for dev-perf. This session
 establishes the repository context that the contributor analysis uses
 later. The analysis covers {{branch}}; scope your exploration to it.
 
+{{retryAdvice}}
+
 Changes to the following paths are excluded from the analysis — do not
 attribute or weigh them, even when they surface while you inspect the
 repository:

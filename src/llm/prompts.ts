@@ -8,16 +8,20 @@
  * user prompts (`orientation.md` — the orientation session that
  * produces the repository context; `user.md` — the per-user analysis
  * prompt; `reminder.md` — the tool-call reminder used by the
- * enforcement loop). This module loads the templates (relative to the
- * module file, so the same paths work from `src/` and `build/`),
- * caches them, and substitutes the `{{placeholder}}` values; it
- * renders no prompt prose itself.
+ * enforcement loop). When an attempt fails because a session hit its
+ * max-time or max-turns limit, the retried prompt carries the retry
+ * advice rendered from `limit-retry.md` (`{{retryAdvice}}`, empty
+ * otherwise). This module loads the templates (relative to the module
+ * file, so the same paths work from `src/` and `build/`), caches them,
+ * and substitutes the `{{placeholder}}` values; it renders no prompt
+ * prose itself.
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Commit, CommitFile } from '../deterministic/commits.js';
 import type { AnalyzedRange } from '../report/index.js';
+import type { SessionLimitHit } from './session-limits.js';
 
 /** How many file paths a commit line lists before they are truncated. */
 const MAX_FILES_PER_COMMIT = 20;
@@ -49,6 +53,10 @@ export interface UserPromptInput {
   repoContext: string;
   /** The user's commits in the range, newest first. */
   commits: Commit[];
+  /** The session limit a previous attempt exceeded, when this prompt is
+   * a retry after such a failure — renders the "be less thorough but
+   * faster" advice into the prompt. */
+  limitHit?: SessionLimitHit;
 }
 
 /**
@@ -90,17 +98,21 @@ export function buildUserSystemPrompt(): Promise<string> {
  * line.
  * @param branch - The effective checked-out branch being analyzed.
  * @param ignore - Gitignore-style paths excluded for the repository, if any.
+ * @param limitHit - The session limit a previous attempt exceeded, when
+ * this is a retry after such a failure.
  * @returns The orientation prompt text.
  */
 export async function buildOrientationPrompt(
   repo: string,
   branch: string,
   ignore?: string[],
+  limitHit?: SessionLimitHit,
 ): Promise<string> {
   return renderTemplate(await loadTemplate('orientation'), {
     repo,
     branch: branchNote(branch),
     ignoredPaths: ignoredPathsValue(ignore),
+    retryAdvice: await buildLimitRetryNote(limitHit),
   });
 }
 
@@ -140,9 +152,32 @@ export async function buildUserPrompt(input: UserPromptInput): Promise<string> {
     since,
     until,
     repoContext: input.repoContext,
+    retryAdvice: await buildLimitRetryNote(input.limitHit),
     count: String(input.commits.length),
     commits: lines,
   });
+}
+
+/**
+ * Renders the retry-advice block for a prompt that re-runs after a
+ * session limit was exceeded: it tells the model what happened and to
+ * be less thorough but faster, so the retried session actually finishes
+ * within its fresh budget. Empty (no block) for a first attempt or a
+ * retry that was not caused by a session limit.
+ *
+ * @param hit - The session limit a previous attempt exceeded, or
+ * `undefined`.
+ * @returns The rendered advice block, or `''`.
+ */
+async function buildLimitRetryNote(hit: SessionLimitHit | undefined): Promise<string> {
+  if (hit === undefined) {
+    return '';
+  }
+  const limit =
+    hit.kind === 'time'
+      ? `the ${hit.cap}-second max-time cap`
+      : `the ${hit.cap}-turn max-turns cap`;
+  return renderTemplate(await loadTemplate('limit-retry'), { limit });
 }
 
 /**

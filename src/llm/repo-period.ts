@@ -12,6 +12,7 @@ import type { AuthorGroup } from '../deterministic/identity.js';
 import { hasIgnorePaths } from '../deterministic/path-ignore.js';
 import { analyzeRepositoryLLM } from './analyze.js';
 import type { LlmRuntimeConfig } from './runtime.js';
+import type { SessionLimitHit } from './session-limits.js';
 import type { SessionService } from './session.js';
 import { assembleRepository } from '../report/index.js';
 import type { AnalyzedRange, LlmAnalysis, Repository } from '../report/index.js';
@@ -39,6 +40,9 @@ import type { ScopedLog } from '../util/log.js';
  * exclusion, when one is in effect.
  * @param baseName - The resolved base branch name of the branch-delta,
  * when one is in effect.
+ * @param limitHit - The session limit the previous attempt exceeded,
+ * when this is a retry after such a failure; the retried prompts tell
+ * the model to be less thorough but faster.
  * @returns One assembled repository entry per period.
  * @throws {Error} When the LLM phase fails; the message names the repo
  * — and the period when `unit` is set — plus the underlying cause.
@@ -53,6 +57,7 @@ export async function assemblePeriods(
   log: ScopedLog,
   exclude: string | undefined,
   baseName: string | undefined,
+  limitHit: SessionLimitHit | undefined,
 ): Promise<Repository[]> {
   const repositories: Repository[] = [];
   for (const period of periods) {
@@ -70,6 +75,7 @@ export async function assemblePeriods(
           log,
           exclude,
           baseName,
+          limitHit,
         );
       } catch (error) {
         const where =
@@ -105,6 +111,8 @@ export async function assemblePeriods(
  * exclusion, when one is in effect.
  * @param baseName - The resolved base branch name of the branch-delta,
  * when one is in effect.
+ * @param limitHit - The session limit the previous attempt exceeded,
+ * when this is a retry after such a failure.
  * @returns Completed analyses keyed by lowercased author email, or
  * `undefined` when the period has no active users.
  * @throws {Error} When an analysis fails; the message names the user
@@ -120,6 +128,7 @@ async function analyzePeriodLlm(
   log: ScopedLog,
   exclude: string | undefined,
   baseName: string | undefined,
+  limitHit: SessionLimitHit | undefined,
 ): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
   const active = groups.filter((group) => group.commits.length > 0);
   if (active.length === 0) {
@@ -143,6 +152,7 @@ async function analyzePeriodLlm(
     service,
     refresh: options.refresh === true,
     log,
+    ...(limitHit === undefined ? {} : { limitHit }),
   });
   log.progress(
     `LLM: analyzed ${pluralize(results.length, 'user')} in period ${rangeBound(period.since)} to ${rangeBound(period.until)}`,

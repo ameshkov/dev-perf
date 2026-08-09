@@ -86,7 +86,15 @@ api-key: ${DEV_PERF_API_KEY}
 # limit-output: 65536
 
 # Retries for a failed LLM analysis (default: 2):
-# llm-retries: 2
+llm-retries: 2
+
+# Per-session LLM limits (both unlimited by default). llm-max-time caps
+# the wall-clock time of each LLM session, in seconds; llm-max-turns
+# caps how many agent turns one session may take. A session that hits a
+# limit is aborted and the run fails with a descriptive error (subject
+# to llm-retries):
+llm-max-time: 3600
+llm-max-turns: 300
 
 # Email-to-name mappings, merging identities that would otherwise stay
 # separate; commits whose authors map to the same display name are

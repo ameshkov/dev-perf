@@ -52,6 +52,14 @@ and this project adheres to
 - The LLM result cache is now keyed by the clone's head and resolved
   base commit shas (plus branch and ignored paths), so an advancing
   branch or base re-runs the analysis instead of reusing a stale result.
+- Configurable per-session LLM limits: `llm-max-time` (seconds) and
+  `llm-max-turns` bound every LLM session's wall-clock time and agent
+  turns. A session that runs past its time budget or starts more turns
+  than allowed is aborted and the run fails with a descriptive error
+  (subject to `llm-retries`), instead of an endless or runaway
+  analysis. When a session limit caused the retry, the retried analysis
+  prompt tells the model what happened and to be less thorough but
+  faster. Both limits are unlimited by default.
 
 ### Changed
 

@@ -18,6 +18,7 @@ import type { ReportOptions } from './config.js';
 import { parseRepoSpec } from './repo/repo-spec.js';
 import { createLlmRuntime } from './llm/runtime.js';
 import type { LlmRuntimeConfig } from './llm/runtime.js';
+import { SessionLimitError } from './llm/session-limits.js';
 import { createSessionService } from './llm/session.js';
 import type { SessionHandle, SessionService } from './llm/session.js';
 import { runPipeline } from './pipeline.js';
@@ -55,6 +56,8 @@ interface StubState {
    * pipeline's retry behavior); `undefined`/0 reject never.
    */
   promptFailures?: number;
+  /** Every prompt text the stub receives, in order, when set. */
+  promptTexts?: string[];
 }
 
 /** The payload the stub reports through `devperf_report`. */
@@ -86,16 +89,18 @@ class StubSessions implements SessionService {
     return { id: `ses_${++this.counter}`, directory };
   }
 
-  async promptSession(_handle: SessionHandle, _text: string, _label: string): Promise<string> {
+  async promptSession(_handle: SessionHandle, text: string, _label: string): Promise<string> {
+    this.state.promptTexts?.push(text);
     return this.state.replyText;
   }
 
   async promptSessionUntilReport(
     handle: SessionHandle,
-    _text: string,
+    text: string,
     llmDir: string,
     _label: string,
   ): Promise<LlmToolPayload | undefined> {
+    this.state.promptTexts?.push(text);
     if (this.state.promptError !== undefined) {
       const failures = this.state.promptFailures;
       if (failures === undefined || failures > 0) {
@@ -449,6 +454,73 @@ describe('runPipeline with LLM analysis', () => {
       const disposeOrder = dispose.mock.invocationCallOrder;
       expect(disposeOrder[0]).toBeLessThan(startOrder[1]!);
       expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('tells the model to be less thorough when a session limit caused the retry', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const state: StubState = {
+      callTool: true,
+      payload: PAYLOAD,
+      replyText: 'ok',
+      // The first analysis prompt hits the session max-time limit; the
+      // retry is told to work faster.
+      promptError: new SessionLimitError(
+        { kind: 'time', cap: 60, sessionId: 'ses_1' },
+        'LLM session "ses_1" exceeded the 60s max time limit at devperf_report',
+      ),
+      promptFailures: 1,
+      promptTexts: [],
+    };
+    stubRuntime(state);
+    try {
+      const report = await runPipeline(options({ repos: [parseRepoSpec(repo.url)], cacheDir }));
+
+      expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
+      expect(createLlmRuntime).toHaveBeenCalledTimes(2);
+      // A retried prompt carries the retry advice.
+      expect(state.promptTexts!.some((text) => text.includes('less thorough but faster'))).toBe(
+        true,
+      );
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('does not inject retry advice when the retry was not caused by a session limit', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'init',
+        files: [{ path: 'a.txt', content: 'a\n' }],
+      },
+    ]);
+    const state: StubState = {
+      callTool: true,
+      payload: PAYLOAD,
+      replyText: 'ok',
+      promptError: new TypeError('fetch failed'),
+      promptFailures: 1,
+      promptTexts: [],
+    };
+    stubRuntime(state);
+    try {
+      const report = await runPipeline(options({ repos: [parseRepoSpec(repo.url)], cacheDir }));
+
+      expect(report.periods[0].repositories[0].users[0].llm.status).toBe('completed');
+      expect(state.promptTexts!.some((text) => text.includes('less thorough but faster'))).toBe(
+        false,
+      );
     } finally {
       await removeFixtureRepo(repo);
     }

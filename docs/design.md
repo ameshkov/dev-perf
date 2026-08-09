@@ -114,6 +114,7 @@ an unset or empty variable errors naming the file and the variable.
 | `llm` | report | LLM analysis enabled; default `true` |
 | `model` / `provider-url` / `api-key` | report | LLM provider, explicit only (§6.2) |
 | `limit-context` / `limit-output` / `llm-retries` | report | LLM caps and retries (§6.2) |
+| `llm-max-time` / `llm-max-turns` | report | Per-session LLM limits; seconds / turns, unlimited by default (§6.2) |
 | `users-map` | report, compile | Email-to-name mapping; identity merging (§5.3) |
 | `parallel` | report | Repositories analyzed in parallel (§6.7) |
 | `verbose` | report, compile | Verbose logging |
@@ -307,6 +308,15 @@ binary on `PATH`:
 - Sessions are created per analysis by `createSessionService(runtime, entryDir,
   log)` (`src/llm/session.ts`); `close()` disposes every session and
   `runtime.dispose()` removes the in-memory API key.
+- **Session limits** (`src/llm/session-limits.ts`): `llm-max-time`
+  (seconds) and `llm-max-turns` optionally bound each session — wall-clock
+  time and agent turns counted from the session event stream
+  (`turn_start`). A limit-hit aborts the session and fails the prompt
+  with a `SessionLimitError` (§6.5); the failure then goes through the
+  normal `llm-retries` handling. When a limit caused the retry, the
+  retried prompts (rendered from `limit-retry.md`) tell the model to be
+  less thorough but faster, so the fresh session finishes within its new
+  budget. Unlimited by default.
 - LLM failures are retried (`llm-retries`) with a **fresh runtime** per
   attempt; completed per-user analyses are cached and reused across attempts
   (§6.6).

@@ -86,10 +86,11 @@ const compileConfigSchema = z
  * The config file schema: shared top-level keys read by both `report`
  * and `compile` (`repos`, `users-map`, `verbose`), report-only keys
  * (`since`, `until`, `unit`, `output`, `cache-dir`, `refresh`, `llm`,
- * `model`, `provider-url`, `api-key`, the `limit-*` keys, `parallel`),
- * and the nested `compile` section with `compile`-only keys (`report`,
- * `output`, `include-users`, `exclude-users`, `exclude-repos`). Keys
- * are kebab-case; numeric keys hold YAML numbers and boolean keys hold
+ * `model`, `provider-url`, `api-key`, the `limit-*` keys,
+ * `llm-retries`, the `llm-max-*` keys, `parallel`), and the nested
+ * `compile` section with `compile`-only keys (`report`, `output`,
+ * `include-users`, `exclude-users`, `exclude-repos`). Keys are
+ * kebab-case; numeric keys hold YAML numbers and boolean keys hold
  * YAML booleans, so the values flow straight into the option schemas.
  * Unknown keys are rejected.
  *
@@ -129,6 +130,11 @@ const configFileSchema = z
     'limit-output': z.number().optional(),
     /** Retries for a failed LLM analysis. */
     'llm-retries': z.number().optional(),
+    /** Max wall-clock time per LLM session, in seconds (0 or absent:
+     * no limit). */
+    'llm-max-time': z.number().optional(),
+    /** Max agent turns per LLM session (0 or absent: no limit). */
+    'llm-max-turns': z.number().optional(),
     /** Email-to-name mappings (email to display name), merging identities. */
     'users-map': z.record(z.string(), z.string()).optional(),
     /** Repositories analyzed in parallel. */

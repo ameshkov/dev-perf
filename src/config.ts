@@ -11,7 +11,8 @@
  * required when `unit` is set (an unbounded range cannot be split into
  * periods); each email may map to only one display name. `limitContext`
  * / `limitOutput` are positive integers with the defaults 262144 /
- * 65536.
+ * 65536; `llmMaxTime` (seconds) and `llmMaxTurns` are optional positive
+ * integers that bound each LLM session, unlimited when unset.
  */
 import { z } from 'zod';
 import type { DevPerfConfig } from './config-file.js';
@@ -57,6 +58,10 @@ export interface ResolvedReportOptions {
   limitOutput?: number;
   /** Retries for a failed LLM analysis (default: 2). */
   llmRetries?: number;
+  /** Max wall-clock time per LLM session, in seconds (default: no limit). */
+  llmMaxTime?: number;
+  /** Max agent turns per LLM session (default: no limit). */
+  llmMaxTurns?: number;
   /** Email-to-name mappings parsed from the `users-map` config key. */
   maps?: EmailMapEntry[];
   /** Analyze up to this many repositories in parallel (default: 1). */
@@ -108,6 +113,13 @@ export const reportOptionsSchema = z
     limitOutput: z.number().int().positive().default(65536),
     /** Retries for a failed LLM analysis (default: 2). */
     llmRetries: z.number().int().min(0).default(2),
+    /** Max wall-clock time per LLM session, in seconds (default: no
+     * limit; unlimited while running — set to bound a stuck session). */
+    llmMaxTime: z.number().int().positive().optional(),
+    /** Max agent turns per LLM session (default: no limit; bound how
+     * many agent-loop turns one session may use, across its prompts
+     * and reminders). */
+    llmMaxTurns: z.number().int().positive().optional(),
     /** Email-to-name mappings parsed from the `users-map` config key. */
     maps: z.array(emailMapEntrySchema).optional(),
     /** Analyze up to this many repositories in parallel (default: 1). */
@@ -205,6 +217,8 @@ export function resolveReportOptions(
     limitContext: config['limit-context'],
     limitOutput: config['limit-output'],
     llmRetries: config['llm-retries'],
+    llmMaxTime: config['llm-max-time'],
+    llmMaxTurns: config['llm-max-turns'],
     ...(maps.length > 0 ? { maps } : {}),
     parallel: config.parallel,
     verbose: config.verbose,
@@ -233,6 +247,8 @@ const CONFIG_KEY: Readonly<Record<string, string>> = {
   limitContext: 'limit-context',
   limitOutput: 'limit-output',
   llmRetries: 'llm-retries',
+  llmMaxTime: 'llm-max-time',
+  llmMaxTurns: 'llm-max-turns',
   maps: 'users-map',
   parallel: 'parallel',
   verbose: 'verbose',

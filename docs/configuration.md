@@ -41,6 +41,7 @@ environment variables are no longer option sources.
 | `llm` | report | boolean | LLM analysis enabled; default `true` |
 | `model` / `provider-url` / `api-key` | report | string | Required for LLM analysis; never from your global config |
 | `limit-context` / `limit-output` / `llm-retries` | report | number | Defaults 262144 / 65536 / 2 |
+| `llm-max-time` / `llm-max-turns` | report | number | Per-session limits; seconds / turns; unlimited by default |
 | `users-map` | report, compile | mapping | `email: name`; merging identities under the name |
 | `parallel` | report | number | Default 1 |
 | `compile.report` | compile | string | Input JSON report file (schema v2, as written by `report`) |
@@ -140,6 +141,20 @@ run: `llm-retries` (default 2) recreates the failed repository's
 in-process LLM runtime and re-runs the analysis with the fresh runtime,
 reusing the already-cached per-user results so only the failed sessions
 run again. `llm-retries: 0` fails fast on the first failure.
+
+Each LLM session can be bounded with `llm-max-time` (seconds) and
+`llm-max-turns` (agent turns); both are unlimited by default.
+`llm-max-time` caps the wall-clock time the session may run and
+`llm-max-turns` caps how many agent-loop turns one session may take
+(across its prompts and reminders). A session that runs past its time
+budget or starts more turns than allowed is aborted and fails with a
+descriptive error rather than consuming the budget of the whole run —
+the failure is then subject to the normal `llm-retries` handling. When
+a session limit caused the retry, the retried analysis prompts carry an
+instruction to be less thorough but faster, so the fresh session
+finishes within its new budget. These bounds are per session, so a
+repository with many users gets one budget per user, not one for the
+whole repository.
 
 Token usage: the report records, per user, the `tokenUsage` (input,
 prompt-cache reads, and output tokens) reported by the provider.
