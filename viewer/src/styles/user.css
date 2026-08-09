@@ -1,0 +1,355 @@
+/* Individual dynamics: the user picker tabs, the user detail card
+   with its summary statistics, the contribution cards and their
+   badge rows. */
+
+/* User picker */
+
+.user-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.user-tab {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  text-align: left;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.user-tab:hover {
+  border-color: var(--line-strong);
+  background: var(--panel-2);
+}
+
+.user-tab-active {
+  border-color: rgba(109, 139, 255, 0.55);
+  background: linear-gradient(180deg, rgba(109, 139, 255, 0.1), rgba(109, 139, 255, 0.03));
+}
+
+.user-tab-avatar,
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6d8bff, #46c8f5 70%, #2dd4bf);
+  color: #0a0d15;
+  font-weight: 750;
+  flex-shrink: 0;
+}
+
+.user-tab-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.user-avatar {
+  width: 54px;
+  height: 54px;
+  font-size: 18px;
+}
+
+.user-tab-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-tab-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-tab-stats {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-bot-badge {
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fcd34d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* User detail */
+
+.user-detail {
+  margin-top: 18px;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.user-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-detail-name {
+  font-size: 20px;
+}
+
+.user-detail-emails {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.user-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.user-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.022);
+  min-width: 96px;
+}
+
+.user-stat-value {
+  font-size: 16px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.user-stat-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.user-overview {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--accent);
+  background: rgba(109, 139, 255, 0.06);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-1);
+  white-space: pre-line;
+}
+
+/* Chart groups inside the detail card keep a tighter rhythm than the
+   full-page team groups. */
+
+.user-detail .chart-group {
+  margin-top: 24px;
+}
+
+/* Repositories of the user */
+
+.user-repos {
+  margin-top: 22px;
+}
+
+.user-repo-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-repo-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 13px;
+}
+
+.user-repo-name {
+  font-family: var(--mono);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.user-repo-commits {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Contributions */
+
+.user-contributions-title {
+  margin-top: 26px;
+  font-size: 17px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.contribution-group-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.contribution-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contribution-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contribution-group-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--accent-2);
+}
+
+.contribution-card {
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.024);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contribution-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contribution-title {
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.contribution-grade {
+  display: inline-flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.contribution-summary {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.contribution-reasoning summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.contribution-reasoning p {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.contribution-reasoning strong {
+  color: var(--text-2);
+}
+
+.contribution-row,
+.contribution-commits {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.contribution-row-caption {
+  flex-shrink: 0;
+  width: 108px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.contribution-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.contribution-shas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.contribution-shas code {
+  font-size: 11px;
+  padding: 2px 7px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  .user-detail {
+    padding: 16px;
+  }
+
+  .contribution-row,
+  .contribution-commits {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .contribution-row-caption {
+    width: auto;
+  }
+}

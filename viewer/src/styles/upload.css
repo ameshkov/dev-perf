@@ -1,0 +1,77 @@
+/* Upload zone of the idle state: the drag-and-drop card, its icon,
+   the action buttons, and the parse-error box. */
+
+.upload {
+  margin-top: 34px;
+}
+
+.upload-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 54px 28px;
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(600px 220px at 50% 0%, rgba(109, 139, 255, 0.09), transparent 70%), var(--panel);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.upload-dropzone-dragging {
+  border-color: var(--accent);
+  background:
+    radial-gradient(600px 220px at 50% 0%, rgba(109, 139, 255, 0.18), transparent 70%),
+    var(--panel-2);
+}
+
+.upload-icon {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 10px;
+}
+
+.upload-title {
+  font-size: 20px;
+}
+
+.upload-hint {
+  max-width: 520px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.upload-input {
+  display: none;
+}
+
+.upload-error {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fda4a4;
+  font-size: 13.5px;
+}
+
+.upload-error-detail {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e3b3b3;
+  white-space: pre-wrap;
+}

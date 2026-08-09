@@ -94,7 +94,11 @@ dev-perf/
 │   └── report/                # Report schema, the single source of truth
 ├── test/                      # Fixture repos, report builders, shared test helpers,
 │                              # and compiled-CLI e2e tests
-├── scripts/                   # Build-time asset copying and the knip exclude bootstrap
+├── scripts/                   # Build-time asset copying, the knip exclude bootstrap,
+│                              # and the viewer sample-report generator
+├── viewer/                    # Interactive browser viewer of JSON reports: a
+│                              # standalone React + TypeScript project with its own
+│                              # package.json, quality gates, tests, and README
 ├── docs/
 │   ├── configuration.md       # Full configuration reference
 │   └── design.md              # Full design document
@@ -114,6 +118,19 @@ push.
 Each `src/` module is self-contained and exposes its public API through
 a barrel `index.ts`; tests are co-located as `*.test.ts`. When the
 structure changes, update this section and keep it valid.
+
+`viewer/` is a separate pnpm project (React + TypeScript + Vite +
+ECharts) that renders the JSON reports written by `dev-perf report` as
+an interactive browser dashboard, fully client-side. It follows the
+same code guidelines as the CLI (barrel exports, JSDoc, pinned
+dependency versions, oxlint + Knip + Prettier + Markdownlint gates,
+co-located tests, 300-line file / 50-line function limits) but runs
+its own quality gates from inside `viewer/`; the root `vitest`
+configuration excludes `viewer/**`. Its bundled sample report
+(`viewer/public/samples/sample-report.json`) is generated from this
+repository's test fixtures by `scripts/generate-viewer-sample.ts`
+(run from the repository root with `pnpm tsx`); regenerate it when
+the fixtures change.
 
 ## Build and Test Commands
 

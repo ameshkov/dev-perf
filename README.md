@@ -214,6 +214,32 @@ The markdown report references the charts by relative path
 is portable as a unit — open `report.md` in GitHub, VS Code, or any
 markdown viewer that renders local images.
 
+### Viewing a report in the browser
+
+The repository ships an interactive web viewer in [`viewer/`](viewer/):
+a static app that opens a JSON report written by `dev-perf report` and
+renders it as an explorable dashboard — a team dynamics section with
+interactive charts (work types, sizes, complexity, commits, lines,
+languages, quality signals and risk flags can be filtered by tag
+selection), per-user detail views with the LLM-assessed contribution
+cards, and repository comparisons. Everything runs client-side: you
+drop or browse a `reports.json` (schema v3, or the legacy v1 shape) and
+it is parsed in the browser — nothing is uploaded anywhere. A bundled
+sample report lets you explore the dashboard without running an
+analysis first.
+
+The viewer is developed from its own directory:
+
+```console
+cd viewer
+pnpm install
+pnpm dev    # dev server on http://localhost:5173
+```
+
+`pnpm build` emits the static site to `viewer/build/`, which can be
+served by any static file server. See [viewer/README.md](viewer/README.md)
+for details.
+
 ### Docker
 
 A Docker image is published to the
@@ -332,6 +358,8 @@ npx dev-perf report
 - [Design document](docs/design.md) — the full design of the
   deterministic analysis, the in-process LLM layer, the report schema,
   and the compile layer.
+- [Viewer](viewer/README.md) — the interactive browser dashboard for
+  JSON reports.
 - [Development guide](DEVELOPMENT.md) — local setup, build, manual
   testing, and the release process.
 - [Contributor guide](AGENTS.md) — coding conventions and contribution

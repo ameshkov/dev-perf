@@ -1,0 +1,49 @@
+{
+  "name": "dev-perf-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Client-side viewer for dev-perf JSON reports: team dynamics and per-user statistics rendered in the browser",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint src && pnpm knip",
+    "lint:fix": "oxlint src --fix",
+    "knip": "knip --production",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern --cache . && markdownlint-cli2 \"**/*.{md,markdown}\"",
+    "format:fix": "prettier --write --no-error-on-unmatched-pattern --cache . && markdownlint-cli2 --fix \"**/*.{md,markdown}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf node_modules build",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test"
+  },
+  "dependencies": {
+    "echarts": "6.1.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
+    "knip": "6.32.0",
+    "markdownlint-cli2": "0.23.2",
+    "oxlint": "1.77.0",
+    "prettier": "3.9.6",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

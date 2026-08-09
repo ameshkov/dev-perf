@@ -1,0 +1,3990 @@
+{
+  "schemaVersion": 3,
+  "generatedAt": "2026-03-01T00:00:00.000Z",
+  "parameters": {
+    "repos": [
+      {
+        "repo": "git@github.com:acme/api.git"
+      },
+      {
+        "repo": "https://github.com/acme/web.git"
+      }
+    ],
+    "since": "2026-01-01T00:00:00.000Z",
+    "until": "2026-06-30T23:59:59.999Z",
+    "unit": "month",
+    "model": "gpt-4.1",
+    "llmEnabled": true
+  },
+  "periods": [
+    {
+      "since": "2026-01-01T00:00:00.000Z",
+      "until": "2026-01-31T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-01-01T00:00:00.000Z",
+            "until": "2026-01-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 101,
+            "totalUsers": 4,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 3800
+              },
+              {
+                "language": "Go",
+                "linesAdded": 3500
+              },
+              {
+                "language": "Markdown",
+                "linesAdded": 500
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 200
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 34,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 4200,
+                "linesRemoved": 1300,
+                "netLines": 2900,
+                "filesTouched": 96,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-01-01",
+                  "2026-01-03",
+                  "2026-01-05",
+                  "2026-01-07",
+                  "2026-01-09",
+                  "2026-01-11",
+                  "2026-01-13",
+                  "2026-01-15",
+                  "2026-01-17",
+                  "2026-01-19",
+                  "2026-01-21",
+                  "2026-01-23",
+                  "2026-01-25",
+                  "2026-01-27"
+                ],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 5500,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 3100,
+                    "linesRemoved": 900,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 900,
+                    "linesRemoved": 300,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 200,
+                    "linesRemoved": 100,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice built the rate limiting layer and hardened request validation in the API.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": ["no-tests"]
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "low",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 41,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2600,
+                "linesRemoved": 2100,
+                "netLines": 500,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-01-01",
+                  "2026-01-03",
+                  "2026-01-05",
+                  "2026-01-07",
+                  "2026-01-09",
+                  "2026-01-11",
+                  "2026-01-13",
+                  "2026-01-15",
+                  "2026-01-17",
+                  "2026-01-19",
+                  "2026-01-21",
+                  "2026-01-23",
+                  "2026-01-25",
+                  "2026-01-27",
+                  "2026-01-02",
+                  "2026-01-04"
+                ],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 4700,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 1900,
+                    "linesRemoved": 1500,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob chased regressions in the checkout flow and stabilized the session handling.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Carol Diaz",
+              "emails": ["carol.diaz@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 18,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1500,
+                "linesRemoved": 400,
+                "netLines": 1100,
+                "filesTouched": 44,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-01-01",
+                  "2026-01-03",
+                  "2026-01-05",
+                  "2026-01-07",
+                  "2026-01-09",
+                  "2026-01-11",
+                  "2026-01-13",
+                  "2026-01-15",
+                  "2026-01-17"
+                ],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 1900,
+                "languages": {
+                  "Markdown": {
+                    "linesAdded": 500,
+                    "linesRemoved": 90,
+                    "filesTouched": 18
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1000,
+                    "linesRemoved": 310,
+                    "filesTouched": 26
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Carol expanded test coverage, refreshed the docs, and smoothed the contributor tooling.",
+                "contributions": [
+                  {
+                    "title": "Test coverage expansion",
+                    "summary": "Filled the gaps in gateway and metering tests flagged by the coverage report, focusing on error paths.",
+                    "types": ["test"],
+                    "complexity": "low",
+                    "complexityReasoning": "Additive tests against stable behavior.",
+                    "size": "m",
+                    "sizeReasoning": "Many small test files across two areas.",
+                    "areas": ["api/tests"],
+                    "commits": ["f7f1b61b", "6c79bfabd"],
+                    "qualitySignals": ["test-coverage-expanded", "tests-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Docs and changelog refresh",
+                    "summary": "Updated the configuration reference and changelog for the new limits, and added the upgrade guide.",
+                    "types": ["docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Documentation work following shipped changes.",
+                    "size": "s",
+                    "sizeReasoning": "A few markdown files.",
+                    "areas": ["docs"],
+                    "commits": ["4c82431c", "2178fd5c4"],
+                    "qualitySignals": [
+                      "docs-updated",
+                      "changelog-updated",
+                      "migration-guide-added"
+                    ],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "CI cache and tooling fixes",
+                    "summary": "Repaired the flaky cache keys in CI and added the local setup script with sensible defaults.",
+                    "types": ["tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Build-system behavior with environment-specific edges.",
+                    "size": "s",
+                    "sizeReasoning": "A couple of workflow files and one script.",
+                    "areas": [".github", "scripts"],
+                    "commits": ["30d53832", "155d4895e"],
+                    "qualitySignals": ["logging-added"],
+                    "riskFlags": ["config-changed-without-docs"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-01-01", "2026-01-03", "2026-01-05", "2026-01-07"],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-01-01T00:00:00.000Z",
+            "until": "2026-01-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 61,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 2600
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 41,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2600,
+                "linesRemoved": 2100,
+                "netLines": 500,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-01-01",
+                  "2026-01-03",
+                  "2026-01-05",
+                  "2026-01-07",
+                  "2026-01-09",
+                  "2026-01-11",
+                  "2026-01-13",
+                  "2026-01-15",
+                  "2026-01-17",
+                  "2026-01-19",
+                  "2026-01-21",
+                  "2026-01-23",
+                  "2026-01-25",
+                  "2026-01-27",
+                  "2026-01-02",
+                  "2026-01-04"
+                ],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 4700,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 1900,
+                    "linesRemoved": 1500,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob chased regressions in the checkout flow and stabilized the session handling.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 12,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 900,
+                "linesRemoved": 300,
+                "netLines": 600,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-01-01",
+                  "2026-01-03",
+                  "2026-01-05",
+                  "2026-01-07",
+                  "2026-01-09",
+                  "2026-01-11",
+                  "2026-01-13"
+                ],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 1200,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 700,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": ["large-diff"]
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-01-01", "2026-01-03", "2026-01-05", "2026-01-07"],
+                "firstCommitAt": "2026-01-01T00:00:00.000Z",
+                "lastCommitAt": "2026-01-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "since": "2026-02-01T00:00:00.000Z",
+      "until": "2026-02-28T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-02-01T00:00:00.000Z",
+            "until": "2026-02-28T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 110,
+            "totalUsers": 4,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 4135
+              },
+              {
+                "language": "Go",
+                "linesAdded": 3965
+              },
+              {
+                "language": "Markdown",
+                "linesAdded": 500
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 230
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 37,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 4830,
+                "linesRemoved": 1495,
+                "netLines": 3335,
+                "filesTouched": 100,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-02-01",
+                  "2026-02-03",
+                  "2026-02-05",
+                  "2026-02-07",
+                  "2026-02-09",
+                  "2026-02-11",
+                  "2026-02-13",
+                  "2026-02-15",
+                  "2026-02-17",
+                  "2026-02-19",
+                  "2026-02-21",
+                  "2026-02-23",
+                  "2026-02-25",
+                  "2026-02-27"
+                ],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 6325,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 3565,
+                    "linesRemoved": 1035,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1035,
+                    "linesRemoved": 345,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 230,
+                    "linesRemoved": 115,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice shipped the usage metering pipeline with a focus on correctness and tests.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "low",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 46,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2760,
+                "linesRemoved": 2190,
+                "netLines": 570,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-02-01",
+                  "2026-02-03",
+                  "2026-02-05",
+                  "2026-02-07",
+                  "2026-02-09",
+                  "2026-02-11",
+                  "2026-02-13",
+                  "2026-02-15",
+                  "2026-02-17",
+                  "2026-02-19",
+                  "2026-02-21",
+                  "2026-02-23",
+                  "2026-02-25",
+                  "2026-02-27",
+                  "2026-02-02",
+                  "2026-02-04"
+                ],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 4950,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2020,
+                    "linesRemoved": 1560,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob fixed the sync bugs reported by support and cleaned the shared form components.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Carol Diaz",
+              "emails": ["carol.diaz@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 19,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1580,
+                "linesRemoved": 400,
+                "netLines": 1180,
+                "filesTouched": 44,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-02-01",
+                  "2026-02-03",
+                  "2026-02-05",
+                  "2026-02-07",
+                  "2026-02-09",
+                  "2026-02-11",
+                  "2026-02-13",
+                  "2026-02-15",
+                  "2026-02-17"
+                ],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 1980,
+                "languages": {
+                  "Markdown": {
+                    "linesAdded": 500,
+                    "linesRemoved": 90,
+                    "filesTouched": 18
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1080,
+                    "linesRemoved": 310,
+                    "filesTouched": 26
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Carol expanded test coverage, refreshed the docs, and smoothed the contributor tooling.",
+                "contributions": [
+                  {
+                    "title": "Test coverage expansion",
+                    "summary": "Filled the gaps in gateway and metering tests flagged by the coverage report, focusing on error paths.",
+                    "types": ["test"],
+                    "complexity": "low",
+                    "complexityReasoning": "Additive tests against stable behavior.",
+                    "size": "m",
+                    "sizeReasoning": "Many small test files across two areas.",
+                    "areas": ["api/tests"],
+                    "commits": ["f7f1b61b", "6c79bfabd"],
+                    "qualitySignals": ["test-coverage-expanded", "tests-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Docs and changelog refresh",
+                    "summary": "Updated the configuration reference and changelog for the new limits, and added the upgrade guide.",
+                    "types": ["docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Documentation work following shipped changes.",
+                    "size": "s",
+                    "sizeReasoning": "A few markdown files.",
+                    "areas": ["docs"],
+                    "commits": ["4c82431c", "2178fd5c4"],
+                    "qualitySignals": [
+                      "docs-updated",
+                      "changelog-updated",
+                      "migration-guide-added"
+                    ],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "CI cache and tooling fixes",
+                    "summary": "Repaired the flaky cache keys in CI and added the local setup script with sensible defaults.",
+                    "types": ["tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Build-system behavior with environment-specific edges.",
+                    "size": "s",
+                    "sizeReasoning": "A couple of workflow files and one script.",
+                    "areas": [".github", "scripts"],
+                    "commits": ["30d53832", "155d4895e"],
+                    "qualitySignals": ["logging-added"],
+                    "riskFlags": ["config-changed-without-docs"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-02-01", "2026-02-03", "2026-02-05", "2026-02-07"],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-02-01T00:00:00.000Z",
+            "until": "2026-02-28T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 67,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 2760
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 46,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2760,
+                "linesRemoved": 2190,
+                "netLines": 570,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-02-01",
+                  "2026-02-03",
+                  "2026-02-05",
+                  "2026-02-07",
+                  "2026-02-09",
+                  "2026-02-11",
+                  "2026-02-13",
+                  "2026-02-15",
+                  "2026-02-17",
+                  "2026-02-19",
+                  "2026-02-21",
+                  "2026-02-23",
+                  "2026-02-25",
+                  "2026-02-27",
+                  "2026-02-02",
+                  "2026-02-04"
+                ],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 4950,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2020,
+                    "linesRemoved": 1560,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob fixed the sync bugs reported by support and cleaned the shared form components.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 13,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 940,
+                "linesRemoved": 300,
+                "netLines": 640,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-02-01",
+                  "2026-02-03",
+                  "2026-02-05",
+                  "2026-02-07",
+                  "2026-02-09",
+                  "2026-02-11",
+                  "2026-02-13"
+                ],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 1240,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 740,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-02-01", "2026-02-03", "2026-02-05", "2026-02-07"],
+                "firstCommitAt": "2026-02-01T00:00:00.000Z",
+                "lastCommitAt": "2026-02-28T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "since": "2026-03-01T00:00:00.000Z",
+      "until": "2026-03-31T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-03-01T00:00:00.000Z",
+            "until": "2026-03-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 90,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "Go",
+                "linesAdded": 4430
+              },
+              {
+                "language": "TypeScript",
+                "linesAdded": 3310
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 260
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 40,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 5460,
+                "linesRemoved": 1690,
+                "netLines": 3770,
+                "filesTouched": 104,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-03-01",
+                  "2026-03-03",
+                  "2026-03-05",
+                  "2026-03-07",
+                  "2026-03-09",
+                  "2026-03-11",
+                  "2026-03-13",
+                  "2026-03-15",
+                  "2026-03-17",
+                  "2026-03-19",
+                  "2026-03-21",
+                  "2026-03-23",
+                  "2026-03-25",
+                  "2026-03-27"
+                ],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 7150,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 4030,
+                    "linesRemoved": 1170,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1170,
+                    "linesRemoved": 390,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 260,
+                    "linesRemoved": 130,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice led the API v2 routing refactor while keeping the old routes alive.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": ["no-tests"]
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "low",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 42,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2920,
+                "linesRemoved": 2280,
+                "netLines": 640,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-03-01",
+                  "2026-03-03",
+                  "2026-03-05",
+                  "2026-03-07",
+                  "2026-03-09",
+                  "2026-03-11",
+                  "2026-03-13",
+                  "2026-03-15",
+                  "2026-03-17",
+                  "2026-03-19",
+                  "2026-03-21",
+                  "2026-03-23",
+                  "2026-03-25",
+                  "2026-03-27",
+                  "2026-03-02",
+                  "2026-03-04"
+                ],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 5200,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2140,
+                    "linesRemoved": 1620,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob split the monolith web bundle and removed dead feature flags.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-03-01", "2026-03-03", "2026-03-05", "2026-03-07"],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-03-01T00:00:00.000Z",
+            "until": "2026-03-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 64,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 2920
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 42,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 2920,
+                "linesRemoved": 2280,
+                "netLines": 640,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-03-01",
+                  "2026-03-03",
+                  "2026-03-05",
+                  "2026-03-07",
+                  "2026-03-09",
+                  "2026-03-11",
+                  "2026-03-13",
+                  "2026-03-15",
+                  "2026-03-17",
+                  "2026-03-19",
+                  "2026-03-21",
+                  "2026-03-23",
+                  "2026-03-25",
+                  "2026-03-27",
+                  "2026-03-02",
+                  "2026-03-04"
+                ],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 5200,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2140,
+                    "linesRemoved": 1620,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob split the monolith web bundle and removed dead feature flags.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 14,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 980,
+                "linesRemoved": 300,
+                "netLines": 680,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-03-01",
+                  "2026-03-03",
+                  "2026-03-05",
+                  "2026-03-07",
+                  "2026-03-09",
+                  "2026-03-11",
+                  "2026-03-13"
+                ],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 1280,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 780,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": ["large-diff"]
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-03-01", "2026-03-03", "2026-03-05", "2026-03-07"],
+                "firstCommitAt": "2026-03-01T00:00:00.000Z",
+                "lastCommitAt": "2026-03-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "since": "2026-04-01T00:00:00.000Z",
+      "until": "2026-04-30T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-04-01T00:00:00.000Z",
+            "until": "2026-04-30T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 119,
+            "totalUsers": 4,
+            "topLanguages": [
+              {
+                "language": "Go",
+                "linesAdded": 4895
+              },
+              {
+                "language": "TypeScript",
+                "linesAdded": 4805
+              },
+              {
+                "language": "Markdown",
+                "linesAdded": 500
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 290
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 43,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 6090,
+                "linesRemoved": 1885,
+                "netLines": 4205,
+                "filesTouched": 108,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-04-01",
+                  "2026-04-03",
+                  "2026-04-05",
+                  "2026-04-07",
+                  "2026-04-09",
+                  "2026-04-11",
+                  "2026-04-13",
+                  "2026-04-15",
+                  "2026-04-17",
+                  "2026-04-19",
+                  "2026-04-21",
+                  "2026-04-23",
+                  "2026-04-25",
+                  "2026-04-27"
+                ],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 7975,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 4495,
+                    "linesRemoved": 1305,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1305,
+                    "linesRemoved": 435,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 290,
+                    "linesRemoved": 145,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice delivered the webhook delivery queue and its retry semantics.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 47,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3080,
+                "linesRemoved": 2370,
+                "netLines": 710,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-04-01",
+                  "2026-04-03",
+                  "2026-04-05",
+                  "2026-04-07",
+                  "2026-04-09",
+                  "2026-04-11",
+                  "2026-04-13",
+                  "2026-04-15",
+                  "2026-04-17",
+                  "2026-04-19",
+                  "2026-04-21",
+                  "2026-04-23",
+                  "2026-04-25",
+                  "2026-04-27",
+                  "2026-04-02",
+                  "2026-04-04"
+                ],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 5450,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2260,
+                    "linesRemoved": 1680,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob repaired the CI cache busting and the flaky end-to-end setup.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Carol Diaz",
+              "emails": ["carol.diaz@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 21,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1740,
+                "linesRemoved": 400,
+                "netLines": 1340,
+                "filesTouched": 44,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-04-01",
+                  "2026-04-03",
+                  "2026-04-05",
+                  "2026-04-07",
+                  "2026-04-09",
+                  "2026-04-11",
+                  "2026-04-13",
+                  "2026-04-15",
+                  "2026-04-17"
+                ],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 2140,
+                "languages": {
+                  "Markdown": {
+                    "linesAdded": 500,
+                    "linesRemoved": 90,
+                    "filesTouched": 18
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1240,
+                    "linesRemoved": 310,
+                    "filesTouched": 26
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Carol expanded test coverage, refreshed the docs, and smoothed the contributor tooling.",
+                "contributions": [
+                  {
+                    "title": "Test coverage expansion",
+                    "summary": "Filled the gaps in gateway and metering tests flagged by the coverage report, focusing on error paths.",
+                    "types": ["test"],
+                    "complexity": "low",
+                    "complexityReasoning": "Additive tests against stable behavior.",
+                    "size": "m",
+                    "sizeReasoning": "Many small test files across two areas.",
+                    "areas": ["api/tests"],
+                    "commits": ["f7f1b61b", "6c79bfabd"],
+                    "qualitySignals": ["test-coverage-expanded", "tests-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Docs and changelog refresh",
+                    "summary": "Updated the configuration reference and changelog for the new limits, and added the upgrade guide.",
+                    "types": ["docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Documentation work following shipped changes.",
+                    "size": "s",
+                    "sizeReasoning": "A few markdown files.",
+                    "areas": ["docs"],
+                    "commits": ["4c82431c", "2178fd5c4"],
+                    "qualitySignals": [
+                      "docs-updated",
+                      "changelog-updated",
+                      "migration-guide-added"
+                    ],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "CI cache and tooling fixes",
+                    "summary": "Repaired the flaky cache keys in CI and added the local setup script with sensible defaults.",
+                    "types": ["tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Build-system behavior with environment-specific edges.",
+                    "size": "s",
+                    "sizeReasoning": "A couple of workflow files and one script.",
+                    "areas": [".github", "scripts"],
+                    "commits": ["30d53832", "155d4895e"],
+                    "qualitySignals": ["logging-added"],
+                    "riskFlags": ["config-changed-without-docs"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-04-01", "2026-04-03", "2026-04-05", "2026-04-07"],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-04-01T00:00:00.000Z",
+            "until": "2026-04-30T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 70,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 3080
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 47,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3080,
+                "linesRemoved": 2370,
+                "netLines": 710,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-04-01",
+                  "2026-04-03",
+                  "2026-04-05",
+                  "2026-04-07",
+                  "2026-04-09",
+                  "2026-04-11",
+                  "2026-04-13",
+                  "2026-04-15",
+                  "2026-04-17",
+                  "2026-04-19",
+                  "2026-04-21",
+                  "2026-04-23",
+                  "2026-04-25",
+                  "2026-04-27",
+                  "2026-04-02",
+                  "2026-04-04"
+                ],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 5450,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2260,
+                    "linesRemoved": 1680,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob repaired the CI cache busting and the flaky end-to-end setup.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 15,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1020,
+                "linesRemoved": 300,
+                "netLines": 720,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-04-01",
+                  "2026-04-03",
+                  "2026-04-05",
+                  "2026-04-07",
+                  "2026-04-09",
+                  "2026-04-11",
+                  "2026-04-13"
+                ],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 1320,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 820,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-04-01", "2026-04-03", "2026-04-05", "2026-04-07"],
+                "firstCommitAt": "2026-04-01T00:00:00.000Z",
+                "lastCommitAt": "2026-04-30T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "since": "2026-05-01T00:00:00.000Z",
+      "until": "2026-05-31T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-05-01T00:00:00.000Z",
+            "until": "2026-05-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 119,
+            "totalUsers": 4,
+            "topLanguages": [
+              {
+                "language": "Go",
+                "linesAdded": 5360
+              },
+              {
+                "language": "TypeScript",
+                "linesAdded": 5140
+              },
+              {
+                "language": "Markdown",
+                "linesAdded": 500
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 320
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 46,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 6720,
+                "linesRemoved": 2080,
+                "netLines": 4640,
+                "filesTouched": 112,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-05-01",
+                  "2026-05-03",
+                  "2026-05-05",
+                  "2026-05-07",
+                  "2026-05-09",
+                  "2026-05-11",
+                  "2026-05-13",
+                  "2026-05-15",
+                  "2026-05-17",
+                  "2026-05-19",
+                  "2026-05-21",
+                  "2026-05-23",
+                  "2026-05-25",
+                  "2026-05-27"
+                ],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 8800,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 4960,
+                    "linesRemoved": 1440,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1440,
+                    "linesRemoved": 480,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 320,
+                    "linesRemoved": 160,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice drove the auth session rework and closed the token rotation gap.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": ["no-tests"]
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 43,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3240,
+                "linesRemoved": 2460,
+                "netLines": 780,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-05-01",
+                  "2026-05-03",
+                  "2026-05-05",
+                  "2026-05-07",
+                  "2026-05-09",
+                  "2026-05-11",
+                  "2026-05-13",
+                  "2026-05-15",
+                  "2026-05-17",
+                  "2026-05-19",
+                  "2026-05-21",
+                  "2026-05-23",
+                  "2026-05-25",
+                  "2026-05-27",
+                  "2026-05-02",
+                  "2026-05-04"
+                ],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 5700,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2380,
+                    "linesRemoved": 1740,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob shipped the settings revamp and the missing validation paths.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Carol Diaz",
+              "emails": ["carol.diaz@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 22,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1820,
+                "linesRemoved": 400,
+                "netLines": 1420,
+                "filesTouched": 44,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-05-01",
+                  "2026-05-03",
+                  "2026-05-05",
+                  "2026-05-07",
+                  "2026-05-09",
+                  "2026-05-11",
+                  "2026-05-13",
+                  "2026-05-15",
+                  "2026-05-17"
+                ],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 2220,
+                "languages": {
+                  "Markdown": {
+                    "linesAdded": 500,
+                    "linesRemoved": 90,
+                    "filesTouched": 18
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1320,
+                    "linesRemoved": 310,
+                    "filesTouched": 26
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Carol expanded test coverage, refreshed the docs, and smoothed the contributor tooling.",
+                "contributions": [
+                  {
+                    "title": "Test coverage expansion",
+                    "summary": "Filled the gaps in gateway and metering tests flagged by the coverage report, focusing on error paths.",
+                    "types": ["test"],
+                    "complexity": "low",
+                    "complexityReasoning": "Additive tests against stable behavior.",
+                    "size": "m",
+                    "sizeReasoning": "Many small test files across two areas.",
+                    "areas": ["api/tests"],
+                    "commits": ["f7f1b61b", "6c79bfabd"],
+                    "qualitySignals": ["test-coverage-expanded", "tests-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Docs and changelog refresh",
+                    "summary": "Updated the configuration reference and changelog for the new limits, and added the upgrade guide.",
+                    "types": ["docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Documentation work following shipped changes.",
+                    "size": "s",
+                    "sizeReasoning": "A few markdown files.",
+                    "areas": ["docs"],
+                    "commits": ["4c82431c", "2178fd5c4"],
+                    "qualitySignals": [
+                      "docs-updated",
+                      "changelog-updated",
+                      "migration-guide-added"
+                    ],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "CI cache and tooling fixes",
+                    "summary": "Repaired the flaky cache keys in CI and added the local setup script with sensible defaults.",
+                    "types": ["tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Build-system behavior with environment-specific edges.",
+                    "size": "s",
+                    "sizeReasoning": "A couple of workflow files and one script.",
+                    "areas": [".github", "scripts"],
+                    "commits": ["30d53832", "155d4895e"],
+                    "qualitySignals": ["logging-added"],
+                    "riskFlags": ["config-changed-without-docs"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-05-01", "2026-05-03", "2026-05-05", "2026-05-07"],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-05-01T00:00:00.000Z",
+            "until": "2026-05-31T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 63,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 3240
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 43,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3240,
+                "linesRemoved": 2460,
+                "netLines": 780,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-05-01",
+                  "2026-05-03",
+                  "2026-05-05",
+                  "2026-05-07",
+                  "2026-05-09",
+                  "2026-05-11",
+                  "2026-05-13",
+                  "2026-05-15",
+                  "2026-05-17",
+                  "2026-05-19",
+                  "2026-05-21",
+                  "2026-05-23",
+                  "2026-05-25",
+                  "2026-05-27",
+                  "2026-05-02",
+                  "2026-05-04"
+                ],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 5700,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2380,
+                    "linesRemoved": 1740,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob shipped the settings revamp and the missing validation paths.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 12,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1060,
+                "linesRemoved": 300,
+                "netLines": 760,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-05-01",
+                  "2026-05-03",
+                  "2026-05-05",
+                  "2026-05-07",
+                  "2026-05-09",
+                  "2026-05-11",
+                  "2026-05-13"
+                ],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 1360,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 860,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": ["large-diff"]
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-05-01", "2026-05-03", "2026-05-05", "2026-05-07"],
+                "firstCommitAt": "2026-05-01T00:00:00.000Z",
+                "lastCommitAt": "2026-05-31T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "since": "2026-06-01T00:00:00.000Z",
+      "until": "2026-06-30T23:59:59.999Z",
+      "repositories": [
+        {
+          "repo": "git@github.com:acme/api.git",
+          "clonePath": "/cache/fixture/git@github.com:acme/api.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-06-01T00:00:00.000Z",
+            "until": "2026-06-30T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 128,
+            "totalUsers": 4,
+            "topLanguages": [
+              {
+                "language": "Go",
+                "linesAdded": 5825
+              },
+              {
+                "language": "TypeScript",
+                "linesAdded": 5475
+              },
+              {
+                "language": "Markdown",
+                "linesAdded": 500
+              },
+              {
+                "language": "SQL",
+                "linesAdded": 350
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 300
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Alice Nguyen",
+              "emails": ["alice.nguyen@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 49,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 7350,
+                "linesRemoved": 2275,
+                "netLines": 5075,
+                "filesTouched": 116,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-06-01",
+                  "2026-06-03",
+                  "2026-06-05",
+                  "2026-06-07",
+                  "2026-06-09",
+                  "2026-06-11",
+                  "2026-06-13",
+                  "2026-06-15",
+                  "2026-06-17",
+                  "2026-06-19",
+                  "2026-06-21",
+                  "2026-06-23",
+                  "2026-06-25",
+                  "2026-06-27"
+                ],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 9625,
+                "languages": {
+                  "Go": {
+                    "linesAdded": 5425,
+                    "linesRemoved": 1575,
+                    "filesTouched": 58
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1575,
+                    "linesRemoved": 525,
+                    "filesTouched": 26
+                  },
+                  "SQL": {
+                    "linesAdded": 350,
+                    "linesRemoved": 175,
+                    "filesTouched": 12
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Alice wrapped the half with performance work: caching, pooling, and query tuning.",
+                "contributions": [
+                  {
+                    "title": "Request rate limiting and quota enforcement",
+                    "summary": "Added per-key rate limiting with sliding windows and quota enforcement, backed by the shared cache; rejection responses carry retry hints.",
+                    "types": ["feature"],
+                    "complexity": "high",
+                    "complexityReasoning": "New middleware across the request path with cache-backed state and backwards compatibility.",
+                    "size": "l",
+                    "sizeReasoning": "Touches gateway, middleware, config, and tests across many files.",
+                    "areas": ["api/gateway", "api/middleware"],
+                    "commits": ["c994d6b3", "58311dee5"],
+                    "qualitySignals": ["tests-added", "validation-added", "error-handling-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  },
+                  {
+                    "title": "Usage metering pipeline",
+                    "summary": "Introduced metering events for billable calls with an idempotent ingest path and reconciliation checks.",
+                    "types": ["feature", "tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Mostly additive pipeline work with one tricky idempotency edge.",
+                    "size": "m",
+                    "sizeReasoning": "A focused pipeline plus tests, contained in one area.",
+                    "areas": ["api/metering"],
+                    "commits": ["2e3800fe", "1438806f2"],
+                    "qualitySignals": ["tests-added", "logging-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Query and connection tuning",
+                    "summary": "Tuned the hot read paths with connection pooling and two covering indexes; p95 latency dropped notably.",
+                    "types": ["refactor"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Contained changes with measurable, verified outcomes.",
+                    "size": "s",
+                    "sizeReasoning": "A handful of files in the data layer.",
+                    "areas": ["api/db"],
+                    "commits": ["3d071677", "1ab319d41"],
+                    "qualitySignals": ["performance-improved", "benchmarks-added"],
+                    "riskFlags": []
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 48,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3400,
+                "linesRemoved": 2550,
+                "netLines": 850,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-06-01",
+                  "2026-06-03",
+                  "2026-06-05",
+                  "2026-06-07",
+                  "2026-06-09",
+                  "2026-06-11",
+                  "2026-06-13",
+                  "2026-06-15",
+                  "2026-06-17",
+                  "2026-06-19",
+                  "2026-06-21",
+                  "2026-06-23",
+                  "2026-06-25",
+                  "2026-06-27",
+                  "2026-06-02",
+                  "2026-06-04"
+                ],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 5950,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2500,
+                    "linesRemoved": 1800,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob closed out the half with a wave of small fixes and dependency cleanups.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Carol Diaz",
+              "emails": ["carol.diaz@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 23,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1900,
+                "linesRemoved": 400,
+                "netLines": 1500,
+                "filesTouched": 44,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-06-01",
+                  "2026-06-03",
+                  "2026-06-05",
+                  "2026-06-07",
+                  "2026-06-09",
+                  "2026-06-11",
+                  "2026-06-13",
+                  "2026-06-15",
+                  "2026-06-17"
+                ],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 2300,
+                "languages": {
+                  "Markdown": {
+                    "linesAdded": 500,
+                    "linesRemoved": 90,
+                    "filesTouched": 18
+                  },
+                  "TypeScript": {
+                    "linesAdded": 1400,
+                    "linesRemoved": 310,
+                    "filesTouched": 26
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Carol closed the half with the migration guides and the release checklist automation.",
+                "contributions": [
+                  {
+                    "title": "Test coverage expansion",
+                    "summary": "Filled the gaps in gateway and metering tests flagged by the coverage report, focusing on error paths.",
+                    "types": ["test"],
+                    "complexity": "low",
+                    "complexityReasoning": "Additive tests against stable behavior.",
+                    "size": "m",
+                    "sizeReasoning": "Many small test files across two areas.",
+                    "areas": ["api/tests"],
+                    "commits": ["f7f1b61b", "6c79bfabd"],
+                    "qualitySignals": ["test-coverage-expanded", "tests-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Docs and changelog refresh",
+                    "summary": "Updated the configuration reference and changelog for the new limits, and added the upgrade guide.",
+                    "types": ["docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Documentation work following shipped changes.",
+                    "size": "s",
+                    "sizeReasoning": "A few markdown files.",
+                    "areas": ["docs"],
+                    "commits": ["4c82431c", "2178fd5c4"],
+                    "qualitySignals": [
+                      "docs-updated",
+                      "changelog-updated",
+                      "migration-guide-added"
+                    ],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "CI cache and tooling fixes",
+                    "summary": "Repaired the flaky cache keys in CI and added the local setup script with sensible defaults.",
+                    "types": ["tooling"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Build-system behavior with environment-specific edges.",
+                    "size": "s",
+                    "sizeReasoning": "A couple of workflow files and one script.",
+                    "areas": [".github", "scripts"],
+                    "commits": ["30d53832", "155d4895e"],
+                    "qualitySignals": ["logging-added"],
+                    "riskFlags": ["config-changed-without-docs"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-06-01", "2026-06-03", "2026-06-05", "2026-06-07"],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "repo": "https://github.com/acme/web.git",
+          "clonePath": "/cache/fixture/https://github.com/acme/web.git",
+          "branch": "main",
+          "head": "0123456789abcdef0123456789abcdef01234567",
+          "range": {
+            "since": "2026-06-01T00:00:00.000Z",
+            "until": "2026-06-30T23:59:59.999Z"
+          },
+          "stats": {
+            "totalCommits": 69,
+            "totalUsers": 3,
+            "topLanguages": [
+              {
+                "language": "TypeScript",
+                "linesAdded": 3400
+              },
+              {
+                "language": "CSS",
+                "linesAdded": 500
+              },
+              {
+                "language": "Go",
+                "linesAdded": 400
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 300
+              },
+              {
+                "language": "YAML",
+                "linesAdded": 120
+              }
+            ]
+          },
+          "users": [
+            {
+              "name": "Bob Fisher",
+              "emails": ["bob.fisher@acme.dev", "bfisher@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 48,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 3400,
+                "linesRemoved": 2550,
+                "netLines": 850,
+                "filesTouched": 88,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-06-01",
+                  "2026-06-03",
+                  "2026-06-05",
+                  "2026-06-07",
+                  "2026-06-09",
+                  "2026-06-11",
+                  "2026-06-13",
+                  "2026-06-15",
+                  "2026-06-17",
+                  "2026-06-19",
+                  "2026-06-21",
+                  "2026-06-23",
+                  "2026-06-25",
+                  "2026-06-27",
+                  "2026-06-02",
+                  "2026-06-04"
+                ],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 5950,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 2500,
+                    "linesRemoved": 1800,
+                    "filesTouched": 62
+                  },
+                  "CSS": {
+                    "linesAdded": 300,
+                    "linesRemoved": 260,
+                    "filesTouched": 12
+                  },
+                  "Go": {
+                    "linesAdded": 400,
+                    "linesRemoved": 340,
+                    "filesTouched": 14
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Bob closed out the half with a wave of small fixes and dependency cleanups.",
+                "contributions": [
+                  {
+                    "title": "Checkout state regressions",
+                    "summary": "Fixed the race where the cart state lagged behind the payment intent, plus the duplicate-submit guard.",
+                    "types": ["bugfix"],
+                    "complexity": "medium",
+                    "complexityReasoning": "Cross-component state bug with a subtle async ordering cause.",
+                    "size": "m",
+                    "sizeReasoning": "Several components plus regression tests.",
+                    "areas": ["web/checkout"],
+                    "commits": ["15dd8e47", "990ee3f1"],
+                    "qualitySignals": ["tests-added", "error-messages-improved"],
+                    "riskFlags": ["test-assertions-weak"]
+                  },
+                  {
+                    "title": "Shared form cleanup",
+                    "summary": "Consolidated the three form wrappers into one, removed the dead validation props, and documented the schema helpers.",
+                    "types": ["refactor", "docs"],
+                    "complexity": "low",
+                    "complexityReasoning": "Mechanical consolidation with existing test coverage.",
+                    "size": "s",
+                    "sizeReasoning": "A narrow set of components.",
+                    "areas": ["web/forms"],
+                    "commits": ["b1e489fe", "4dd3fc5f2"],
+                    "qualitySignals": ["docs-updated", "dead-code-removed", "code-reuse-improved"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Session handling hardening",
+                    "summary": "Reworked the session refresh to survive clock skew, and added the missing invalidation on logout.",
+                    "types": ["bugfix", "security"],
+                    "complexity": "high",
+                    "complexityReasoning": "Auth-adjacent logic with several interacting lifetimes.",
+                    "size": "m",
+                    "sizeReasoning": "One module but broad blast radius and careful tests.",
+                    "areas": ["api/auth", "web/session"],
+                    "commits": ["93c3a841", "40a5999c7"],
+                    "qualitySignals": ["security-hardened", "tests-added"],
+                    "riskFlags": ["touches-critical-path"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "Dave Malik",
+              "emails": ["dave.malik@acme.dev"],
+              "isBot": false,
+              "deterministic": {
+                "commits": 13,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 1100,
+                "linesRemoved": 300,
+                "netLines": 800,
+                "filesTouched": 30,
+                "uniqueFilesTouched": 3,
+                "activeDays": [
+                  "2026-06-01",
+                  "2026-06-03",
+                  "2026-06-05",
+                  "2026-06-07",
+                  "2026-06-09",
+                  "2026-06-11",
+                  "2026-06-13"
+                ],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 1400,
+                "languages": {
+                  "TypeScript": {
+                    "linesAdded": 900,
+                    "linesRemoved": 220,
+                    "filesTouched": 22
+                  },
+                  "CSS": {
+                    "linesAdded": 200,
+                    "linesRemoved": 80,
+                    "filesTouched": 8
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Dave picked up the UI polish items: empty states, the settings forms, and small fixes.",
+                "contributions": [
+                  {
+                    "title": "Settings form revamp",
+                    "summary": "Reworked the settings page with the new field components, inline validation, and proper focus order.",
+                    "types": ["feature"],
+                    "complexity": "medium",
+                    "complexityReasoning": "New UI across several states with accessibility requirements.",
+                    "size": "m",
+                    "sizeReasoning": "One page but many components and styles.",
+                    "areas": ["web/settings"],
+                    "commits": ["c8b83045", "57d0951e3"],
+                    "qualitySignals": ["accessibility-improved", "validation-added"],
+                    "riskFlags": []
+                  },
+                  {
+                    "title": "Empty states and polish",
+                    "summary": "Added empty states and loading skeletons to the lists, and fixed the overflow bugs on narrow screens.",
+                    "types": ["bugfix", "feature"],
+                    "complexity": "low",
+                    "complexityReasoning": "Self-contained UI work.",
+                    "size": "s",
+                    "sizeReasoning": "A few list components.",
+                    "areas": ["web/lists"],
+                    "commits": ["653a96ab", "2c49a1ead"],
+                    "qualitySignals": ["docs-added"],
+                    "riskFlags": ["snapshot-only-tests"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            },
+            {
+              "name": "renovate[bot]",
+              "emails": ["renovate[bot]@users.noreply.github.com"],
+              "isBot": true,
+              "deterministic": {
+                "commits": 8,
+                "nonMergeCommits": 1,
+                "mergeCommits": 0,
+                "linesAdded": 420,
+                "linesRemoved": 400,
+                "netLines": 20,
+                "filesTouched": 16,
+                "uniqueFilesTouched": 3,
+                "activeDays": ["2026-06-01", "2026-06-03", "2026-06-05", "2026-06-07"],
+                "firstCommitAt": "2026-06-01T00:00:00.000Z",
+                "lastCommitAt": "2026-06-30T23:59:59.999Z",
+                "avgCommitSize": 820,
+                "languages": {
+                  "JSON": {
+                    "linesAdded": 300,
+                    "linesRemoved": 290,
+                    "filesTouched": 12
+                  },
+                  "YAML": {
+                    "linesAdded": 120,
+                    "linesRemoved": 110,
+                    "filesTouched": 4
+                  }
+                }
+              },
+              "llm": {
+                "status": "completed",
+                "overview": "Automated dependency updates across the lock files and CI action versions.",
+                "contributions": [
+                  {
+                    "title": "Dependency updates",
+                    "summary": "Grouped monthly dependency bumps: runtime, dev, and CI action versions, with lock file regeneration.",
+                    "types": ["chore"],
+                    "complexity": "low",
+                    "complexityReasoning": "Automated version bumps.",
+                    "size": "xs",
+                    "sizeReasoning": "Lock files and a couple of manifests.",
+                    "areas": ["package.json", ".github"],
+                    "commits": ["36e0280b", "18021184d"],
+                    "qualitySignals": [],
+                    "riskFlags": ["dependency-added", "dependency-removed"]
+                  }
+                ],
+                "tokenUsage": {
+                  "input": 100,
+                  "cacheRead": 50,
+                  "output": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

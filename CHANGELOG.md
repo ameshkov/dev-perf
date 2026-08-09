@@ -60,6 +60,23 @@ and this project adheres to
   analysis. When a session limit caused the retry, the retried analysis
   prompt tells the model what happened and to be less thorough but
   faster. Both limits are unlimited by default.
+- An interactive browser viewer of JSON reports in `viewer/`: a
+  standalone web app that opens a report written by `dev-perf report`
+  (schema v3, or the legacy v1 shape) and renders it as an explorable
+  dashboard — team dynamics and per-user charts grouped by what they
+  read (activity, the nature of the work, and the LLM's risk and
+  quality signals, with the tag-heavy flag charts spanning the full
+  width), per-user detail views with the LLM-assessed contribution
+  cards, and repository comparisons. A
+  `Navigation` button in the top bar opens a panel that scrolls to the
+  dashboard sections and scopes the whole dashboard to a subset of
+  repositories and/or contributors: the overview KPIs, team dynamics,
+  distributions, and individual reports all recompute for the
+  selection. The panel is hidden by default, and the overview meta bar
+  shows one chip per repository even when a repository was analyzed on
+  several branches. All parsing and rendering happens locally in the
+  browser; a bundled sample report demonstrates the dashboard. See
+  `viewer/README.md`.
 
 ### Changed
 
@@ -137,6 +154,13 @@ and this project adheres to
 
 ### Fixed
 
+- Transient git failures are now retried with backoff before the
+  analysis fails: a refused or timed-out connection, a dropped remote,
+  or a partial clone whose on-demand blob fetch fails retries a
+  `git` command up to three times (~1s, ~5s, ~30s, each with jitter),
+  logging a warning per retry — so a short network hiccup (e.g. an
+  SSH connection to a host dropping mid-clone or mid-`git log`) no
+  longer discards the whole run's deterministic analysis.
 - The committed `config.example.yaml` now sets `compile.report`, so a
   `compile` run against the copied example config no longer fails with
   `compile.report: the report file is required`.
@@ -168,6 +192,18 @@ and this project adheres to
 - When ignored paths exclude a repository's entire history, the run
   warns naming the repository instead of quietly producing an empty
   entry.
+- When a partial clone's on-demand blob fetch fails mid-analysis (git
+  `could not fetch <sha> from promisor remote` — e.g. SSH to the remote
+  is refused), the repository is re-cloned once as a full clone instead
+  of aborting the whole report: after the fallback every blob is local,
+  so the analysis completes regardless of further remote access. This
+  is safe under `parallel`: concurrent analyses of the same
+  repository/branch share one cache entry and are serialized, so a
+  re-clone never races another analysis reading the same entry.
+- The viewer's chart x-axis labels no longer overlap: period labels
+  rotate 45° once their unrotated width no longer fits the chart (a
+  year of `YYYY-MM` labels now rotates instead of colliding), and any
+  remaining overlap at narrow widths is hidden instead of overprinted.
 
 ## [v1.0.0] - 2026-08-06
 
