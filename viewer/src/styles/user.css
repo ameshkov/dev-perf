@@ -156,18 +156,6 @@
   color: var(--text-3);
 }
 
-.user-overview {
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--accent);
-  background: rgba(109, 139, 255, 0.06);
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--text-1);
-  white-space: pre-line;
-}
-
 /* Chart groups inside the detail card keep a tighter rhythm than the
    full-page team groups. */
 
@@ -247,6 +235,19 @@
   gap: 10px;
   font-size: 14px;
   color: var(--accent-2);
+}
+
+/* The LLM overview opening each contribution unit. */
+
+.contribution-overview {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--accent);
+  background: rgba(109, 139, 255, 0.06);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-1);
+  white-space: pre-line;
 }
 
 .contribution-card {

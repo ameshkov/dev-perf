@@ -1,9 +1,9 @@
 /**
  * The detail view of the selected user: identity header with the
- * summary statistics, the LLM overview, the chart groups with their
- * tag selections, the per-repository commit counts, and the
- * contribution cards. A fresh instance per user (keyed by name), so
- * tag selections start from the full set when the user changes.
+ * summary statistics, the chart groups with their tag selections, the
+ * per-repository commit counts, and the per-unit contribution
+ * sections. A fresh instance per user (keyed by name), so tag
+ * selections start from the full set when the user changes.
  */
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
@@ -165,9 +165,6 @@ export function UserDetail({ series, data }: UserDetailProps): ReactElement {
         </div>
       </header>
       <div className="user-stats">{statChips(series, llmEnabled)}</div>
-      {llmEnabled && user.llm.overview !== undefined ? (
-        <p className="user-overview">{user.llm.overview}</p>
-      ) : null}
       {groups.map((group) => (
         <ChartGroup key={group.id} title={group.title} lead={group.lead}>
           {group.blocks.map((descriptor) => (

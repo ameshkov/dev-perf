@@ -19,6 +19,7 @@
 - [What it does](#what-it-does)
 - [Usage](#usage)
     - [Building a report](#building-a-report)
+    - [Viewing a report in the browser](#viewing-a-report-in-the-browser)
     - [Compiling a markdown report with charts](#compiling-a-markdown-report-with-charts)
     - [Docker](#docker)
 - [Configuration](#configuration)
@@ -178,6 +179,31 @@ are visible before the analysis. The coarse analysis stages (clone,
 commit reading, per-repository boundaries, the LLM phase) are shown on
 every `report` run; the `verbose` config key adds per-user detail.
 
+To explore the resulting report, open it in the
+[browser viewer](#viewing-a-report-in-the-browser) — no compile step or
+CLI installation needed.
+
+### Viewing a report in the browser
+
+The easiest way to view a report needs no install at all: open the
+[dev-perf viewer](https://ameshkov.github.io/dev-perf/), a hosted page
+that opens a JSON report written by `dev-perf report` and renders it as
+an explorable dashboard — a team dynamics section with interactive
+charts (work types, sizes, complexity, commits, lines, languages,
+quality signals and risk flags can be filtered by tag selection),
+per-user detail views with the LLM-assessed contribution cards, and
+repository comparisons. Drop or browse the `report.json` file onto the
+page and it is parsed in the browser — nothing is uploaded anywhere. A
+bundled sample report lets you explore the dashboard without running an
+analysis first.
+
+The viewer is a good alternative to (or a complement of) `compile` when
+you just want to *look* at a report: it needs no CLI installation and
+no configuration — only the JSON report file — and it is always up to
+date with the current report schema. The page is built from the
+[`viewer/`](viewer/) web app in this repository, republished from
+`master` and on every release tag.
+
 ### Compiling a markdown report with charts
 
 ```text
@@ -214,31 +240,10 @@ The markdown report references the charts by relative path
 is portable as a unit — open `report.md` in GitHub, VS Code, or any
 markdown viewer that renders local images.
 
-### Viewing a report in the browser
-
-The repository ships an interactive web viewer in [`viewer/`](viewer/):
-a static app that opens a JSON report written by `dev-perf report` and
-renders it as an explorable dashboard — a team dynamics section with
-interactive charts (work types, sizes, complexity, commits, lines,
-languages, quality signals and risk flags can be filtered by tag
-selection), per-user detail views with the LLM-assessed contribution
-cards, and repository comparisons. Everything runs client-side: you
-drop or browse a `reports.json` (schema v3, or the legacy v1 shape) and
-it is parsed in the browser — nothing is uploaded anywhere. A bundled
-sample report lets you explore the dashboard without running an
-analysis first.
-
-The viewer is developed from its own directory:
-
-```console
-cd viewer
-pnpm install
-pnpm dev    # dev server on http://localhost:5173
-```
-
-`pnpm build` emits the static site to `viewer/build/`, which can be
-served by any static file server. See [viewer/README.md](viewer/README.md)
-for details.
+If you only want to *look* at a report interactively, the
+[browser viewer](#viewing-a-report-in-the-browser) above is simpler —
+it renders the same data in the browser with no compilation step at
+all.
 
 ### Docker
 
@@ -358,8 +363,9 @@ npx dev-perf report
 - [Design document](docs/design.md) — the full design of the
   deterministic analysis, the in-process LLM layer, the report schema,
   and the compile layer.
-- [Viewer](viewer/README.md) — the interactive browser dashboard for
-  JSON reports.
+- [Viewer](https://ameshkov.github.io/dev-perf/) — the hosted
+  interactive browser dashboard for JSON reports; source and local
+  development in [viewer/README.md](viewer/README.md).
 - [Development guide](DEVELOPMENT.md) — local setup, build, manual
   testing, and the release process.
 - [Contributor guide](AGENTS.md) — coding conventions and contribution

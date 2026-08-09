@@ -1,9 +1,19 @@
 /**
  * The small `execa`-based git wrapper: all git
  * operations in the project go through `runGit` or one of the helpers,
- * so failure handling stays in one place.
+ * so failure handling stays in one place. Transient failures — a
+ * dropped connection, a timing-out remote, a partial clone whose
+ * on-demand blob fetch fails — are retried with the backoff in
+ * `./git-retry.ts` (1s, 5s, 30s with jitter) and a warning per retry.
  */
 import { execa, ExecaError } from 'execa';
+import {
+  DEFAULT_RETRY_DELAYS_MS,
+  jitteredDelay,
+  shouldRetryGitError,
+  transientDetail,
+} from './git-retry.js';
+import { logWarn } from '../util/log.js';
 
 /** Options accepted by `runGit`. */
 export interface RunGitOptions {
@@ -16,6 +26,14 @@ export interface RunGitOptions {
    * (`TZ=UTC`).
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Backoff delays between attempts, in milliseconds, after each
+   * transient failure until the last one — one entry per retry, skipped
+   * once the list ends. Production always uses the built-in defaults
+   * (`1s`, `5s`, `30s` with jitter); tests pass `0` delays so a
+   * retried fixture finishes without waiting out the backoff.
+   */
+  retryDelays?: readonly number[];
 }
 
 /** Options accepted by `GitError`. */
@@ -61,8 +79,47 @@ export class GitError extends Error {
 }
 
 /**
+ * Waits the given number of milliseconds.
+ *
+ * @param ms - Time to sleep.
+ * @returns A promise that resolves after the delay.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Converts a thrown execa error into the module's typed `GitError`;
+ * errors that are not execa failures (e.g. a broken spawn) propagate
+ * unchanged — they are not transient and are not retried.
+ *
+ * @param args - Args of the failing git invocation.
+ * @param repoDir - Directory the command ran in.
+ * @param error - The thrown error.
+ * @returns The typed git error.
+ */
+function toGitError(args: string[], repoDir: string, error: unknown): GitError {
+  if (error instanceof ExecaError) {
+    return new GitError(args, {
+      cwd: repoDir,
+      exitCode: error.exitCode,
+      stderr: error.stderr ?? '',
+      cause: error,
+    });
+  }
+  throw error;
+}
+
+/**
  * Runs a git command in the given directory and returns its stdout
- * (without the trailing newline).
+ * (without the trailing newline). Transient failures — a refused or
+ * timed-out connection, a dropped remote, a partial clone whose
+ * on-demand blob fetch fails — are retried with the built-in backoff
+ * (~1s, ~5s, ~30s, each with jitter), logging a warning per retry, and
+ * the last attempt's error is thrown when they all fail. All other
+ * (permanent) failures throw immediately.
  *
  * @param repoDir - Directory to run git in (the repo working tree for
  * repo operations, the cache entry dir for clones).
@@ -70,27 +127,34 @@ export class GitError extends Error {
  * @param options - Executable overrides.
  * @returns The command's stdout.
  * @throws {GitError} When the command fails (non-zero exit or could not
- * start).
+ * start), after all retries are exhausted for a transient failure.
  */
 export async function runGit(
   repoDir: string,
   args: string[],
   options: RunGitOptions = {},
 ): Promise<string> {
-  const { gitBinary = 'git', env } = options;
-  try {
-    const result = await execa(gitBinary, args, { cwd: repoDir, env });
-    return result.stdout;
-  } catch (error) {
-    if (error instanceof ExecaError) {
-      throw new GitError(args, {
-        cwd: repoDir,
-        exitCode: error.exitCode,
-        stderr: error.stderr ?? '',
-        cause: error,
-      });
+  const { gitBinary = 'git', env, retryDelays } = options;
+  const delays = retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
+  let attempt = 0;
+  for (;;) {
+    try {
+      const result = await execa(gitBinary, args, { cwd: repoDir, env });
+      return result.stdout;
+    } catch (error) {
+      const gitError = toGitError(args, repoDir, error);
+      const delayMs = delays[attempt];
+      if (delayMs === undefined || !shouldRetryGitError(gitError)) {
+        throw gitError;
+      }
+      const waitMs = jitteredDelay(delayMs);
+      logWarn(
+        `git "${args[0] ?? 'git'}" failed (attempt ${attempt + 1}/${delays.length + 1}; ` +
+          `retrying in ${(waitMs / 1000).toFixed(1)} s): ${transientDetail(gitError)}`,
+      );
+      await sleep(waitMs);
+      attempt += 1;
     }
-    throw error;
   }
 }
 

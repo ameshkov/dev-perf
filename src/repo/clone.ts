@@ -31,6 +31,11 @@ export interface EnsureCloneOptions {
    * under their own entry, so switching branches never reuses the wrong
    * clone. */
   branch?: string;
+  /** Clone as a full clone, without the `--filter=blob:none` partial
+   * clone (default: partial). A full clone keeps every blob locally, so
+   * none of the analysis depends on the promisor remote — the fallback
+   * for a partial clone whose on-demand blob fetch failed. */
+  full?: boolean;
   /** The repository's scoped logger for clone warnings. */
   log?: ScopedLog;
   /** Git executable to run; defaults to `git`. Tests override it to
@@ -49,6 +54,59 @@ export interface EnsureCloneOptions {
  * promise, so one entry is cloned exactly once per run.
  */
 const inFlightClones = new Map<string, Promise<CloneResult>>();
+
+/**
+ * The current tail of each cache entry's analysis queue: analyses of the
+ * same cache entry are serialized, so a fallback that re-clones the
+ * entry (`rm` + clone of `repo/`) never runs while a concurrent
+ * analysis of the same entry is still reading it. Without this, two
+ * specs that share a URL and branch — but differ in base or ignored
+ * paths, so they analyze in parallel — could race: one's full-clone
+ * fallback removes `repo/` under the other's in-flight `git log` or LLM
+ * file reads, which then fail with a non-promisor error and abort the
+ * run. Entries are unique per URL+branch, so only shared entries
+ * contend; different repositories still analyze in parallel.
+ */
+const entryAnalysisTails = new Map<string, Promise<void>>();
+
+/**
+ * Runs a per-cache-entry analysis section under an exclusive lock:
+ * concurrent callers for the same entry wait — in first-come order —
+ * for the previous caller to settle (success or failure) before they
+ * run, so one entry is never analyzed, re-cloned, or read at the same
+ * time. Different entries never contend.
+ *
+ * @param entryDir - The cache entry directory the section touches.
+ * @param run - The exclusive section: clone/reuse, commit reading, the
+ * full-clone fallback, and the repository's analysis.
+ * @returns The section's result.
+ * @throws {unknown} The section's error; the lock is released either way.
+ */
+export async function withEntryAnalysisLock<T>(
+  entryDir: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = entryAnalysisTails.get(entryDir) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // The next caller chains onto this section's gate; the chain never
+  // rejects (a failed analysis still lets the next one through). The
+  // gate resolves in `finally`, after the section and its cleanup settle.
+  const tail = previous.catch(() => undefined).then(() => gate);
+  entryAnalysisTails.set(entryDir, tail);
+  // Wait for the previous owner to settle before starting the section.
+  await previous.catch(() => undefined);
+  try {
+    return await run();
+  } finally {
+    release();
+    if (entryAnalysisTails.get(entryDir) === tail) {
+      entryAnalysisTails.delete(entryDir);
+    }
+  }
+}
 
 /** Result of `ensureClone`. */
 export interface CloneResult {
@@ -117,10 +175,10 @@ export function cloneTarget(repo: string): string {
  * Ensures a repository is cloned into the cache: reuses the
  * clone when `repo/` exists and `clone.json` matches the URL; re-clones
  * (removing the old `repo/`) on `--refresh` or when the cache is stale;
- * clones with `--filter=blob:none` (or the requested `--branch` when
- * one is given) and falls back to a full clone when the hosting
- * rejects partial clones. Writes `clone.json` after cloning. The
- * cache entry is keyed by the URL and the requested branch, so
+ * clones with `--filter=blob:none` — or as a full clone when the
+ * `full` option is set — and falls back to a full clone when the
+ * hosting rejects partial clones. Writes `clone.json` after cloning.
+ * The cache entry is keyed by the URL and the requested branch, so
  * different branches never share a cache entry. Concurrent calls for
  * the *same* entry (the parallel analysis of specs that share a URL and
  * branch but differ in base or ignored paths) share one clone: the
@@ -164,8 +222,10 @@ export async function ensureClone(
 /**
  * The single clone body `ensureClone` protects with its in-flight lock:
  * reuses the cached clone when it matches, or removes the old `repo/`
- * and clones fresh (with a full-clone fallback on hosts that reject
- * partial clones), recording the clone identity in `clone.json`.
+ * and clones fresh — as a partial clone (`--filter=blob:none`), or as
+ * a full clone when the `full` option is set, with the full-clone
+ * fallback on hosts that reject partial clones — recording the clone
+ * identity in `clone.json`.
  *
  * @param entryDir - The cache entry directory to clone into.
  * @param url - Repository URL or local path as given on the command line.
@@ -205,6 +265,7 @@ async function cloneIntoEntry(
   const target = cloneTarget(url);
   const branchArgs =
     options.branch === undefined || options.branch === '' ? [] : ['--branch', options.branch];
+  const filterArgs = options.full ? [] : ['--filter=blob:none'];
   // A clone can take a long time; log that it started so the user sees
   // what dev-perf is doing instead of a silent wait. Naming the cache
   // entry directory lets the user match the repository to its cache
@@ -213,7 +274,7 @@ async function cloneIntoEntry(
   // stage progress, so it stays visible even in quiet mode.
   log.progress(`cloning "${url}" (cache "${entryDir}")`);
   try {
-    await gitClone(entryDir, ['--filter=blob:none', ...branchArgs, target, 'repo'], gitOptions);
+    await gitClone(entryDir, [...filterArgs, ...branchArgs, target, 'repo'], gitOptions);
   } catch (error) {
     if (error instanceof GitError && isPartialCloneFailure(error)) {
       log.warn(`partial clone failed (${error.message}); falling back to a full clone`);

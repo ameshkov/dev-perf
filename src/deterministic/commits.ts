@@ -16,6 +16,7 @@
  * `--since 2026-01-01 --until 2026-03-01` covers exactly two months.
  */
 import { GitError, runGit } from '../repo/git.js';
+import type { RunGitOptions } from '../repo/git.js';
 
 /** Record separator between the commit header and its numstat rows. */
 const RECORD_SEP = '\x1e';
@@ -212,18 +213,27 @@ function parseNumstatRow(line: string): CommitFile {
  *
  * @param repoDir - The repository working tree.
  * @param range - Author-date range, both ends inclusive.
+ * @param options - Overrides for the git invocation (see `runGit`).
  * @returns The commits in range, newest first.
  * @throws {GitError} When git log fails for a reason other than an
  * empty repository, or when a bound date cannot be parsed.
  */
-export async function readCommits(repoDir: string, range: CommitRange = {}): Promise<Commit[]> {
+export async function readCommits(
+  repoDir: string,
+  range: CommitRange = {},
+  options: RunGitOptions = {},
+): Promise<Commit[]> {
   const bounds = normalizeRange(range);
-  const output = await gitLogBounded(repoDir, bounds);
+  const output = await gitLogBounded(repoDir, bounds, options);
   const commits = parseCommitLog(output);
   const since =
-    bounds.since === undefined ? undefined : await resolveBoundEpoch(repoDir, bounds.since);
+    bounds.since === undefined
+      ? undefined
+      : await resolveBoundEpoch(repoDir, bounds.since, options);
   const until =
-    bounds.until === undefined ? undefined : await resolveBoundEpoch(repoDir, bounds.until);
+    bounds.until === undefined
+      ? undefined
+      : await resolveBoundEpoch(repoDir, bounds.until, options);
   return commits.filter((commit) => inAuthorRange(commit, since, until));
 }
 
@@ -240,11 +250,16 @@ export async function readCommits(repoDir: string, range: CommitRange = {}): Pro
  * @param repoDir - The repository working tree.
  * @param range - Scan bounds (commit dates) and the optional base
  * exclusion.
+ * @param options - Overrides for the git invocation (see `runGit`).
  * @returns The raw git log output.
  * @throws {GitError} When git log fails for a reason other than an
  * empty repository.
  */
-async function gitLogBounded(repoDir: string, range: CommitRange): Promise<string> {
+async function gitLogBounded(
+  repoDir: string,
+  range: CommitRange,
+  options: RunGitOptions,
+): Promise<string> {
   const args = ['log'];
   if (range.exclude !== undefined) {
     args.push('HEAD', '--not', range.exclude);
@@ -257,7 +272,7 @@ async function gitLogBounded(repoDir: string, range: CommitRange): Promise<strin
   }
   args.push('--pretty=format:%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e', '--numstat', '--no-renames');
   try {
-    return await runGit(repoDir, args, { env: UTC_ENV });
+    return await runGit(repoDir, args, { env: UTC_ENV, ...options });
   } catch (error) {
     if (isEmptyRepoError(error)) {
       return '';
@@ -289,8 +304,12 @@ function isEmptyRepoError(error: unknown): boolean {
  * @returns The resolved instant (UTC).
  * @throws {GitError} When git cannot parse the date.
  */
-export async function resolveBoundDate(repoDir: string, date: string): Promise<Date> {
-  return new Date(await resolveBoundEpoch(repoDir, normalizeBoundDate(date)));
+export async function resolveBoundDate(
+  repoDir: string,
+  date: string,
+  options: RunGitOptions = {},
+): Promise<Date> {
+  return new Date(await resolveBoundEpoch(repoDir, normalizeBoundDate(date), options));
 }
 
 /**
@@ -300,11 +319,19 @@ export async function resolveBoundDate(repoDir: string, date: string): Promise<D
  *
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param date - Date in any git date format.
+ * @param options - Overrides for the git invocation (see `runGit`).
  * @returns The epoch milliseconds of the resolved date.
  * @throws {GitError} When git cannot parse the date.
  */
-async function resolveBoundEpoch(repoDir: string, date: string): Promise<number> {
-  const output = await runGit(repoDir, ['rev-parse', `--since=${date}`], { env: UTC_ENV });
+async function resolveBoundEpoch(
+  repoDir: string,
+  date: string,
+  options: RunGitOptions = {},
+): Promise<number> {
+  const output = await runGit(repoDir, ['rev-parse', `--since=${date}`], {
+    env: UTC_ENV,
+    ...options,
+  });
   // `git rev-parse --since=<date>` prints `--max-age=<epoch>` (older
   // git) or the bare `<epoch>` (newer git); either way the epoch is the
   // trailing digits.

@@ -1,12 +1,13 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildFixtureRepo,
   removeFixtureRepo,
   type FixtureRepo,
 } from '../../test/fixtures/repo-builder.js';
+import { jitteredDelay, isPromisorFetchFailure, shouldRetryGitError } from './git-retry.js';
 import { GitError, gitLog, gitRevParse, gitShortlog, gitShow, runGit } from './git.js';
 
 /** A fixture with two authors and one commit per author. */
@@ -25,6 +26,32 @@ async function buildTwoAuthorRepo(): Promise<FixtureRepo> {
       files: [{ path: 'b.txt', content: 'beta\n' }],
     },
   ]);
+}
+
+/**
+ * Writes a fake git executable that fails the first `failures`
+ * invocations with the given stderr text and then delegates to the
+ * real git. Each invocation appends a line to the marker file, so tests
+ * can count attempts and drive the failure count.
+ */
+async function writeFlakyGit(
+  dir: string,
+  markerFile: string,
+  failures: number,
+  stderrText: string,
+): Promise<string> {
+  const shim = path.join(dir, 'flaky-git');
+  const script = `#!/bin/sh
+echo attempt >> "${markerFile}"
+if [ "$(wc -l < "${markerFile}")" -le ${failures} ]; then
+  echo "${stderrText}" >&2
+  exit 1
+fi
+exec git "$@"
+`;
+  await writeFile(shim, script);
+  await chmod(shim, 0o755);
+  return shim;
 }
 
 describe('runGit', () => {
@@ -130,5 +157,191 @@ describe('git helpers', () => {
     } finally {
       await removeFixtureRepo(repo);
     }
+  });
+});
+
+describe('runGit retry', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('retries a transient failure and succeeds on a later attempt', async () => {
+    const repo = await buildTwoAuthorRepo();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-git-retry-'));
+    const marker = path.join(tmp, 'attempts');
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const shim = await writeFlakyGit(
+        tmp,
+        marker,
+        2,
+        'ssh: connect to host github.com port 22: Connection refused',
+      );
+
+      const stdout = await runGit(repo.dir, ['log', '--format=%an'], {
+        gitBinary: shim,
+        retryDelays: [0, 0],
+      });
+
+      expect(stdout).toContain('Alice');
+      expect(stdout).toContain('Bob');
+      // Two transient failures, then a successful third attempt.
+      expect(await readFile(marker, 'utf8').then((text) => text.trim().split('\n'))).toHaveLength(
+        3,
+      );
+      // Each retry is printed with the attempt, the delay, and the cause.
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr).toMatch(
+        /git "log" failed \(attempt \d\/\d; retrying in 0\.0 s\): Connection refused/,
+      );
+      expect(stderr.match(/retrying in/g)).toHaveLength(2);
+    } finally {
+      await removeFixtureRepo(repo);
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('gives up after the retries are exhausted and throws the last error', async () => {
+    const repo = await buildTwoAuthorRepo();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-git-retry-'));
+    const marker = path.join(tmp, 'attempts');
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const shim = await writeFlakyGit(
+        tmp,
+        marker,
+        1000,
+        'ssh: connect to host github.com port 22: Connection refused',
+      );
+
+      const caught = await runGit(repo.dir, ['log', '--format=%an'], {
+        gitBinary: shim,
+        retryDelays: [0, 0],
+      }).then(
+        () => null,
+        (error) => error,
+      );
+
+      expect(caught).toBeInstanceOf(GitError);
+      expect((caught as GitError).stderr).toContain('Connection refused');
+      // Two retry delays ([0, 0]) mean three total attempts before giving up.
+      expect(await readFile(marker, 'utf8').then((text) => text.trim().split('\n'))).toHaveLength(
+        3,
+      );
+      const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderr.match(/retrying in/g)).toHaveLength(2);
+    } finally {
+      await removeFixtureRepo(repo);
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not retry a permanent failure', async () => {
+    const repo = await buildTwoAuthorRepo();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-git-retry-'));
+    const marker = path.join(tmp, 'attempts');
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const shim = await writeFlakyGit(tmp, marker, 1000, "fatal: repository 'x' not found");
+
+      const caught = await runGit(repo.dir, ['log', '--format=%an'], {
+        gitBinary: shim,
+        retryDelays: [0, 0],
+      }).then(
+        () => null,
+        (error) => error,
+      );
+
+      expect(caught).toBeInstanceOf(GitError);
+      expect((caught as GitError).message).toContain('repository');
+      // Permanent failures fail immediately: one attempt, no retry log.
+      expect(await readFile(marker, 'utf8').then((text) => text.trim().split('\n'))).toHaveLength(
+        1,
+      );
+      expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringMatching(/retrying in/));
+    } finally {
+      await removeFixtureRepo(repo);
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('shouldRetryGitError', () => {
+  /** A typed git error with the given stderr, for classification. */
+  const at = (stderr: string): GitError =>
+    new GitError(['clone', 'url', 'repo'], { cwd: '/cache/entry', stderr });
+
+  it('classifies transient network failures as retriable', () => {
+    expect(
+      shouldRetryGitError(at('ssh: connect to host github.com port 22: Connection refused')),
+    ).toBe(true);
+    expect(
+      shouldRetryGitError(
+        at('fatal: could not fetch 3d611319a2681ac07ddf29117a544a6175160527 from promisor remote'),
+      ),
+    ).toBe(true);
+    expect(
+      shouldRetryGitError(
+        at(
+          "fatal: unable to access 'https://host/repo': Failed to connect to host: Operation timed out",
+        ),
+      ),
+    ).toBe(true);
+    expect(shouldRetryGitError(at('fatal: The remote end hung up unexpectedly'))).toBe(true);
+  });
+
+  it('does not retry permanent failures', () => {
+    expect(shouldRetryGitError(at("fatal: repository 'x' not found"))).toBe(false);
+    expect(shouldRetryGitError(at('fatal: Authentication failed'))).toBe(false);
+    expect(shouldRetryGitError(at("fatal: remote error: filter 'blob:none' not supported"))).toBe(
+      false,
+    );
+    expect(
+      shouldRetryGitError(at("fatal: your current branch 'main' does not have any commits yet")),
+    ).toBe(false);
+  });
+});
+
+describe('isPromisorFetchFailure', () => {
+  /** A typed git error with the given stderr, for classification. */
+  const at = (stderr: string): GitError =>
+    new GitError(['log', '--numstat'], { cwd: '/cache/entry/repo', stderr });
+
+  it('detects the on-demand blob fetch of a partial clone failing', () => {
+    expect(
+      isPromisorFetchFailure(
+        at(
+          'fatal: could not fetch 8fc64aaae33316fb07dfdff1c09e17cd42bb40f4 from promisor remote: Command failed with exit code 128',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isPromisorFetchFailure(
+        at(
+          'ssh: connect to host github.com port 22: Connection refused\n' +
+            'fatal: could not fetch 8fc64aaae33316fb07dfdff1c09e17cd42bb40f4 from promisor remote',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not treat other git failures as a promisor fetch', () => {
+    expect(
+      isPromisorFetchFailure(at('ssh: connect to host github.com port 22: Connection refused')),
+    ).toBe(false);
+    expect(isPromisorFetchFailure(at('fatal: Authentication failed'))).toBe(false);
+    expect(isPromisorFetchFailure(at("fatal: repository 'x' not found"))).toBe(false);
+    expect(
+      isPromisorFetchFailure(at("fatal: remote error: filter 'blob:none' not supported")),
+    ).toBe(false);
+  });
+});
+
+describe('jitteredDelay', () => {
+  it('adds up to ±20% jitter around the nominal delay', () => {
+    expect(jitteredDelay(1000, () => 0)).toBe(800);
+    expect(jitteredDelay(1000, () => 0.5)).toBe(1000);
+    expect(jitteredDelay(1000, () => 1)).toBe(1200);
+    expect(jitteredDelay(30000, () => 1)).toBe(36000);
   });
 });

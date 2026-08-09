@@ -99,6 +99,7 @@ dev-perf/
 ├── viewer/                    # Interactive browser viewer of JSON reports: a
 │                              # standalone React + TypeScript project with its own
 │                              # package.json, quality gates, tests, and README
+├── .github/workflows/         # CI, Docker, and GitHub Pages publish workflows
 ├── docs/
 │   ├── configuration.md       # Full configuration reference
 │   └── design.md              # Full design document
@@ -108,12 +109,14 @@ dev-perf/
     .dockerignore
 ```
 
-Publishing is split across two workflows: `.github/workflows/ci.yml`
-runs the quality gate and publishes to npm on `v*` tags;
-`.github/workflows/docker.yml` builds and pushes the multi-arch Docker
-image (`linux/amd64`, `linux/arm64`) to
+Publishing is split across three workflows: `.github/workflows/ci.yml`
+runs the quality gate (including the viewer's own gates) and publishes
+to npm on `v*` tags; `.github/workflows/docker.yml` builds and pushes
+the multi-arch Docker image (`linux/amd64`, `linux/arm64`) to
 `ghcr.io/ameshkov/dev-perf` on the same tags and on every `master`
-push.
+push; `.github/workflows/pages.yml` builds the viewer and publishes it
+to GitHub Pages (https://ameshkov.github.io/dev-perf/) on the same
+tags and on every `master` push.
 
 Each `src/` module is self-contained and exposes its public API through
 a barrel `index.ts`; tests are co-located as `*.test.ts`. When the

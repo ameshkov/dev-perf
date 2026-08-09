@@ -1,6 +1,7 @@
 /**
  * Tests for the contribution cards: titles, summaries, badges of every
- * kind, commit shas, and the per-period grouping.
+ * kind, commit shas, the per-unit grouping, and the overview opening
+ * each unit.
  */
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -35,7 +36,7 @@ describe('ContributionList', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders ungrouped cards for a single-period report', () => {
+  it('opens the single unit with the overview, without a group label', () => {
     const single = buildChartData(
       buildTrendReport({
         periods: [
@@ -49,6 +50,7 @@ describe('ContributionList', () => {
                     name: 'Casey',
                     llm: {
                       status: 'completed',
+                      overview: 'A single unit of work.',
                       contributions: [buildContribution({ title: 'Solo contribution' })],
                     },
                   }),
@@ -64,6 +66,11 @@ describe('ContributionList', () => {
     );
     expect(screen.getByText('Solo contribution')).toBeDefined();
     expect(container.querySelector('.contribution-group')).toBeNull();
+    const list = container.querySelector('.contribution-list');
+    const overview = list?.querySelector('.contribution-overview');
+    expect(overview?.textContent).toBe('A single unit of work.');
+    // The overview opens the unit, before the first card.
+    expect([...(list?.children ?? [])].indexOf(overview as Element)).toBe(0);
   });
 
   it('groups the cards per period and renders every field of a card', () => {
@@ -75,6 +82,10 @@ describe('ContributionList', () => {
     expect(groups).toHaveLength(1);
     expect(screen.getByText('2026-01')).toBeDefined();
     expect(screen.getByText('2 contributions')).toBeDefined();
+
+    // The unit's LLM overview opens the group.
+    const overview = groups[0].querySelector('.contribution-overview');
+    expect(overview?.textContent).toBe('Shipped the payments API.');
 
     expect(screen.getByText('Ship the payments API')).toBeDefined();
     expect(screen.getByText('Built the payments endpoint.')).toBeDefined();
@@ -108,5 +119,71 @@ describe('ContributionList', () => {
     expect(screen.getAllByText('Why this size and complexity')).toHaveLength(2);
     expect(screen.getAllByText('Touches several modules.')).toHaveLength(2);
     expect(screen.getAllByText('A few hundred lines.')).toHaveLength(2);
+  });
+
+  it('places the overview between the unit label and the contribution cards', () => {
+    const bob = data.users[1];
+    const { container } = render(<ContributionList series={bob} periods={data.periods} />);
+    const group = container.querySelector('.contribution-group');
+    const overview = group?.querySelector('.contribution-overview');
+    expect(overview?.textContent).toBe('Hardened the auth layer.');
+    const children = [...(group?.children ?? [])];
+    expect(children.indexOf(overview as Element)).toBe(1);
+    expect(children[0].className).toBe('contribution-group-label');
+    expect(children[2].className).toBe('contribution-card');
+  });
+
+  it('renders one overview per unit instead of one joined overview', () => {
+    const twoUnits = buildChartData(
+      buildTrendReport({
+        unit: 'month',
+        periods: [
+          {
+            since: '2026-01-01T00:00:00.000Z',
+            until: '2026-01-31T23:59:59.999Z',
+            repositories: [
+              buildRepository({
+                users: [
+                  buildUser({
+                    name: 'Casey',
+                    llm: {
+                      status: 'completed',
+                      overview: 'January unit overview.',
+                      contributions: [buildContribution({ title: 'January work' })],
+                    },
+                  }),
+                ],
+              }),
+            ],
+          },
+          {
+            since: '2026-02-01T00:00:00.000Z',
+            until: '2026-02-28T23:59:59.999Z',
+            repositories: [
+              buildRepository({
+                users: [
+                  buildUser({
+                    name: 'Casey',
+                    llm: {
+                      status: 'completed',
+                      overview: 'February unit overview.',
+                      contributions: [buildContribution({ title: 'February work' })],
+                    },
+                  }),
+                ],
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    const { container } = render(
+      <ContributionList series={twoUnits.users[0]} periods={twoUnits.periods} />,
+    );
+    expect(container.querySelectorAll('.contribution-group')).toHaveLength(2);
+    const overviews = container.querySelectorAll('.contribution-overview');
+    expect(overviews).toHaveLength(2);
+    expect(overviews[0].textContent).toBe('January unit overview.');
+    expect(overviews[1].textContent).toBe('February unit overview.');
   });
 });

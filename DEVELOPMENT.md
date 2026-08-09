@@ -317,7 +317,10 @@ Releases are published to the npm registry automatically by the
 pushed, and the [Docker workflow](.github/workflows/docker.yml) builds
 and pushes the Docker image to the GitHub Container Registry
 (`ghcr.io/ameshkov/dev-perf`) on the same tags (and on every push to
-`master`).
+`master`). The [Pages workflow](.github/workflows/pages.yml) builds the
+browser viewer and publishes it to GitHub Pages on the same triggers;
+for it to run, the repository needs GitHub Pages enabled with the
+source set to "GitHub Actions" (Settings → Pages).
 
 ### One-time setup
 
@@ -346,8 +349,9 @@ The workflow verifies that the tag version matches `package.json`, runs
 the full quality gate, builds, publishes to npm with provenance, and
 creates a GitHub release linking to `CHANGELOG.md` with the npm tarball
 attached. The Docker workflow pushes a multi-architecture image
-(`linux/amd64`, `linux/arm64`) tagged with the version and `latest` —
-it does not depend on the npm publish, so both run in parallel.
+(`linux/amd64`, `linux/arm64`) tagged with the version and `latest`,
+and the Pages workflow rebuilds the viewer on GitHub Pages — neither
+depends on the npm publish, so the three run in parallel.
 
 ### Notes
 

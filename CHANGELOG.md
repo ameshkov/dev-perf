@@ -77,6 +77,12 @@ and this project adheres to
   several branches. All parsing and rendering happens locally in the
   browser; a bundled sample report demonstrates the dashboard. See
   `viewer/README.md`.
+- The viewer is now published to GitHub Pages:
+  https://ameshkov.github.io/dev-perf/. Open the hosted page and drop a
+  `report.json` written by `dev-perf report` onto it to explore the
+  report interactively in the browser — no `compile` step or CLI
+  installation needed. The page is rebuilt from `master` and on every
+  release tag.
 
 ### Changed
 
@@ -85,6 +91,11 @@ and this project adheres to
   heading with that period's overview, contributions table, and risk
   flags, instead of one overview and contributions table lumping all
   periods together.
+- The viewer's individual reports follow the same structure: a person's
+  contributions render as one section per unit — each starting with
+  that unit's LLM overview, followed by the unit's contribution
+  cards — instead of one overview block joined from the overviews of
+  all periods above the cards.
 - Coarse analysis-stage markers are now shown on every `report` run,
   even without `verbose`: cloning or reusing the cached clone,
   `reading commits` and the commit count, each repository's

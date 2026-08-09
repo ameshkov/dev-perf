@@ -46,9 +46,12 @@ describe('IndividualSection', () => {
     expect(screen.getByText('12 commits · 2 contributions')).toBeDefined();
     expect(screen.getByText('11 commits · 1 contributions')).toBeDefined();
 
-    // The first user's detail is visible.
+    // The first user's detail is visible; the LLM overview opens the
+    // unit's contribution section, not a clamped block at the top.
     expect(screen.getByText('alice@example.com')).toBeDefined();
-    expect(screen.getByText('Shipped the payments API.')).toBeDefined();
+    const overview = screen.getByText('Shipped the payments API.');
+    expect(overview.className).toBe('contribution-overview');
+    expect(overview.closest('.contribution-group')).not.toBeNull();
   });
 
   it('switches the detail view when another user is picked', () => {
@@ -57,7 +60,8 @@ describe('IndividualSection', () => {
     fireEvent.click(screen.getAllByRole('tab')[1]);
 
     expect(screen.getByText('bob@example.com')).toBeDefined();
-    expect(screen.getByText('Hardened the auth layer.')).toBeDefined();
+    const overview = screen.getByText('Hardened the auth layer.');
+    expect(overview.className).toBe('contribution-overview');
     expect(screen.queryByText('alice@example.com')).toBeNull();
   });
 

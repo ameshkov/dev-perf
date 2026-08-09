@@ -1,9 +1,11 @@
 /**
- * The contributions of one user rendered as cards: title, summary,
- * size and complexity, work types, areas, quality signals and risk
- * flags, and the grouped commits — with the reasoning behind the
- * size and complexity in a collapsible detail. Grouped per period
- * when the report has more than one period.
+ * The contributions of one user as per-unit sections: every unit
+ * starts with the LLM overview of the user's work in that unit,
+ * followed by the contribution cards — title, summary, size and
+ * complexity, work types, areas, quality signals and risk flags, and
+ * the grouped commits, with the reasoning behind the size and
+ * complexity in a collapsible detail. One unlabeled unit for
+ * single-period reports, one labeled unit per period otherwise.
  */
 import type { ReactElement } from 'react';
 import type { Contribution } from '../report/index.js';
@@ -78,6 +80,21 @@ function badgeRow(
 }
 
 /**
+ * The overview paragraph opening a unit: the LLM's summary of the
+ * user's work in the unit; nothing when the unit's analysis carries
+ * no overview.
+ *
+ * @param overview - The unit's overview text, when present.
+ * @returns The paragraph element, or `null` without an overview.
+ */
+function unitOverview(overview: string | undefined): ReactElement | null {
+  if (overview === undefined) {
+    return null;
+  }
+  return <p className="contribution-overview">{overview}</p>;
+}
+
+/**
  * One contribution card.
  *
  * @param contribution - The contribution.
@@ -127,8 +144,11 @@ function contributionCard(contribution: Contribution, index: number): ReactEleme
 }
 
 /**
- * Renders the contributions of one user, grouped per period when the
- * report has more than one period.
+ * Renders the contributions of one user as per-unit sections, each
+ * starting with the unit's LLM overview: one unlabeled unit for
+ * single-period reports, one labeled unit per period when the report
+ * has more than one period (units without contributions are
+ * dropped).
  *
  * @param props - The user's series and the periods.
  * @returns The list element, or `null` when the user has no
@@ -140,12 +160,18 @@ export function ContributionList({ series, periods }: ContributionListProps): Re
     return null;
   }
   if (periods.length <= 1) {
-    return <div className="contribution-list">{contributions.map(contributionCard)}</div>;
+    return (
+      <div className="contribution-list">
+        {unitOverview(series.periodLlm[0]?.overview)}
+        {contributions.map(contributionCard)}
+      </div>
+    );
   }
   const indexes = periodIndexOf(series);
   const groups = periods
     .map((period, index) => ({
       label: period.label,
+      overview: series.periodLlm[index]?.overview,
       items: contributions.filter((contribution) => indexes.get(contribution) === index),
     }))
     .filter((group) => group.items.length > 0);
@@ -160,6 +186,7 @@ export function ContributionList({ series, periods }: ContributionListProps): Re
               {group.items.length === 1 ? 'contribution' : 'contributions'}
             </span>
           </h4>
+          {unitOverview(group.overview)}
           {group.items.map(contributionCard)}
         </div>
       ))}

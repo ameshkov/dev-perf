@@ -20,6 +20,14 @@ never leave your machine. Both the current report schema (v3 trend
 reports) and the legacy v1 shape are accepted; a v1 report is wrapped
 into a single period before rendering.
 
+## Hosted site
+
+The latest build of the viewer runs at
+https://ameshkov.github.io/dev-perf/: a static site published to
+GitHub Pages by the repository's `pages.yml` workflow on every push to
+`master` and on every release tag. Open the page and drop a report onto
+it — no CLI, server, or configuration needed.
+
 ## Development
 
 The viewer is a standalone project with its own dependency set and

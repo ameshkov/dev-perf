@@ -19,8 +19,12 @@ import { groupByAuthor } from './deterministic/identity.js';
 import { filterCommitsIgnoring, hasIgnorePaths } from './deterministic/path-ignore.js';
 import { runLlmPhase } from './llm/repo-phase.js';
 import type { AnalyzedRange, Repository } from './report/index.js';
-import { ensureClone } from './repo/clone.js';
+import { cacheEntryDir, resolveCacheDir } from './repo/cache.js';
+import { ensureClone, withEntryAnalysisLock } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
+import { isPromisorFetchFailure } from './repo/git-retry.js';
+import { GitError } from './repo/git.js';
+import type { RunGitOptions } from './repo/git.js';
 import type { RepoSpec } from './repo/repo-spec.js';
 import type { EmailMap } from './util/email-map.js';
 import { pluralize } from './util/format.js';
@@ -59,6 +63,10 @@ interface RepoAnalysis {
  * @param emailMap - The compiled email mappings for identity merging.
  * @param sessionLimit - The run's shared gate bounding concurrent LLM
  * sessions, threaded into this repository's LLM phase.
+ * @param gitOptions - Overrides for the git invocations (see `runGit`),
+ * unset in production. Tests pass a fake `gitBinary` to simulate hosts
+ * whose partial-clone blob fetches fail, and `retryDelays: []` to skip
+ * the transient-failure backoff.
  * @returns The resolved range, the period bounds, and the per-period
  * entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
@@ -74,8 +82,18 @@ export async function analyzeRepository(
   log: ScopedLog,
   emailMap: EmailMap,
   sessionLimit: Limit,
+  gitOptions: RunGitOptions = {},
 ): Promise<RepoAnalysis> {
   const startedAt = Date.now();
+  // The whole analysis of one cache entry — the clone, the commit
+  // scan with its full-clone fallback (which re-clones the entry), and
+  // the LLM phase that reads the clone — runs under an exclusive
+  // per-entry lock: concurrent analyses of the same URL+branch (specs
+  // that differ only in base or ignored paths) never race on `repo/`.
+  // The entry is derived the same way `ensureClone` derives it, so the
+  // lock key matches the directory it protects. Different repositories
+  // and branches analyze in parallel as usual.
+  const entryDir = cacheEntryDir(resolveCacheDir(options.cacheDir), repo.repo, repo.branch);
   // The per-repo start/end pair brackets the whole analysis: the start
   // right before the clone, then a finish line with the duration after
   // the LLM phase settles — in `finally`, so a failing repository
@@ -84,35 +102,40 @@ export async function analyzeRepository(
   // coarse stage progress, always visible in quiet mode.
   log.progress(`starting analysis of "${repo.repo}"`);
   try {
-    // The clone and the branch-delta base resolution run before the
-    // commit scan; the resolved base name travels to the report entry and
-    // the LLM phase, the base sha narrows the scan.
-    const { clone, exclude, baseName } = await prepareClone(repo, options, log);
-    // Reading the whole-range commit history is the dominant git cost on
-    // a large repository; log that it started so the user sees what
-    // dev-perf is doing instead of a silent wait. The aggregated count
-    // (`N commits from M authors`) is logged once this returns. Both
-    // lines are coarse stage progress, always visible in quiet mode.
-    log.progress(`reading commits`);
-    const commits = await readCommits(clone.repoDir, {
-      since: options.since,
-      until: options.until,
-      ...(exclude === undefined ? {} : { exclude }),
-    });
-    const groups = filterAndGroup(repo, commits, emailMap, log);
+    return await withEntryAnalysisLock(entryDir, async () => {
+      // The clone and the branch-delta base resolution run before the
+      // commit scan; the resolved base name travels to the report entry and
+      // the LLM phase, the base sha narrows the scan.
+      const { clone, exclude, baseName } = await prepareClone(repo, options, log, gitOptions);
+      // Reading the whole-range commit history is the dominant git cost on
+      // a large repository; log that it started so the user sees what
+      // dev-perf is doing instead of a silent wait. The aggregated count
+      // (`N commits from M authors`) is logged once this returns. Both
+      // lines are coarse stage progress, always visible in quiet mode.
+      log.progress(`reading commits`);
+      const { clone: analyzedClone, commits } = await readCommitsWithFullCloneFallback(
+        repo,
+        clone,
+        options,
+        exclude,
+        log,
+        gitOptions,
+      );
+      const groups = filterAndGroup(repo, commits, emailMap, log);
 
-    const repositories = await runLlmPhase(
-      repo,
-      clone,
-      periods,
-      groups,
-      options,
-      log,
-      exclude,
-      baseName,
-      sessionLimit,
-    );
-    return { range, periods, repositories };
+      const repositories = await runLlmPhase(
+        repo,
+        analyzedClone,
+        periods,
+        groups,
+        options,
+        log,
+        exclude,
+        baseName,
+        sessionLimit,
+      );
+      return { range, periods, repositories };
+    });
   } finally {
     log.progress(`finished analysis of "${repo.repo}" in ${Date.now() - startedAt} ms`);
   }
@@ -126,6 +149,7 @@ export async function analyzeRepository(
  * @param repo - The repository spec as given.
  * @param options - Validated CLI options.
  * @param log - The repository's scoped logger.
+ * @param gitOptions - Overrides for the git invocations (see `runGit`).
  * @returns The clone, the base-commit exclusion sha, and the resolved
  * base name.
  * @throws {GitError} When a clone or a base resolution fails.
@@ -134,6 +158,7 @@ async function prepareClone(
   repo: RepoSpec,
   options: ReportOptions,
   log: ScopedLog,
+  gitOptions: RunGitOptions,
 ): Promise<{ clone: CloneResult; exclude: string | undefined; baseName: string | undefined }> {
   const startedAt = Date.now();
   const clone = await ensureClone(repo.repo, {
@@ -141,6 +166,7 @@ async function prepareClone(
     refresh: options.refresh,
     branch: repo.branch,
     log,
+    gitBinary: gitOptions.gitBinary,
   });
   log.progress(
     `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
@@ -192,6 +218,71 @@ function filterAndGroup(
     `${pluralize(filtered.length, 'commit')} from ${pluralize(groups.length, 'author')}`,
   );
   return groups;
+}
+
+/**
+ * Reads the whole-range commits of a clone, falling back to a full
+ * re-clone when a partial clone's on-demand blob fetch fails:
+ * dev-perf clones with `--filter=blob:none`, so `git log --numstat`
+ * must lazily fetch each missing blob from the promisor remote, and a
+ * remote unreachable at that point fails the analysis. When the
+ * failure is exactly that missing-blob fetch (`isPromisorFetchFailure`),
+ * the entry is re-cloned as a full clone — after which every blob is
+ * local and nothing depends on the remote — and the read is retried
+ * once. Any other failure propagates unchanged. The full clone (when
+ * fallen back) replaces the upstream clone for the rest of the
+ * analysis, so the LLM phase reads a fully materialized working tree.
+ *
+ * @param repo - The repository spec as given.
+ * @param clone - The clone the first attempt reads.
+ * @param options - Validated CLI options.
+ * @param exclude - The resolved base-commit sha of the branch-delta
+ * exclusion, when one is in effect.
+ * @param log - The repository's scoped logger.
+ * @param gitOptions - Overrides for the git invocations (see `runGit`).
+ * @returns The clone the commits were read from and the commits of the
+ * whole range, newest first.
+ * @throws {GitError} When git log fails for any reason other than a
+ * promisor fetch, and when the full re-clone or the retried read fails.
+ */
+async function readCommitsWithFullCloneFallback(
+  repo: RepoSpec,
+  clone: CloneResult,
+  options: ReportOptions,
+  exclude: string | undefined,
+  log: ScopedLog,
+  gitOptions: RunGitOptions,
+): Promise<{ clone: CloneResult; commits: Commit[] }> {
+  const range = {
+    since: options.since,
+    until: options.until,
+    ...(exclude === undefined ? {} : { exclude }),
+  };
+  try {
+    return { clone, commits: await readCommits(clone.repoDir, range, gitOptions) };
+  } catch (error) {
+    if (!(error instanceof GitError) || !isPromisorFetchFailure(error)) {
+      throw error;
+    }
+    // The partial clone's on-demand blob fetch failed — the promisor
+    // remote was unreachable when git needed the missing blobs. A full
+    // re-clone makes every blob local, so the rest of the analysis no
+    // longer depends on the remote. Only this missing-blob case falls
+    // back; genuine network failures during a full clone still surface.
+    log.warn(
+      `on-demand blob fetch failed on the partial clone of "${repo.repo}"; re-cloning as a full clone`,
+    );
+    const fullClone = await ensureClone(repo.repo, {
+      cacheDir: options.cacheDir,
+      refresh: true,
+      full: true,
+      branch: repo.branch,
+      log,
+      gitBinary: gitOptions.gitBinary,
+    });
+    const commits = await readCommits(fullClone.repoDir, range, gitOptions);
+    return { clone: fullClone, commits };
+  }
 }
 
 /**

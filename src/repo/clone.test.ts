@@ -216,6 +216,53 @@ describe('ensureClone', () => {
     }
   });
 
+  it('clones as a full clone when `full` is set, keeping blobs local', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    try {
+      const result = await ensureClone(fixture.dir, { cacheDir, full: true });
+
+      expect(result.reused).toBe(false);
+      expect(result.head).toBe(await gitRevParse(fixture.dir, ['HEAD']));
+      // A full clone carries no partial-clone filter, so every blob is
+      // local and git log never depends on the remote.
+      const config = await readFile(path.join(result.repoDir, '.git', 'config'), 'utf8');
+      expect(config).not.toContain('partialclonefilter');
+      // The full clone still analyzes (commits, numstats) offline.
+      const log = await runGit(result.repoDir, ['log', '--numstat', '--no-renames']);
+      expect(log).toContain('a.txt');
+
+      // The cached full clone is reused on the next run.
+      const again = await ensureClone(fixture.dir, { cacheDir });
+      expect(again.reused).toBe(true);
+      expect(again.repoDir).toBe(result.repoDir);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('re-clones a partial clone as a full clone with `refresh` and `full`', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    try {
+      const partial = await ensureClone(fixture.dir, { cacheDir });
+      const partialConfig = await readFile(path.join(partial.repoDir, '.git', 'config'), 'utf8');
+      expect(partialConfig).toContain('partialclonefilter = blob:none');
+
+      // The analysis-time fallback forces a fresh full clone of the same
+      // entry; the partial-clone marker is gone afterwards.
+      const full = await ensureClone(fixture.dir, { cacheDir, refresh: true, full: true });
+      expect(full.reused).toBe(false);
+      expect(full.head).toBe(partial.head);
+      const fullConfig = await readFile(path.join(full.repoDir, '.git', 'config'), 'utf8');
+      expect(fullConfig).not.toContain('partialclonefilter');
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
   it('clones an empty repository with an empty head', async () => {
     const fixture = await buildFixtureRepo([]);
     const cacheDir = await tempCacheDir();
