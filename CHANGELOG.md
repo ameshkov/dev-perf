@@ -13,208 +13,52 @@ and this project adheres to
 - A YAML config file as the single source of options, shared by
   `report` and `compile`: `--config <path>` selects it, else
   `./config.yaml` is auto-loaded from the working directory when it
-  exists. Top-level keys apply to both commands (`repos`, `users-map`,
-  `verbose`), `report`-only keys sit next to them (`since`, `until`,
-  `unit`, `output`, `cache-dir`, `refresh`, `llm`, `model`,
-  `provider-url`, `api-key`, the `limit-*` keys, `llm-retries`,
-  `parallel`), and `compile`-only keys live under a nested `compile`
-  section (`report`, `output`, `include-users`, `exclude-users`,
-  `exclude-repos`). Unknown keys are rejected.
+  exists. Top-level keys apply to both commands, `report`-only keys
+  sit next to them, and `compile`-only keys live under a nested
+  `compile` section; unknown keys are rejected.
 - `${ENV_VAR}` references in the config are expanded from the
-  environment — with a `.env` file in the working directory
-  auto-loaded at startup — before YAML parsing, so the LLM provider
-  configuration and API key stay out of version control. An unset or
-  empty variable errors out at load.
+  environment — with a `.env` file auto-loaded at startup — before
+  YAML parsing, so the LLM provider configuration and API key stay out
+  of version control.
 - Identity merging at report time via the `users-map` key (an
-  `email: name` mapping): emails mapping to the same display name
-  merge into one identity during analysis — deterministic metrics are
-  exact, the LLM runs one session per merged person, and the JSON
-  report carries the full `emails` list of the identity.
+  `email: name` mapping): emails mapping to the same display name merge
+  into one identity during analysis.
 - Per-repository analysis via a structured `repos` entry
-  `{ repo, branch?, base-branch?, ignore? }`:
-    - `branch` analyzes that repository's branch instead of its
-      default; each branch is cached under its own cache entry, and
-      the report entry records it.
-    - `base-branch` scopes a non-default branch to the commits not yet
-      on the base (per-release attribution); it defaults to the
-      repository's own default branch (from `origin/HEAD`, then `main`
-      before `master`), an explicit `base-branch` overrides it, and
-      `''` restores full history. The report entry records the resolved
-      `baseBranch`.
-    - `ignore` excludes gitignore-style paths for that repository
-      alone: commits whose files all fall under ignored paths are
-      dropped, and a mixed commit keeps only its non-ignored files, in
-      both the deterministic metrics and the LLM analysis. The report
-      entry records `ignoredPaths`.
-- Always-visible stderr start/end markers for every command
-  (`starting report` / `finished report in <ms> ms`, and the same for
-  `compile`), logged even when the run fails.
-- The LLM result cache is now keyed by the clone's head and resolved
-  base commit shas (plus branch and ignored paths), so an advancing
-  branch or base re-runs the analysis instead of reusing a stale result.
-- Configurable per-session LLM limits: `llm-max-time` (seconds) and
-  `llm-max-turns` bound every LLM session's wall-clock time and agent
-  turns. A session that runs past its time budget or starts more turns
-  than allowed is aborted and the run fails with a descriptive error
-  (subject to `llm-retries`), instead of an endless or runaway
-  analysis. When a session limit caused the retry, the retried analysis
-  prompt tells the model what happened and to be less thorough but
-  faster. Both limits are unlimited by default.
-- An interactive browser viewer of JSON reports in `viewer/`: a
-  standalone web app that opens a report written by `dev-perf report`
-  (schema v3, or the legacy v1 shape) and renders it as an explorable
-  dashboard — team dynamics and per-user charts grouped by what they
-  read (activity, the nature of the work, and the LLM's risk and
-  quality signals, with the tag-heavy flag charts spanning the full
-  width), per-user detail views with the LLM-assessed contribution
-  cards, and repository comparisons. A
-  `Navigation` button in the top bar opens a panel that scrolls to the
-  dashboard sections and scopes the whole dashboard to a subset of
-  repositories and/or contributors: the overview KPIs, team dynamics,
-  distributions, and individual reports all recompute for the
-  selection. The panel is hidden by default, and the overview meta bar
-  shows one chip per repository even when a repository was analyzed on
-  several branches. All parsing and rendering happens locally in the
-  browser; a bundled sample report demonstrates the dashboard. See
-  `viewer/README.md`.
-- The viewer is now published to GitHub Pages:
-  https://ameshkov.github.io/dev-perf/. Open the hosted page and drop a
-  `report.json` written by `dev-perf report` onto it to explore the
-  report interactively in the browser — no `compile` step or CLI
-  installation needed. The page is rebuilt from `master` and on every
-  release tag.
+  `{ repo, branch?, base-branch?, ignore? }`: `branch` analyzes that
+  branch instead of the default, `base-branch` scopes a non-default
+  branch to the commits not yet on it, and `ignore` excludes
+  gitignore-style paths for that repository alone.
+- Configurable per-session LLM limits — `llm-max-time` (seconds) and
+  `llm-max-turns` — that bound every LLM session and end a runaway
+  analysis with a descriptive error instead of running forever. Both
+  are unlimited by default.
+- An interactive browser viewer of JSON reports (`viewer/`) and its
+  publication to GitHub Pages: open the hosted page, drop a
+  `report.json` written by `dev-perf report` onto it, and explore the
+  report in the browser.
 
 ### Changed
 
-- The per-person individual reports (`people/<name>.md`) now split the
-  LLM analysis into one section per date unit: each period gets its own
-  heading with that period's overview, contributions table, and risk
-  flags, instead of one overview and contributions table lumping all
-  periods together.
-- The viewer's individual reports follow the same structure: a person's
-  contributions render as one section per unit — each starting with
-  that unit's LLM overview, followed by the unit's contribution
-  cards — instead of one overview block joined from the overviews of
-  all periods above the cards.
-- Coarse analysis-stage markers are now shown on every `report` run,
-  even without `verbose`: cloning or reusing the cached clone,
-  `reading commits` and the commit count, each repository's
-  `starting analysis` / `finished analysis` pair, and the LLM phase
-  (runtime creation, per-period outcomes) — so the current stage stays
-  visible during a long run. `verbose: true` keeps adding the
-  fine-grained detail (the resolved range, per-user LLM sessions,
-  token counts, session heartbeats).
-- `activeDays` in the deterministic per-user metrics is now a sorted
-  array of the distinct author dates (`YYYY-MM-DD`, UTC) instead of a
-  plain count; the count is `activeDays.length`. Because the specific
-  days are recorded, `compile` merges the lists as a union when
-  identities are merged across repositories, periods, or the
-  `users-map`, so the reported active-days count is exact even when
-  two repository specs analyze the same repository. The trend report
-  schema bumps to version 3; reports written by earlier versions must
-  be regenerated with `dev-perf report`.
-
-- The report's `parameters.repos` and the startup configuration dump
-  record each analyzed repository as a full spec — the clone target
-  plus the branch, base scoping, and ignored paths — instead of a bare
-  URL string, so entries analyzing the same repository differently
-  (e.g. at different branches) are distinguishable; `compile` still
-  reads older reports whose entries were plain strings.
-- The startup configuration dump names each line by its config-file
-  key (`cache-dir`, `provider-url`, `api-key`, the `limit-*` keys,
-  `users-map`, ...) instead of the camelCase option names, so the
-  dumped settings read exactly like the YAML config they were resolved
-  from.
-- The README is shortened: the full configuration reference moved to
-  `docs/configuration.md` and the README shows a simple configuration
-  instead.
 - The CLI is reduced to the single `--config` option: `report` and
   `compile` are step selectors, and every functional setting lives in
-  the config file. All `report` flags and the `[repo...]` positional,
-  and all `compile` flags and its `<report>` positional, were removed.
-- The `DEV_PERF_*` / `DEV_PERF_COMPILE_*` environment-variable option
-  layer is removed; `.env` remains only as the source for `${ENV_VAR}`
-  expansion. `--maps-file` becomes the `users-map` config key, and the
-  `compile <report>` positional becomes `compile.report`.
-- Validation errors name the config key the value came from
-  (`compile.include-users`, `users-map`, `provider-url`, ...) instead
-  of CLI flags.
-- Scoped per-repository log labels carry the analyzed branch
-  (`repo#branch`) instead of an order-based suffix.
-- The default base branch prefers the repository's own default
-  (resolved from `origin/HEAD`) before a stale leftover `master`; an
-  unresolvable *default* base is logged at info instead of warning on
-  every run, while an unresolvable *configured* base still warns.
-- `parallel` now bounds the slow part of the analysis too: up to that
-  many LLM sessions run concurrently across all repositories under one
-  shared cap, so a single repository's user sessions are no longer
-  serialized (they previously ran one at a time per repository). Total
-  session concurrency stays exactly `parallel`, whatever the number of
-  repositories.
-- The LLM analysis prompts now strictly forbid changing the analyzed
-  repository: an agent never checks out or switches branches and never
-  alters the working tree, the index, or HEAD, so the shared cache
-  clone stays byte-identical even when several sessions inspect it at
-  once.
-- Verbose LLM logs now bracket every session explicitly: each session
-  logs its start and its end at info (naming whether it is the
-  orientation or a per-user analysis), and the 30-second "still
-  waiting" heartbeat while a prompt runs reports the session's state —
-  kind, turns run, tool calls, context size, and how long it has been
-  alive — so a stuck analysis stays traceable.
+  the config file. The `DEV_PERF_*` / `DEV_PERF_COMPILE_*`
+  environment-variable option layer is removed; `.env` remains only as
+  the source for `${ENV_VAR}` expansion.
+- `activeDays` in the deterministic per-user metrics is now a sorted
+  array of the distinct author dates instead of a count (the count is
+  `activeDays.length`). The trend report schema bumps to version 3, so
+  reports written by earlier versions must be regenerated.
 
 ### Fixed
 
-- Transient git failures are now retried with backoff before the
-  analysis fails: a refused or timed-out connection, a dropped remote,
-  or a partial clone whose on-demand blob fetch fails retries a
-  `git` command up to three times (~1s, ~5s, ~30s, each with jitter),
-  logging a warning per retry — so a short network hiccup (e.g. an
-  SSH connection to a host dropping mid-clone or mid-`git log`) no
-  longer discards the whole run's deterministic analysis.
-- The committed `config.example.yaml` now sets `compile.report`, so a
-  `compile` run against the copied example config no longer fails with
-  `compile.report: the report file is required`.
-- A `${ENV_VAR}` value containing `#` or a newline fails loudly
-  instead of silently corrupting the parsed YAML.
-- `users-map` display names may contain commas: mappings are parsed
-  straight from the YAML instead of being re-split like
-  comma-separated lists.
-- `--config ""` counts as no config, so the `config.yaml` autoload
-  still applies.
-- Ignored-path matching matches git: a trailing `/` or `**` excludes a
-  directory subtree only (never a file sharing the name), a middle
-  `**` never matches a concatenated path, consecutive `**` segments
-  behave as one, and pattern whitespace is trimmed.
-- `git commit --allow-empty` commits are not dropped by ignore
-  filtering.
-- Two `repos` entries analyzing the same repository/branch with
-  different ignore lists or base scoping are no longer treated as
-  duplicates; concurrent clones of one cache entry are serialized so a
-  parallel run never re-clones the same directory twice.
-- A camelCase `base` key on a structured `repos` entry is rejected
-  loudly — `base-branch` is the only valid spelling.
-- A genuine git failure while resolving the base branch surfaces as an
-  error instead of being mistaken for a missing base and silently
-  analyzing full history.
-- Branch names and ignored-path patterns are escaped and normalized
-  before being rendered into the LLM prompts, so a repository-derived
-  value cannot break out of quoting or code spans.
-- When ignored paths exclude a repository's entire history, the run
-  warns naming the repository instead of quietly producing an empty
-  entry.
-- When a partial clone's on-demand blob fetch fails mid-analysis (git
-  `could not fetch <sha> from promisor remote` — e.g. SSH to the remote
-  is refused), the repository is re-cloned once as a full clone instead
-  of aborting the whole report: after the fallback every blob is local,
-  so the analysis completes regardless of further remote access. This
-  is safe under `parallel`: concurrent analyses of the same
-  repository/branch share one cache entry and are serialized, so a
-  re-clone never races another analysis reading the same entry.
-- The viewer's chart x-axis labels no longer overlap: period labels
-  rotate 45° once their unrotated width no longer fits the chart (a
-  year of `YYYY-MM` labels now rotates instead of colliding), and any
-  remaining overlap at narrow widths is hidden instead of overprinted.
+- Transient git failures — refused or timed-out connections, a
+  dropped remote, or a partial clone whose on-demand blob fetch
+  fails — are retried with backoff before the analysis fails, so a
+  short network hiccup no longer discards the whole run's
+  deterministic analysis.
+- When a partial clone's on-demand blob fetch fails mid-analysis, the
+  repository is re-cloned once as a full clone instead of aborting
+  the whole report.
 
 ## [v1.0.0] - 2026-08-06
 

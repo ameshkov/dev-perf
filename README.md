@@ -53,9 +53,9 @@ invocation), and `version` prints the application version (same as
 the command list.
 
 ```text
-dev-perf report --config <path>   # or omit --config: ./config.yaml auto-loads
-dev-perf compile --config <path>
-dev-perf version | --version | -V
+npx dev-perf report --config <path>   # or omit --config: ./config.yaml auto-loads
+npx dev-perf compile --config <path>
+npx dev-perf version | npx dev-perf --version | npx dev-perf -V
 ```
 
 ### Building a report

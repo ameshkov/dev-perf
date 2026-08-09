@@ -66,9 +66,9 @@ the YAML config file (§3.1). The only flag is `--config <path>`; else
 `version` / `--version` print the application version.
 
 ```text
-dev-perf report --config <path>   # or omit --config: ./config.yaml auto-loads
-dev-perf compile --config <path>
-dev-perf version | --version
+npx dev-perf report --config <path>   # or omit --config: ./config.yaml auto-loads
+npx dev-perf compile --config <path>
+npx dev-perf version | npx dev-perf --version
 ```
 
 The LLM layer requires `model`, `provider-url` and `api-key` to be specified
