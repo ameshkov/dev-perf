@@ -5,14 +5,18 @@
  * range is resolved once from the first clone (git date parsing is
  * repo-independent) before the repositories are analyzed — in parallel
  * up to `parallel`; each repository's progress lines carry a scoped
- * label. With `unit`, the analyzed range is split into UTC-aligned
- * periods and the report carries one full per-repository report per
- * period. LLM failures are retried (`llmRetries`, each attempt with a
- * fresh in-process runtime) and remain fatal when every attempt fails:
- * the error propagates and the report is not written. A failing
- * repository does not abort its siblings — every repository runs to
- * completion (each disposes its LLM runtime in `finally`), the
- * first failure is rethrown, and any additional failures are logged.
+ * label. `parallel` also bounds the run's LLM sessions: one shared
+ * concurrency gate (`createLimit`) is created here and threaded into
+ * the LLM phase, so the slow part — LLM sessions — is parallelized up
+ * to `parallel` across all repositories, not just per repository. With
+ * `unit`, the analyzed range is split into UTC-aligned periods and the
+ * report carries one full per-repository report per period. LLM
+ * failures are retried (`llmRetries`, each attempt with a fresh
+ * in-process runtime) and remain fatal when every attempt fails: the
+ * error propagates and the report is not written. A failing repository
+ * does not abort its siblings — every repository runs to completion
+ * (each disposes its LLM runtime in `finally`), the first failure is
+ * rethrown, and any additional failures are logged.
  */
 import type { ReportOptions } from './config.js';
 import { resolveBoundDate } from './deterministic/commits.js';
@@ -30,7 +34,8 @@ import { pluralize, rangeBound } from './util/format.js';
 import { createScopedLog, logConfig, logInfo, logWarn, setVerbose } from './util/log.js';
 import type { ScopedLog } from './util/log.js';
 import { prettyJson, writeJsonFile } from './util/json.js';
-import { mapLimit } from './util/pool.js';
+import { createLimit, mapLimit } from './util/pool.js';
+import type { Limit } from './util/pool.js';
 import { appVersion } from './version.js';
 
 /** Date string git resolves for the default `until` bound. */
@@ -105,9 +110,14 @@ export async function runPipeline(options: ReportOptions): Promise<TrendReport> 
     // metrics merge exactly and the LLM phase runs one session per
     // merged identity.
     const emailMap = loadEmailMap(options.maps ?? []);
+    // `parallel` bounds the run's slow work globally: repositories run
+    // in parallel up to `parallel` (below), and LLM sessions — the slow
+    // part — share this gate, so no more than `parallel` of them run at
+    // once across every repository combined.
+    const sessionLimit = createLimit(options.parallel);
     // Each repository spec may carry its own branch and ignored paths;
     // the specs drive the clone (branch) and the report entries.
-    const analyzed = await analyzeAllRepos(options, repos, emailMap);
+    const analyzed = await analyzeAllRepos(options, repos, emailMap, sessionLimit);
     const report = assembleTrendReport({
       repos,
       range: analyzed.range,
@@ -140,11 +150,15 @@ export async function runPipeline(options: ReportOptions): Promise<TrendReport> 
  * period (one entry per repo per period). Every repository runs to
  * completion (each one's `finally` disposes its LLM runtime);
  * the first failure is rethrown after the pool settled, and any
- * additional failures are logged as warnings.
+ * additional failures are logged as warnings. The run's shared session
+ * gate (`sessionLimit`) travels into the LLM phase, so user sessions
+ * across repositories share the `parallel` concurrency cap.
  *
  * @param options - Validated report options.
  * @param repos - The deduplicated repository specs, in input order.
  * @param emailMap - The compiled email mappings for identity merging.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions.
  * @returns The run range, periods, and per-period repository entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
  * cannot be parsed.
@@ -155,6 +169,7 @@ async function analyzeAllRepos(
   options: ReportOptions,
   specs: RepoSpec[],
   emailMap: EmailMap,
+  sessionLimit: Limit,
 ): Promise<RunAnalysis> {
   const logs = scopedLogs(specs);
   const first = specs[0];
@@ -190,7 +205,15 @@ async function analyzeAllRepos(
     );
   }
 
-  const repositories = await analyzeReposInParallel(options, specs, logs, range, periods, emailMap);
+  const repositories = await analyzeReposInParallel(
+    options,
+    specs,
+    logs,
+    range,
+    periods,
+    emailMap,
+    sessionLimit,
+  );
   return { range, periods, repositories };
 }
 
@@ -209,6 +232,8 @@ async function analyzeAllRepos(
  * @param range - The run's resolved author-date range.
  * @param periods - The run's period bounds.
  * @param emailMap - The compiled email mappings for identity merging.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions, threaded into every repository's LLM phase.
  * @returns The per-period repository entries.
  * @throws {GitError} When a clone or git log fails.
  * @throws {Error} When the LLM phase fails; the message names the repo
@@ -221,10 +246,11 @@ async function analyzeReposInParallel(
   range: AnalyzedRange,
   periods: AnalyzedRange[],
   emailMap: EmailMap,
+  sessionLimit: Limit,
 ): Promise<Repository[][]> {
   const failures: unknown[] = [];
   const analyzed = await mapLimit(repos, options.parallel, (repo, index) =>
-    analyzeRepository(repo, options, range, periods, logs[index], emailMap).catch(
+    analyzeRepository(repo, options, range, periods, logs[index], emailMap, sessionLimit).catch(
       (error: unknown) => {
         failures.push(error);
         throw error;

@@ -58,7 +58,7 @@ until: 2026-07-01
 unit: month
 
 # Write the JSON report to this file instead of stdout:
-output: output/report.json
+output: output/github-extension/report.json
 
 # Cache directory for cloned repos and LLM results
 # (default: <tmpdir>/.dev-cache):
@@ -111,7 +111,8 @@ users-map:
   'r.kurbanali@adguard.com': 'Ruslan Kurbanali'
   's.belov@adguard.com': 'Sergei Belov'
 
-# Analyze up to N repositories in parallel (default: 1):
+# Analyze up to N repositories in parallel, and run up to N LLM
+# sessions concurrently across all of them (default: 1):
 parallel: 4
 
 # Verbose logging:
@@ -122,8 +123,8 @@ parallel: 4
 # report is the input JSON report (as written by `report` to the
 # `output` key above); output is the markdown report output directory:
 compile:
-  report: output/report.json
-  output: output/report
+  report: output/github-extension/report.json
+  output: output/github-extension
   include-users:
     - 'Dmitry Seregin'
     - 'Slava Leleka'

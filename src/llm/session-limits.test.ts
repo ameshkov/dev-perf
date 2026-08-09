@@ -73,6 +73,7 @@ function makeFakeSession(): {
     abort: ReturnType<typeof vi.fn>;
     getLastAssistantText: ReturnType<typeof vi.fn>;
     getSessionStats: ReturnType<typeof vi.fn>;
+    getContextUsage: ReturnType<typeof vi.fn>;
     setSessionName: ReturnType<typeof vi.fn>;
     subscribe: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
@@ -101,6 +102,7 @@ function makeFakeSession(): {
         tokens,
         cost: 0,
       })),
+      getContextUsage: vi.fn(() => undefined),
       setSessionName: vi.fn(),
       subscribe: vi.fn((listener: (event: unknown) => void) => {
         listeners.add(listener);

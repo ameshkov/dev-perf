@@ -350,9 +350,16 @@ describe('runCompile', () => {
         expect(alice).toContain(`../assets/${chart}`);
       }
       expect(alice).not.toContain('alice-active-users');
-      // The LLM overview and the contributions table live here.
+      // The LLM analysis is split into one section per period, each
+      // with its own overview and contributions table — not one lumped
+      // whole-range overview and table.
+      expect(alice).toContain('## 2026-01');
+      expect(alice).toContain('## 2026-02');
       expect(alice).toContain('**Overview:** Overview of the work in the period.');
-      expect(alice).toContain('| Fixture work |');
+      // Each period's section has its own 1-row contributions table
+      // (Alice has one fixture contribution per period), instead of one
+      // table lumping both periods together.
+      expect(alice.match(/\| Fixture work \|/g)).toHaveLength(2);
       expect(alice).toContain('**Repositories:**');
       expect(alice).toContain('- repo-a: 5 commits');
       expect(alice).toContain('[Back to report](../report.md)');

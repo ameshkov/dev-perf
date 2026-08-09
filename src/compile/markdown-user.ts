@@ -6,6 +6,7 @@
  * (`markdown-individual.ts`) and the per-person reports
  * (`markdown-person.ts`).
  */
+import type { Contribution } from '../report/index.js';
 import type { ChartData, UserSeries } from './chart-data.js';
 import { bullets, formatInt, table } from './markdown-util.js';
 
@@ -80,15 +81,15 @@ export function statisticsTable(series: UserSeries, data: ChartData): string {
 }
 
 /**
- * The risk-flags callout of one user: aggregated counts per flag,
- * most frequent first.
+ * The risk-flags callout of a contribution list: aggregated counts per
+ * flag, most frequent first.
  *
- * @param series - The user's series.
- * @returns The callout, or `undefined` when the user has no risk flags.
+ * @param contributions - The contributions to aggregate.
+ * @returns The callout, or `undefined` when there are no risk flags.
  */
-export function riskCallout(series: UserSeries): string | undefined {
+export function riskCallout(contributions: Contribution[]): string | undefined {
   const counts = new Map<string, number>();
-  for (const contribution of series.user.llm.contributions) {
+  for (const contribution of contributions) {
     for (const flag of contribution.riskFlags) {
       counts.set(flag, (counts.get(flag) ?? 0) + 1);
     }
@@ -106,15 +107,13 @@ export function riskCallout(series: UserSeries): string | undefined {
 }
 
 /**
- * The contributions table of one user: the LLM's structured
+ * The contributions table of a contribution list: the LLM's structured
  * assessment, one row per contribution.
  *
- * @param series - The user's series.
- * @returns The markdown table, or `undefined` when the user has no
- * contributions.
+ * @param contributions - The contributions to list.
+ * @returns The markdown table, or `undefined` when the list is empty.
  */
-export function contributionsTable(series: UserSeries): string | undefined {
-  const contributions = series.user.llm.contributions;
+export function contributionsTable(contributions: Contribution[]): string | undefined {
   if (contributions.length === 0) {
     return undefined;
   }

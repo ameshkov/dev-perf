@@ -116,7 +116,7 @@ an unset or empty variable errors naming the file and the variable.
 | `limit-context` / `limit-output` / `llm-retries` | report | LLM caps and retries (§6.2) |
 | `llm-max-time` / `llm-max-turns` | report | Per-session LLM limits; seconds / turns, unlimited by default (§6.2) |
 | `users-map` | report, compile | Email-to-name mapping; identity merging (§5.3) |
-| `parallel` | report | Repositories analyzed in parallel (§6.7) |
+| `parallel` | report | Repos analyzed in parallel; the shared cap on concurrent LLM sessions (§6.2) |
 | `verbose` | report, compile | Verbose logging |
 | `compile.report` / `compile.output` | compile | Input JSON report / markdown output directory (default `dev-perf-report`) |
 | `compile.include-users` / `exclude-users` / `exclude-repos` | compile | User and repository selection (§8) |
@@ -320,8 +320,11 @@ binary on `PATH`:
 - LLM failures are retried (`llm-retries`) with a **fresh runtime** per
   attempt; completed per-user analyses are cached and reused across attempts
   (§6.6).
-- Multiple repos are analyzed in parallel up to `parallel`; user sessions
-  within a repo run one at a time to keep resource usage predictable.
+- Multiple repos are analyzed in parallel up to `parallel`; LLM user
+  sessions instead share one run-level gate of the same capacity, so up
+  to `parallel` of them run concurrently across all repositories — the
+  slow part is parallelized, and total concurrency stays predictable
+  (`src/util/pool.ts` `createLimit`, created once in the pipeline).
 
 ### 6.3 Sessions and prompts
 
@@ -367,7 +370,11 @@ like `git show`, `git log`, `git diff`, `cat`, `ls`, `tail`, `head` are the
 intended use, but a hostile repository could prompt-inject destructive
 commands, and git's hooks, aliases, and config-driven execution cannot be
 reliably defended against). The only protection is the system-prompt text,
-which keeps the agent to read-only inspection. Because of this, LLM analysis
+which keeps the agent to read-only inspection: the prompts explicitly forbid
+checking out or switching branches and any change to the working tree, the
+index, or HEAD — the clone is a shared cache entry, and with `parallel` LLM
+sessions several agents inspect it at the same time, so it must stay
+byte-identical. Because of this, LLM analysis
 is expected to run in the published Docker container, which sandboxes the
 analysis away from the host (see the README); a repository under analysis must
 be treated as untrusted.

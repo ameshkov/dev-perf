@@ -6,7 +6,10 @@
  * times, recreating the runtime between failed attempts so the next try
  * starts from a clean slate; completed per-user analyses are cached and
  * reused across attempts, so a retry only re-runs the sessions that
- * failed. Per-period assembly lives in `repo-period.ts`.
+ * failed. The run's shared session gate (`sessionLimit`) bounds the
+ * concurrency of this repository's LLM sessions together with every
+ * other repository's, so `parallel` caps the slow work globally.
+ * Per-period assembly lives in `repo-period.ts`.
  */
 import path from 'node:path';
 import type { ReportOptions } from '../config.js';
@@ -23,6 +26,7 @@ import type { CloneResult } from '../repo/clone.js';
 import type { RepoSpec } from '../repo/repo-spec.js';
 import { errorDetail } from '../util/error.js';
 import type { ScopedLog } from '../util/log.js';
+import type { Limit } from '../util/pool.js';
 
 /** The repo's LLM phase: one pi runtime and its session service. */
 interface LlmPhase {
@@ -30,6 +34,16 @@ interface LlmPhase {
   runtime: LlmRuntime;
   /** The session service bound to the runtime. */
   service: SessionService;
+}
+
+/** The outcome of one LLM attempt: its results, or what failed. */
+interface LlmAttemptOutcome {
+  /** Completed repository entries, when the attempt succeeded. */
+  repositories?: Repository[];
+  /** The attempt's error, when it failed. */
+  error?: Error;
+  /** The session limit the failed attempt exceeded, when any. */
+  limitHit?: SessionLimitHit;
 }
 
 /**
@@ -54,6 +68,8 @@ interface LlmPhase {
  * exclusion, when one is in effect.
  * @param baseName - The resolved base branch name of the branch-delta,
  * when one is in effect.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions, threaded into the per-period analysis.
  * @returns One assembled repository entry per period.
  * @throws {Error} When every LLM attempt fails; the message names the
  * repo — and the period when `unit` is set — plus the underlying
@@ -68,6 +84,7 @@ export async function runLlmPhase(
   log: ScopedLog,
   exclude: string | undefined,
   baseName: string | undefined,
+  sessionLimit: Limit,
 ): Promise<Repository[]> {
   const attempts = 1 + options.llmRetries;
   let lastError: Error | undefined;
@@ -81,10 +98,76 @@ export async function runLlmPhase(
           `recreating the LLM runtime and retrying: ${errorDetail(lastError)}`,
       );
     }
-    let llm: LlmPhase | undefined;
-    try {
-      llm = await startLlmRuntime(repo, clone, groups, options, log);
-      return await assemblePeriods(
+    const outcome = await runLlmAttempt(
+      repo,
+      clone,
+      periods,
+      groups,
+      options,
+      log,
+      exclude,
+      baseName,
+      limitHit,
+      sessionLimit,
+    );
+    if (outcome.repositories !== undefined) {
+      return outcome.repositories;
+    }
+    lastError = outcome.error;
+    limitHit = outcome.limitHit;
+  }
+  if (attempts === 1) {
+    // No retries configured: surface the original error unchanged.
+    throw lastError ?? new Error(`LLM analysis failed for ${repo.repo}`);
+  }
+  throw new Error(
+    `LLM analysis failed for ${repo.repo} after ${attempts} attempts: ${errorDetail(lastError)}`,
+    { cause: lastError },
+  );
+}
+
+/**
+ * Runs one attempt of a repository's LLM phase: one in-process runtime
+ * with its session service, then the per-period assembly. Every attempt
+ * is self-contained — the runtime is disposed in `finally` — and
+ * returns its outcome instead of throwing, so the retry loop can carry
+ * the exact error and exceeded session limit into the next attempt.
+ *
+ * @param repo - The repository spec, as given with its optional branch.
+ * @param clone - The clone the analysis runs in.
+ * @param periods - The run's period bounds.
+ * @param groups - The author groups of the whole range.
+ * @param options - Validated CLI options.
+ * @param log - The repository's scoped logger.
+ * @param exclude - The resolved base commit sha of the branch-delta
+ * exclusion, when one is in effect.
+ * @param baseName - The resolved base branch name of the branch-delta,
+ * when one is in effect.
+ * @param limitHit - The session limit the previous attempt exceeded,
+ * when this is a retry; the retried prompts tell the model to be less
+ * thorough but faster.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions.
+ * @returns The completed entries, or the failure's error and (when the
+ * failure was a session-limit hit) the exceeded limit.
+ */
+async function runLlmAttempt(
+  repo: RepoSpec,
+  clone: CloneResult,
+  periods: AnalyzedRange[],
+  groups: AuthorGroup[],
+  options: ReportOptions,
+  log: ScopedLog,
+  exclude: string | undefined,
+  baseName: string | undefined,
+  limitHit: SessionLimitHit | undefined,
+  sessionLimit: Limit,
+): Promise<LlmAttemptOutcome> {
+  let llm: LlmPhase | undefined;
+  try {
+    llm = await startLlmRuntime(repo, clone, groups, options, log);
+    return {
+      repositories: await assemblePeriods(
         repo,
         clone,
         periods,
@@ -95,27 +178,20 @@ export async function runLlmPhase(
         exclude,
         baseName,
         limitHit,
-      );
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(errorDetail(error));
-      // Only a session-limit failure carries this over: a retry that
-      // failed for some other reason must not keep telling the model to
-      // work faster.
-      limitHit = sessionLimitFrom(error) ?? undefined;
-    } finally {
-      // Fully dispose the runtime and its sessions so the next attempt
-      // starts from a clean slate.
-      await closeLlmPhase(llm, log);
-    }
+        sessionLimit,
+      ),
+    };
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(errorDetail(error));
+    // Only a session-limit failure carries this over: a retry that
+    // failed for some other reason must not keep telling the model to
+    // work faster.
+    return { error: failure, limitHit: sessionLimitFrom(error) ?? undefined };
+  } finally {
+    // Fully dispose the runtime and its sessions so the next attempt
+    // starts from a clean slate.
+    await closeLlmPhase(llm, log);
   }
-  if (attempts === 1) {
-    // No retries configured: surface the original error unchanged.
-    throw lastError ?? new Error(`LLM analysis failed for ${repo.repo}`);
-  }
-  throw new Error(
-    `LLM analysis failed for ${repo.repo} after ${attempts} attempts: ${errorDetail(lastError)}`,
-    { cause: lastError },
-  );
 }
 
 /**

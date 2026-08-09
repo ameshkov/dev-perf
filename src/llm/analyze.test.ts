@@ -6,6 +6,8 @@ import type { AuthorGroup } from '../deterministic/identity.js';
 import type { LlmToolPayload, TokenUsage } from '../report/index.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 import type { ScopedLog } from '../util/log.js';
+import { createLimit } from '../util/pool.js';
+import type { Limit } from '../util/pool.js';
 import { analyzeRepositoryLLM } from './analyze.js';
 import type { AnalyzeRepoInput } from './analyze.js';
 import type { SessionHandle, SessionService } from './session.js';
@@ -179,12 +181,17 @@ function stubLog(): ScopedLog {
   return { error: vi.fn(), warn: vi.fn(), progress: vi.fn(), info: vi.fn(), debug: vi.fn() };
 }
 
+/** A generous concurrency gate: the default for tests that verify
+ * behavior, not parallelism. */
+const UNLIMITED = createLimit(8);
+
 /** Builds the analysis input for the given groups and service. */
 function inputFor(
   service: SessionService,
   groups: AuthorGroup[],
   refresh = false,
   log: ScopedLog = stubLog(),
+  limit: Limit = UNLIMITED,
 ): AnalyzeRepoInput {
   return {
     repo: 'https://example.com/repo.git',
@@ -196,6 +203,7 @@ function inputFor(
     range: RANGE,
     groups,
     service,
+    limit,
     refresh,
     log,
   };
@@ -227,13 +235,16 @@ describe('analyzeRepositoryLLM', () => {
       expect(result.llm.contributions).toEqual(PAYLOAD_A.contributions);
       expect(result.llm.tokenUsage).toEqual(USAGE);
     }
-    // One orientation session, then one analysis session per user.
-    expect(service.prompts.map((prompt) => prompt.sessionID)).toEqual(['ses_1', 'ses_2', 'ses_3']);
+    // One orientation session first, then one analysis session per
+    // user. The user sessions run under the shared concurrency gate, so
+    // their relative order is not fixed — only their set is.
+    expect(service.prompts[0]?.sessionID).toBe('ses_1');
     // The progress-line label names the operation: the repo for the
     // orientation, the user for their analysis.
     expect(service.prompts[0]?.label).toBe('https://example.com/repo.git');
-    expect(service.prompts[1]?.label).toBe('Alice');
-    expect(service.prompts[2]?.label).toBe('Bob');
+    const userPrompts = service.prompts.slice(1);
+    expect(userPrompts.map((prompt) => prompt.sessionID).sort()).toEqual(['ses_2', 'ses_3']);
+    expect(userPrompts.map((prompt) => prompt.label).sort()).toEqual(['Alice', 'Bob']);
   });
 
   it('keeps system prompts static and puts the task details in the analysis prompt', async () => {

@@ -385,7 +385,7 @@ describe('loadDevPerfConfig', () => {
     expect(report.since).toBeDefined();
 
     const compile = parseCompileOptions(resolveCompileOptions(config));
-    expect(compile.report).toBe('output/report.json');
-    expect(compile.output).toBe('output/report');
+    expect(compile.report).toBe('output/github-extension/report.json');
+    expect(compile.output).toBe('output/github-extension');
   });
 });

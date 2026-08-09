@@ -102,6 +102,7 @@ function makeFakeSession(): {
     abort: ReturnType<typeof vi.fn>;
     getLastAssistantText: ReturnType<typeof vi.fn>;
     getSessionStats: ReturnType<typeof vi.fn>;
+    getContextUsage: ReturnType<typeof vi.fn>;
     setSessionName: ReturnType<typeof vi.fn>;
     subscribe: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
@@ -116,6 +117,11 @@ function makeFakeSession(): {
       cacheWrite: number;
       total: number;
     }): void;
+    setContextUsage(usage: {
+      tokens: number | null;
+      contextWindow: number;
+      percent: number | null;
+    }): void;
     listeners: Set<(event: unknown) => void>;
   };
 } {
@@ -123,6 +129,8 @@ function makeFakeSession(): {
   let promptImpl: () => Promise<void> = async () => {};
   let replyText = 'assistant reply';
   let tokens = { input: 10, cacheRead: 7, output: 5, cacheWrite: 0, total: 22 };
+  let contextUsage:
+    { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
   return {
     session: {
       prompt: vi.fn(() => promptImpl()),
@@ -139,6 +147,7 @@ function makeFakeSession(): {
         tokens,
         cost: 0,
       })),
+      getContextUsage: vi.fn(() => contextUsage),
       setSessionName: vi.fn(),
       subscribe: vi.fn((listener: (event: unknown) => void) => {
         listeners.add(listener);
@@ -155,6 +164,9 @@ function makeFakeSession(): {
       },
       setTokens(next) {
         tokens = next;
+      },
+      setContextUsage(next) {
+        contextUsage = next;
       },
       listeners,
     },
@@ -277,7 +289,7 @@ describe('createSessionService', () => {
     expect(fake.session.abort).toHaveBeenCalledTimes(1);
   });
 
-  it('logs a still-waiting progress line while the reply is pending', async () => {
+  it('logs a still-waiting progress line with the session state while the reply is pending', async () => {
     vi.useFakeTimers();
     try {
       const handle = await service.createSession(DIRECTORY, 'title', 'sys');
@@ -288,12 +300,14 @@ describe('createSessionService', () => {
       const resultPromise = service.promptSession(handle, 'analyze', 'Alice');
       await vi.advanceTimersByTimeAsync(31_000);
 
+      // The heartbeat names the kind, the turns run, the tool calls,
+      // the context size, and the seconds the session has been alive.
       expect(scoped?.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `LLM: "Alice" (session "${handle.id}"): still waiting for the LLM reply`,
+          `LLM: "Alice" (session "${handle.id}", user analysis session, 0 turns, ` +
+            `0 tool calls, context 22 tokens used, 30s alive): still waiting for the LLM reply`,
         ),
       );
-      expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
 
       pending.resolve();
       await expect(resultPromise).resolves.toBe('assistant reply');
@@ -413,7 +427,7 @@ describe('promptSessionUntilReport', () => {
     await expect(resultPromise).rejects.toThrow();
   });
 
-  it('logs a still-waiting progress line every 30 s while the turn runs', async () => {
+  it('logs a still-waiting progress line with the session state every 30 s while the turn runs', async () => {
     vi.useFakeTimers();
     try {
       const handle = await service.createSession(DIRECTORY, 'title', 'sys');
@@ -432,10 +446,51 @@ describe('promptSessionUntilReport', () => {
 
       expect(scoped?.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `LLM: "Alice" (session "${handle.id}"): still waiting for ${REPORT_TOOL_NAME}`,
+          `LLM: "Alice" (session "${handle.id}", user analysis session, 0 turns, ` +
+            `0 tool calls, context 22 tokens used, 30s alive): still waiting for ${REPORT_TOOL_NAME}`,
         ),
       );
-      expect(scoped?.info).toHaveBeenCalledWith(expect.stringContaining('30s elapsed'));
+
+      emitToolCall(fake, PAYLOAD);
+      await expect(resultPromise).resolves.toEqual(PAYLOAD);
+      pending.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders the provider context usage and the turns run into the heartbeat', async () => {
+    vi.useFakeTimers();
+    try {
+      const handle = await service.createSession(DIRECTORY, 'title', 'sys');
+      const fake = lastFake();
+      fake.control.setContextUsage({ tokens: 1200, contextWindow: 262144, percent: 0.457 });
+      // Two agent turns start before the wait.
+      for (const listener of [...fake.control.listeners]) {
+        listener({ type: 'turn_start' });
+      }
+      for (const listener of [...fake.control.listeners]) {
+        listener({ type: 'turn_start' });
+      }
+      const pending = pendingPrompt();
+      fake.control.setPromptImpl(() => pending.promise);
+      const scoped = vi.mocked(createScopedLog).mock.results.at(-1)?.value;
+
+      const resultPromise = service.promptSessionUntilReport(
+        handle,
+        'analyze',
+        llmDirPath,
+        'Alice',
+      );
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      expect(scoped?.info).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `LLM: "Alice" (session "${handle.id}", user analysis session, 2 turns, ` +
+            `0 tool calls, context 1200/262144 tokens (0.457%), 30s alive): ` +
+            `still waiting for ${REPORT_TOOL_NAME}`,
+        ),
+      );
 
       emitToolCall(fake, PAYLOAD);
       await expect(resultPromise).resolves.toEqual(PAYLOAD);

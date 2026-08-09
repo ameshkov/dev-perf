@@ -78,7 +78,8 @@ interface RunConfig {
   usersMap?: string[];
   /** Config file the options were resolved from, when one was in effect. */
   configFile?: string;
-  /** Repositories analyzed in parallel. */
+  /** Parallelism: repositories analyzed in parallel and the shared cap
+   * on concurrent LLM sessions. */
   parallel: number;
   /** Verbose logging. */
   verbose: boolean;

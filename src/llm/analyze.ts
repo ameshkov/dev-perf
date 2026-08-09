@@ -1,7 +1,10 @@
 /**
  * LLM analysis orchestration: one orientation session per repository
  * produces the repo context,
- * per-user sessions run sequentially and their `devperf_report` output
+ * per-user sessions run under the run's shared concurrency gate
+ * (`AnalyzeRepoInput.limit`, capacity `parallel`) — so up to `parallel`
+ * analyses run at once across all repositories — and their
+ * `devperf_report` output
  * is enforced (each prompt resolves as soon as the tool call starts —
  * the running session is aborted at that point, so the analysis never
  * waits for an agent that keeps working after reporting — otherwise up
@@ -27,6 +30,8 @@ import { llmToolPayloadSchema, tokenUsageSchema } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
 import { readJsonFile, writeJsonFile } from '../util/json.js';
 import type { ScopedLog } from '../util/log.js';
+import { mapLimit } from '../util/pool.js';
+import type { Limit } from '../util/pool.js';
 import type { LlmRuntimeConfig } from './runtime.js';
 import type { SessionLimitHit } from './session-limits.js';
 import {
@@ -38,9 +43,7 @@ import {
 } from './prompts.js';
 import { sessionReportPath } from './session.js';
 import type { SessionHandle, SessionService } from './session.js';
-
-/** Title of the per-repo orientation session. */
-const ORIENTATION_TITLE = 'dev-perf: repository orientation';
+import { ORIENTATION_TITLE } from './session.js';
 
 /** Follow-up reminders after the initial prompt ("up to 3 attempts"). */
 const MAX_REMINDERS = 3;
@@ -133,6 +136,11 @@ export interface AnalyzeRepoInput {
   groups: AuthorGroup[];
   /** Session operations; the pipeline binds the real service. */
   service: SessionService;
+  /** The run's shared concurrency gate for LLM sessions (capacity
+   * `parallel`): bounded across all repositories, so the slow part of
+   * the analysis is parallelized instead of running one session at a
+   * time. */
+  limit: Limit;
   /** The repository's scoped logger for progress lines. */
   log: ScopedLog;
   /** True to ignore cached results and re-run everything. */
@@ -161,14 +169,18 @@ interface OrientationState {
  * Runs the LLM analysis for one repository: cached
  * results are reused per user (unless `--refresh`); otherwise one
  * orientation session establishes the repo context, then each user
- * gets a sequential session whose `devperf_report` output is enforced
- * and cached. Results keep the input group order.
+ * gets a session whose `devperf_report` output is enforced and cached.
+ * The user sessions run under the run's shared concurrency gate
+ * (`input.limit`, capacity `parallel`), so up to that many analyses run
+ * at once across all repositories; results keep the input group order.
  *
- * @param input - Repo, users, config, and session service.
+ * @param input - Repo, users, config, session service, and the run's
+ * shared concurrency gate.
  * @returns One completed analysis per user.
  * @throws {Error} When a session's `devperf_report` output is still
- * missing after the enforcement loop; the message names the user and
- * session and the top-level error handler exits non-zero.
+ * missing after the enforcement loop, or any prompt fails; the message
+ * names the user and session and the top-level error handler exits
+ * non-zero.
  */
 export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<UserLlmResult[]> {
   // Phase 1: load cached results (reads are skipped entirely on
@@ -181,19 +193,30 @@ export async function analyzeRepositoryLLM(input: AnalyzeRepoInput): Promise<Use
     }
   }
   // Phase 2: one orientation session per repo, then one session per
-  // uncached user; sessions run one at a time.
-  const results: UserLlmResult[] = [];
-  let orientation: OrientationState | undefined;
-  for (const group of input.groups) {
+  // uncached user — gated by the run's shared `parallel` limit, so the
+  // user sessions of every repository run concurrently up to `parallel`
+  // instead of one at a time. Cached users keep their place in the
+  // group order; uncached analyses fill their slots as they complete.
+  const results: UserLlmResult[] = new Array<UserLlmResult>(input.groups.length);
+  const uncached: Array<{ group: AuthorGroup; index: number }> = [];
+  input.groups.forEach((group, index) => {
     const result = cached.get(group.email);
     if (result !== undefined) {
       input.log.info(`LLM: reusing cached analysis for "${group.name}"`);
-      results.push({ email: group.email, llm: completedLlm(result) });
-      continue;
+      results[index] = { email: group.email, llm: completedLlm(result) };
+    } else {
+      uncached.push({ group, index });
     }
-    orientation ??= await createOrientation(input);
-    results.push(await analyzeUser(input, group, orientation));
+  });
+  if (uncached.length === 0) {
+    return results;
   }
+  // The orientation is itself an LLM session, so it takes a gate slot
+  // too; every user session embeds the context it produces.
+  const orientation = await input.limit.run(() => createOrientation(input));
+  await mapLimit(uncached, uncached.length, async ({ group, index }) => {
+    results[index] = await input.limit.run(() => analyzeUser(input, group, orientation));
+  });
   return results;
 }
 

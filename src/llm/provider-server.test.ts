@@ -24,6 +24,7 @@ import type { AuthorGroup } from '../deterministic/identity.js';
 import { llmDir } from '../repo/cache.js';
 import type { AnalyzedRange, LlmToolPayload } from '../report/index.js';
 import type { ScopedLog } from '../util/log.js';
+import { createLimit } from '../util/pool.js';
 import { analyzeRepositoryLLM } from './analyze.js';
 import type { AnalyzeRepoInput } from './analyze.js';
 import { buildOrientationPrompt, buildOrientationSystemPrompt } from './prompts.js';
@@ -335,6 +336,7 @@ describe('LLM against a mocked provider server', () => {
         range: RANGE,
         groups: [group('alice@example.com', 'Alice', 'abc1234d')],
         service,
+        limit: createLimit(8),
         refresh: false,
         log: stubLog(),
       }),
@@ -377,6 +379,7 @@ describe('LLM against a mocked provider server', () => {
       range: RANGE,
       groups: [group('alice@example.com', 'Alice', 'abc1234d')],
       service,
+      limit: createLimit(8),
       refresh: false,
       log: stubLog(),
     });
@@ -404,6 +407,7 @@ describe('LLM against a mocked provider server', () => {
       range: RANGE,
       groups: [group('alice@example.com', 'Alice', 'abc1234d')],
       service,
+      limit: createLimit(8),
       refresh: false,
       log: stubLog(),
     });
@@ -452,6 +456,7 @@ describe('LLM against a mocked provider server', () => {
       range: RANGE,
       groups: [group('alice@example.com', 'Alice', 'abc1234d')],
       service,
+      limit: createLimit(8),
       refresh: false,
       log: stubLog(),
     });

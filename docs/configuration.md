@@ -188,13 +188,17 @@ users-map:
 
 ## Parallelism (`parallel`)
 
-Multiple repositories are analyzed sequentially by default. `parallel`
-(default 1) analyzes up to that many repositories at once — with LLM
-analysis enabled this runs that many in-process runtimes concurrently
-(nothing is spawned, so no shared global configuration can leak in).
-The analyzed range is resolved once from the first clone before the
-parallel phase. Duplicate repository specs are analyzed once, with a
-warning; the report lists each repository once.
+Analysis is sequential by default. `parallel` (default 1) bounds the
+run's slow work: up to that many repositories are analyzed at once,
+and — because LLM sessions are the slow part of the analysis — up to
+that many LLM sessions run concurrently in total, across every
+repository combined (nothing is spawned, so no shared global
+configuration can leak in). With a single repository this parallelizes
+its user sessions; with several, the sessions of all repositories share
+the same cap, so total concurrency stays predictable. The analyzed range
+is resolved once from the first clone before the parallel phase.
+Duplicate repository specs are analyzed once, with a warning; the report
+lists each repository once.
 
 ## Compile settings (`compile`)
 

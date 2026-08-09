@@ -216,6 +216,23 @@ describe('buildChartData', () => {
     expect(bob?.signals.risk).toEqual([[], []]);
   });
 
+  it('keeps the per-period LLM analyses of each user aligned with the periods', () => {
+    const data = fixtureData();
+    const alice = data.users.find((series) => series.user.name === 'Alice');
+    const bob = data.users.find((series) => series.user.name === 'Bob');
+
+    // Alice: three contributions in January, one in February, each with
+    // the fixture default overview.
+    expect(alice?.periodLlm.map((analysis) => analysis.contributions.length)).toEqual([3, 1]);
+    expect(alice?.periodLlm.map((analysis) => analysis.overview)).toEqual([
+      'Overview of the work in the period.',
+      'Overview of the work in the period.',
+    ]);
+    // Bob was skipped in both periods, with no contributions.
+    expect(bob?.periodLlm.map((analysis) => analysis.status)).toEqual(['skipped', 'skipped']);
+    expect(bob?.periodLlm.map((analysis) => analysis.contributions)).toEqual([[], []]);
+  });
+
   it('counts the per-repository commits of each user', () => {
     const data = fixtureData();
     const alice = data.users.find((series) => series.user.name === 'Alice');

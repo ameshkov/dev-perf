@@ -2,7 +2,9 @@
  * LLM prompt rendering: the prompt text itself lives in markdown
  * template files under `src/llm/prompts/`. The system prompts
  * (`orientation-system.md` and `user-system.md`) define who the agent
- * is and the environment it runs in — the read-only tool surface —
+ * is and the environment it runs in — the read-only tool surface and
+ * the shared-clone invariant (never check out a branch or change the
+ * repository, since several sessions inspect the same cache entry) —
  * and carry no per-run task details; the task details (repository,
  * identity, date range, the context and the commit list) live in the
  * user prompts (`orientation.md` — the orientation session that

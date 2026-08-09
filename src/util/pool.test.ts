@@ -1,10 +1,11 @@
 /**
- * Tests for the `mapLimit` worker pool: input-order results, the
- * concurrency cap, edge-case limits, and first-error propagation after
- * every task settled.
+ * Tests for the concurrency helpers: `mapLimit` (input-order results,
+ * the concurrency cap, edge-case limits, and first-error propagation
+ * after every task settled) and `createLimit`, the shared gate that
+ * keeps a fixed concurrency cap across independent callers.
  */
 import { describe, expect, it } from 'vitest';
-import { mapLimit } from './pool.js';
+import { createLimit, mapLimit } from './pool.js';
 
 /** Resolves with `value` after `ms` milliseconds. */
 function delay<T>(value: T, ms: number): Promise<T> {
@@ -101,5 +102,67 @@ describe('mapLimit', () => {
         return delay(item, 5);
       }),
     ).rejects.toThrow('third failure');
+  });
+});
+
+describe('createLimit', () => {
+  it('resolves with the operation result and runs one op at a time with capacity 1', async () => {
+    const gate = createLimit(1);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const run = (value: number): Promise<number> =>
+      gate.run(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await delay(value, 10);
+        inFlight -= 1;
+        return value;
+      });
+
+    expect(await Promise.all([run(1), run(2), run(3)])).toEqual([1, 2, 3]);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('never runs more than `capacity` ops in flight', async () => {
+    const gate = createLimit(2);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const run = (value: number): Promise<void> =>
+      gate.run(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await delay(value, 5);
+        inFlight -= 1;
+      });
+
+    await Promise.all([run(1), run(2), run(3), run(4), run(5)]);
+    expect(maxInFlight).toBe(2);
+  });
+
+  it('keeps the cap across independent callers sharing one gate', async () => {
+    // The point of a shared gate: two concurrent batches (e.g. the LLM
+    // sessions of two repositories) stay within the single global cap
+    // instead of each running at full speed.
+    const gate = createLimit(2);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const run = (value: number): Promise<number> =>
+      gate.run(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await delay(value, 5);
+        inFlight -= 1;
+        return value;
+      });
+
+    await Promise.all([mapLimit([1, 2], 2, run), mapLimit([3, 4], 2, run)]);
+    expect(maxInFlight).toBe(2);
+  });
+
+  it('rejects with the operation error and releases the slot', async () => {
+    const gate = createLimit(1);
+    await expect(gate.run(() => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+    // The failed operation released its slot, so a later one still runs.
+    await expect(gate.run(() => Promise.resolve(7))).resolves.toBe(7);
   });
 });

@@ -63,6 +63,11 @@ and this project adheres to
 
 ### Changed
 
+- The per-person individual reports (`people/<name>.md`) now split the
+  LLM analysis into one section per date unit: each period gets its own
+  heading with that period's overview, contributions table, and risk
+  flags, instead of one overview and contributions table lumping all
+  periods together.
 - Coarse analysis-stage markers are now shown on every `report` run,
   even without `verbose`: cloning or reusing the cached clone,
   `reading commits` and the commit count, each repository's
@@ -112,6 +117,23 @@ and this project adheres to
   (resolved from `origin/HEAD`) before a stale leftover `master`; an
   unresolvable *default* base is logged at info instead of warning on
   every run, while an unresolvable *configured* base still warns.
+- `parallel` now bounds the slow part of the analysis too: up to that
+  many LLM sessions run concurrently across all repositories under one
+  shared cap, so a single repository's user sessions are no longer
+  serialized (they previously ran one at a time per repository). Total
+  session concurrency stays exactly `parallel`, whatever the number of
+  repositories.
+- The LLM analysis prompts now strictly forbid changing the analyzed
+  repository: an agent never checks out or switches branches and never
+  alters the working tree, the index, or HEAD, so the shared cache
+  clone stays byte-identical even when several sessions inspect it at
+  once.
+- Verbose LLM logs now bracket every session explicitly: each session
+  logs its start and its end at info (naming whether it is the
+  orientation or a per-user analysis), and the 30-second "still
+  waiting" heartbeat while a prompt runs reports the session's state —
+  kind, turns run, tool calls, context size, and how long it has been
+  alive — so a stuck analysis stays traceable.
 
 ### Fixed
 

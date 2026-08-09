@@ -137,7 +137,8 @@ const configFileSchema = z
     'llm-max-turns': z.number().optional(),
     /** Email-to-name mappings (email to display name), merging identities. */
     'users-map': z.record(z.string(), z.string()).optional(),
-    /** Repositories analyzed in parallel. */
+    /** Repositories analyzed in parallel, and the shared cap on
+     * concurrent LLM sessions. */
     parallel: z.number().optional(),
     /** Verbose logging. */
     verbose: z.boolean().optional(),

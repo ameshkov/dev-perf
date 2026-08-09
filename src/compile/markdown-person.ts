@@ -1,10 +1,10 @@
 /**
  * Markdown assembly of the per-person reports of the `compile`
  * command: one full report per user — title and summary line, the
- * statistics table, the complete chart set, the LLM overview, the
- * contributions table and risk callout, the per-repository commit
- * counts, and a back-link to the main report. Written to
- * `<output>/people/<slug>.md` by `compile.ts`.
+ * statistics table, the complete chart set, one LLM section per date
+ * unit (its own overview, contributions table and risk callout), the
+ * per-repository commit counts, and a back-link to the main report.
+ * Written to `<output>/people/<slug>.md` by `compile.ts`.
  */
 import type { ChartAsset } from './chart-util.js';
 import { userSlug } from './chart-util.js';
@@ -127,10 +127,45 @@ function repoBullets(series: UserSeries): string | undefined {
 }
 
 /**
+ * The per-period LLM sections of one user, one section per date unit
+ * with content: each carries the period heading, whose own overview,
+ * contributions table and risk callout. Periods without an overview or
+ * any contributions are skipped.
+ *
+ * @param series - The user's series.
+ * @param data - The chart data, for the period labels.
+ * @returns The sections.
+ */
+function llmPeriodSections(series: UserSeries, data: ChartData): string[] {
+  const sections: string[] = [];
+  for (let index = 0; index < data.periods.length; index += 1) {
+    const analysis = series.periodLlm[index];
+    if (analysis.overview === undefined && analysis.contributions.length === 0) {
+      continue;
+    }
+    const parts = [`## ${data.periods[index].label}`];
+    if (analysis.overview !== undefined) {
+      parts.push(`**Overview:** ${analysis.overview}`);
+    }
+    const contributions = contributionsTable(analysis.contributions);
+    if (contributions !== undefined) {
+      parts.push(contributions);
+    }
+    const risks = riskCallout(analysis.contributions);
+    if (risks !== undefined) {
+      parts.push(risks);
+    }
+    sections.push(parts.join('\n\n'));
+  }
+  return sections;
+}
+
+/**
  * Assembles the per-person report of one user: title and summary
- * line, statistics table, the complete chart set, the LLM overview,
- * the contributions table and the risk callout, the per-repository
- * commit counts, and a back-link to the main report.
+ * line, statistics table, the complete chart set, one LLM section per
+ * period (its own overview, contributions table and risk callout),
+ * the per-repository commit counts, and a back-link to the main
+ * report.
  *
  * @param series - The user's series.
  * @param data - The chart data.
@@ -150,17 +185,7 @@ export function assemblePersonMarkdown(
     ...allUserCharts(series, data, assets),
   ];
   if (data.parameters.llmEnabled) {
-    if (user.llm.overview !== undefined) {
-      parts.push(`**Overview:** ${user.llm.overview}`);
-    }
-    const contributions = contributionsTable(series);
-    if (contributions !== undefined) {
-      parts.push(contributions);
-    }
-    const risks = riskCallout(series);
-    if (risks !== undefined) {
-      parts.push(risks);
-    }
+    parts.push(...llmPeriodSections(series, data));
   }
   const repos = repoBullets(series);
   if (repos !== undefined) {

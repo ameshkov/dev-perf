@@ -25,6 +25,10 @@ commits have no file list).
 
 {{commits}}
 
+The repository is shared by concurrent sessions and must stay
+untouched: never check out a different branch or change the working
+tree or any files.
+
 Inspect the commits with the read tools and read-only commands (git
 show, git log, git diff, git blame, git status, git branch, git tag,
 git rev-parse, git rev-list, git shortlog, git ls-tree, git ls-files,

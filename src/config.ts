@@ -64,7 +64,8 @@ export interface ResolvedReportOptions {
   llmMaxTurns?: number;
   /** Email-to-name mappings parsed from the `users-map` config key. */
   maps?: EmailMapEntry[];
-  /** Analyze up to this many repositories in parallel (default: 1). */
+  /** Repositories analyzed in parallel, and the shared cap on concurrent
+   * LLM sessions (default: 1). */
   parallel?: number;
   /** Verbose logging. */
   verbose?: boolean;
@@ -122,7 +123,8 @@ export const reportOptionsSchema = z
     llmMaxTurns: z.number().int().positive().optional(),
     /** Email-to-name mappings parsed from the `users-map` config key. */
     maps: z.array(emailMapEntrySchema).optional(),
-    /** Analyze up to this many repositories in parallel (default: 1). */
+    /** Repositories analyzed in parallel, and the shared cap on
+     * concurrent LLM sessions (default: 1). */
     parallel: z.number().int().min(1).default(1),
     /** Verbose logging. */
     verbose: z.boolean().optional(),

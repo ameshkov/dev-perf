@@ -26,6 +26,13 @@ describe('buildOrientationSystemPrompt', () => {
     expect(prompt).toContain('Work only from what you can observe');
   });
 
+  it('forbids changing the shared repository, so concurrent sessions cannot corrupt the clone', async () => {
+    const prompt = await buildOrientationSystemPrompt();
+    expect(prompt).toContain('shared cache entry');
+    expect(prompt).toContain('Never check out or switch branches');
+    expect(prompt).toContain('working tree, the index, or HEAD');
+  });
+
   it('is static: who the agent is, not the per-run task details', async () => {
     const prompt = await buildOrientationSystemPrompt();
     expect(prompt).not.toContain('{{');
@@ -44,6 +51,13 @@ describe('buildUserSystemPrompt', () => {
     for (const tool of ['read', 'grep', 'find', 'ls', 'bash', 'devperf_report']) {
       expect(prompt).toContain(tool);
     }
+  });
+
+  it('forbids changing the shared repository, so concurrent sessions cannot corrupt the clone', async () => {
+    const prompt = await buildUserSystemPrompt();
+    expect(prompt).toContain('shared cache entry');
+    expect(prompt).toContain('Never check out or switch branches');
+    expect(prompt).toContain('working tree, the index, or HEAD');
   });
 
   it('is static: identity, repository, and range live in the user prompt', async () => {
@@ -66,6 +80,7 @@ describe('buildOrientationPrompt', () => {
     expect(prompt).toContain('Conventions: code style, testing, commit message style');
     expect(prompt).toContain('under 500 words');
     expect(prompt).toContain('read-only git commands');
+    expect(prompt).toContain('check out a different branch');
   });
 
   it('renders a neutral phrase when the clone resolved to no branch', async () => {
@@ -146,6 +161,12 @@ describe('buildUserPrompt', () => {
     expect(prompt).toContain('2026-01-01T00:00:00.000Z to 2026-01-31T00:00:00.000Z (UTC)');
     expect(prompt).toContain('TypeScript CLI; modules: src/, docs/; tests with Vitest.');
     expect(prompt).toContain('## Commits by Alice in the analyzed range (1)');
+  });
+
+  it('warns the shared repository must not be changed, so concurrent sessions stay consistent', async () => {
+    const prompt = await buildUserPrompt(userInput());
+    expect(prompt).toContain('shared by concurrent sessions');
+    expect(prompt).toContain('never check out a different branch or change the');
   });
 
   it('names every email of a merged identity in the prompt', async () => {

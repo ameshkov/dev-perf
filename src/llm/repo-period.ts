@@ -22,6 +22,7 @@ import { filterGroupsForPeriod } from '../trend/periods.js';
 import { errorDetail } from '../util/error.js';
 import { pluralize, rangeBound } from '../util/format.js';
 import type { ScopedLog } from '../util/log.js';
+import type { Limit } from '../util/pool.js';
 
 /**
  * Assembles one repository entry per period: each period gets the
@@ -43,6 +44,8 @@ import type { ScopedLog } from '../util/log.js';
  * @param limitHit - The session limit the previous attempt exceeded,
  * when this is a retry after such a failure; the retried prompts tell
  * the model to be less thorough but faster.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions.
  * @returns One assembled repository entry per period.
  * @throws {Error} When the LLM phase fails; the message names the repo
  * — and the period when `unit` is set — plus the underlying cause.
@@ -58,6 +61,7 @@ export async function assemblePeriods(
   exclude: string | undefined,
   baseName: string | undefined,
   limitHit: SessionLimitHit | undefined,
+  sessionLimit: Limit,
 ): Promise<Repository[]> {
   const repositories: Repository[] = [];
   for (const period of periods) {
@@ -76,6 +80,7 @@ export async function assemblePeriods(
           exclude,
           baseName,
           limitHit,
+          sessionLimit,
         );
       } catch (error) {
         const where =
@@ -113,6 +118,8 @@ export async function assemblePeriods(
  * when one is in effect.
  * @param limitHit - The session limit the previous attempt exceeded,
  * when this is a retry after such a failure.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions.
  * @returns Completed analyses keyed by lowercased author email, or
  * `undefined` when the period has no active users.
  * @throws {Error} When an analysis fails; the message names the user
@@ -129,6 +136,7 @@ async function analyzePeriodLlm(
   exclude: string | undefined,
   baseName: string | undefined,
   limitHit: SessionLimitHit | undefined,
+  sessionLimit: Limit,
 ): Promise<ReadonlyMap<string, LlmAnalysis> | undefined> {
   const active = groups.filter((group) => group.commits.length > 0);
   if (active.length === 0) {
@@ -152,6 +160,7 @@ async function analyzePeriodLlm(
     service,
     refresh: options.refresh === true,
     log,
+    limit: sessionLimit,
     ...(limitHit === undefined ? {} : { limitHit }),
   });
   log.progress(

@@ -12,7 +12,9 @@ repository:
 {{ignoredPaths}}
 
 Explore the repository with the read tools and read-only git commands
-as needed. Produce a compact repository context covering:
+as needed. The repository is shared and must stay untouched: never
+check out a different branch or change the working tree. Produce a
+compact repository context covering:
 
 - Tech stack: languages, frameworks, and key dependencies (README,
   manifests, config files).

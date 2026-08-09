@@ -20,9 +20,15 @@
  * `devperf_report` tool call starts (the session is aborted so the
  * orchestration never waits for an agent that keeps working after
  * reporting), falling back to reading the report file once the turn
- * ends. Long-running operations log a periodic "still waiting"
- * progress line (heartbeat), so a stuck model call is visible in
- * verbose output instead of an endless silent wait. Every session also
+ * ends. Every session logs its start (creation) and its end
+ * (disposal) at info, both naming the session kind — the orientation
+ * session or a per-user analysis — so the lifecycle is clear from the
+ * log; each session also tracks its running state (kind, turns, and
+ * lifetime). While a prompt is pending, a "still waiting" progress
+ * line is logged every `STILL_WAITING_INTERVAL_MS` (a heartbeat) with
+ * the current session state — kind, turns, tool calls, context size,
+ * and seconds alive — so a stuck model call is visible in verbose
+ * output instead of an endless silent wait. Every session also
  * feeds its pi event stream (agent/message lifecycle, compaction,
  * auto-retries, and tool executions) to the debug log via
  * `subscribeSessionEventLog` (`src/llm/session-events.ts`).
@@ -58,15 +64,45 @@ export interface SessionHandle {
 
 /** One created session: the pi session plus its limit state. */
 interface SessionEntry {
+  /** The dev-perf session id (also names the report file). */
+  id: string;
   /** The pi session prompts run on. */
   session: AgentSession;
   /** The session's running max-time / max-turns limit state. */
   limits: SessionLimitsState;
+  /** The session's running state for the lifecycle logs and heartbeat. */
+  state: SessionState;
+}
+
+/** The kind of an LLM session, named in every lifecycle log line. */
+type SessionKind = 'orientation' | 'user';
+
+/** The title of the per-repo orientation session, which also identifies
+ * its kind (any other title is a per-user analysis session). */
+export const ORIENTATION_TITLE = 'dev-perf: repository orientation';
+
+/** Per-session running state for the lifecycle logs and the heartbeat. */
+interface SessionState {
+  /** The kind of session: the orientation, or a per-user analysis. */
+  kind: SessionKind;
+  /** The session title (names the repo for the orientation, the user
+   * for an analysis). */
+  title: string;
+  /** Epoch-ms the session was created, for the seconds-alive counter. */
+  startedAt: number;
+  /** Agent turns started, counted from the session event stream. */
+  turns: number;
+}
+
+/** The log phrase naming a session kind. */
+function kindLabel(kind: SessionKind): string {
+  return kind === 'orientation' ? 'orientation' : 'user analysis';
 }
 
 /**
  * How often a pending LLM operation logs its "still waiting" progress
- * line — the heartbeat that makes a stuck model call visible.
+ * line — the heartbeat that makes a stuck model call visible. Each
+ * line carries the session's current state.
  */
 const STILL_WAITING_INTERVAL_MS = 30_000;
 
@@ -148,6 +184,13 @@ export function createSessionService(
     close: async () => {
       const count = sessions.size;
       for (const entry of sessions.values()) {
+        const stats = entry.session.getSessionStats();
+        log.info(
+          `LLM: ${kindLabel(entry.state.kind)} session "${entry.id}" ended ` +
+            `(${entry.state.title}, ${entry.state.turns} turns, ${stats.toolCalls} tool calls, ` +
+            `${stats.tokens.total} tokens, ` +
+            `${Math.floor((Date.now() - entry.state.startedAt) / 1000)}s alive)`,
+        );
         entry.session.dispose();
       }
       sessions.clear();
@@ -219,10 +262,47 @@ async function createSessionWith(
     thinkingLevel: 'off',
   });
   session.setSessionName(title);
-  subscribeSessionEventLog(session, reportId, log);
-  sessions.set(reportId, { session, limits: limitsFrom(limits) });
-  log.info(`LLM: session "${reportId}" created (${title})`);
+  registerSession(session, title, reportId, log, sessions, limits);
   return { id: reportId, directory };
+}
+
+/**
+ * Registers a created session with the service: derives its kind from
+ * the title (the orientation session or a per-user analysis), starts
+ * counting its agent turns so the heartbeat can report how far the
+ * analysis has gotten, stores the entry for `close()` to dispose, and
+ * logs the session start with its kind.
+ *
+ * @param session - The created pi session.
+ * @param title - The session title (names the repo for the orientation,
+ * the user for an analysis).
+ * @param reportId - The dev-perf session id.
+ * @param log - The repository's scoped logger.
+ * @param sessions - The service's session registry (id → session entry).
+ * @param limits - The per-session limits the session was created with.
+ */
+function registerSession(
+  session: AgentSession,
+  title: string,
+  reportId: string,
+  log: ScopedLog,
+  sessions: Map<string, SessionEntry>,
+  limits: SessionLimits,
+): void {
+  subscribeSessionEventLog(session, reportId, log);
+  const state: SessionState = {
+    kind: title === ORIENTATION_TITLE ? 'orientation' : 'user',
+    title,
+    startedAt: Date.now(),
+    turns: 0,
+  };
+  session.subscribe((event) => {
+    if (event.type === 'turn_start') {
+      state.turns += 1;
+    }
+  });
+  sessions.set(reportId, { id: reportId, session, limits: limitsFrom(limits), state });
+  log.info(`LLM: ${kindLabel(state.kind)} session "${reportId}" created (${title})`);
 }
 
 /**
@@ -250,7 +330,7 @@ async function promptSessionWith(
   sessions: Map<string, SessionEntry>,
 ): Promise<string> {
   const entry = requireSession(handle, sessions);
-  const stopHeartbeat = startHeartbeat(log, label, 'the LLM reply', handle.id);
+  const stopHeartbeat = startHeartbeat(log, label, 'the LLM reply', entry);
   try {
     await runPromptWithLimits(entry.session, entry.limits, log, handle.id, 'the LLM reply', () =>
       entry.session.prompt(text),
@@ -308,7 +388,7 @@ async function promptSessionUntilReportWith(
   sessions: Map<string, SessionEntry>,
 ): Promise<LlmToolPayload | undefined> {
   const entry = requireSession(handle, sessions);
-  const stopHeartbeat = startHeartbeat(log, label, REPORT_TOOL_NAME, handle.id);
+  const stopHeartbeat = startHeartbeat(log, label, REPORT_TOOL_NAME, entry);
   try {
     const found = await promptForReport(
       entry.session,
@@ -348,29 +428,40 @@ function requireSession(handle: SessionHandle, sessions: Map<string, SessionEntr
 /**
  * Starts the "still waiting" heartbeat for a long-running LLM
  * operation: every `STILL_WAITING_INTERVAL_MS` a progress line is
- * logged with the session id and the elapsed time, so a stuck model
- * call shows up as repeated progress lines — each traceable to its
- * session — instead of an endless silent wait. The interval is unref'd
- * so it cannot keep the process alive on its own.
+ * logged naming the session and its current state — kind (orientation
+ * or user analysis), turns run, tool calls, context size, and how long
+ * the session has been alive — plus what is being waited on, so a stuck
+ * model call shows up as repeated lines tracking the session's progress
+ * instead of an endless silent wait. The interval is unref'd so it
+ * cannot keep the process alive on its own.
  *
  * @param log - The scoped logger the progress lines go to.
  * @param label - Who or what is being waited on (e.g. the user name).
  * @param what - What is being waited for, e.g. `devperf_report`.
- * @param sessionId - The session's id, so the line can be tied back to
- * its session.
+ * @param entry - The pending session, whose running state and pi
+ * statistics are rendered into each line.
  * @returns A function that stops the heartbeat.
  */
 function startHeartbeat(
   log: ScopedLog,
   label: string,
   what: string,
-  sessionId: string,
+  entry: SessionEntry,
 ): () => void {
-  const startedAt = Date.now();
   const timer = setInterval(() => {
+    const stats = entry.session.getSessionStats();
+    const context = entry.session.getContextUsage();
+    // The context usage is pi's estimate of the tokens currently in the
+    // window; when it is unknown (e.g. right after compaction), fall
+    // back to the total tokens used so far.
+    const contextText =
+      context === undefined || context.tokens === null
+        ? `${stats.tokens.total} tokens used`
+        : `${context.tokens}/${context.contextWindow} tokens (${context.percent}%)`;
     log.info(
-      `LLM: "${label}" (session "${sessionId}"): still waiting for ${what} ` +
-        `(${Math.floor((Date.now() - startedAt) / 1000)}s elapsed)`,
+      `LLM: "${label}" (session "${entry.id}", ${kindLabel(entry.state.kind)} session, ` +
+        `${entry.state.turns} turns, ${stats.toolCalls} tool calls, context ${contextText}, ` +
+        `${Math.floor((Date.now() - entry.state.startedAt) / 1000)}s alive): still waiting for ${what}`,
     );
   }, STILL_WAITING_INTERVAL_MS);
   timer.unref();

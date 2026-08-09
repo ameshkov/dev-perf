@@ -285,9 +285,10 @@ docker run --rm \
 ```
 
 *Security*: the LLM analysis agent gets a `bash` tool that can execute
-commands in the cloned repository. It is *not* hardened against a
-hostile repository — use the Docker container to sandbox the analysis
-away from your host.
+commands in the cloned repository. The prompts keep it to read-only
+inspection — it never checks out a branch or modifies the repository —
+but it is *not* hardened against a hostile repository — use the Docker
+container to sandbox the analysis away from your host.
 
 ## Configuration
 

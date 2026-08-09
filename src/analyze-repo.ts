@@ -5,7 +5,10 @@
  * `src/llm/repo-phase.ts`, per-period assembly in `src/llm/repo-period.ts`).
  * `analyzeRepository` is the single entry; the pipeline runs it once
  * per repository — in parallel up to `parallel` — with the run's
- * resolved range and periods.
+ * resolved range and periods. The run's shared LLM session gate
+ * (`sessionLimit`) travels into the LLM phase, so user sessions from
+ * every repository share one concurrency cap instead of running one at
+ * a time per repository.
  */
 import type { ReportOptions } from './config.js';
 import { resolveBaseSha } from './deterministic/base.js';
@@ -22,6 +25,7 @@ import type { RepoSpec } from './repo/repo-spec.js';
 import type { EmailMap } from './util/email-map.js';
 import { pluralize } from './util/format.js';
 import type { ScopedLog } from './util/log.js';
+import type { Limit } from './util/pool.js';
 
 /** One repository analyzed across all periods of the run. */
 interface RepoAnalysis {
@@ -53,6 +57,8 @@ interface RepoAnalysis {
  * @param periods - The run's period bounds.
  * @param log - The repository's scoped logger.
  * @param emailMap - The compiled email mappings for identity merging.
+ * @param sessionLimit - The run's shared gate bounding concurrent LLM
+ * sessions, threaded into this repository's LLM phase.
  * @returns The resolved range, the period bounds, and the per-period
  * entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
@@ -67,6 +73,7 @@ export async function analyzeRepository(
   periods: AnalyzedRange[],
   log: ScopedLog,
   emailMap: EmailMap,
+  sessionLimit: Limit,
 ): Promise<RepoAnalysis> {
   const startedAt = Date.now();
   // The per-repo start/end pair brackets the whole analysis: the start
@@ -103,6 +110,7 @@ export async function analyzeRepository(
       log,
       exclude,
       baseName,
+      sessionLimit,
     );
     return { range, periods, repositories };
   } finally {

@@ -6,7 +6,7 @@
  * computation; rendering and markdown assembly live in `vega.ts`,
  * `charts.ts` and `markdown.ts`.
  */
-import type { ContributionSize, PeriodUnit, User } from '../report/index.js';
+import type { ContributionSize, LlmAnalysis, PeriodUnit, User } from '../report/index.js';
 import type { RepoSpec } from '../repo/repo-spec.js';
 import type { FilteredReport } from './filter.js';
 import { combinePeriodUsers } from './filter.js';
@@ -98,6 +98,11 @@ export interface UserSeries {
     /** Risk flags per period, most frequent first. */
     risk: CountRow[][];
   };
+  /** Per-period LLM analyses, aligned with `points`: the merged user
+   * entry of that period (overview and contributions restricted to the
+   * period); a skipped analysis without overview or contributions when
+   * the user has no analysis in the period. */
+  periodLlm: LlmAnalysis[];
   /** Commit counts per analyzed repository, most commits first. */
   repos: UserRepoCount[];
 }
@@ -300,6 +305,7 @@ function userSeries(views: User[][], masterUsers: User[], filtered: FilteredRepo
   return masterUsers.map((user) => {
     const points: TeamPoint[] = [];
     const signals: UserSeries['signals'] = { quality: [], risk: [] };
+    const periodLlm: LlmAnalysis[] = [];
     let cumulativeCommits = 0;
     let cumulativeContributions = 0;
     for (const periodUsers of views) {
@@ -311,6 +317,7 @@ function userSeries(views: User[][], masterUsers: User[], filtered: FilteredRepo
       cumulativeCommits = point.cumulativeCommits;
       cumulativeContributions = point.cumulativeContributions;
       points.push(point);
+      periodLlm.push(entry.llm);
       signals.quality.push(
         countContributionsByKey(
           (contribution) => contribution.qualitySignals,
@@ -321,7 +328,7 @@ function userSeries(views: User[][], masterUsers: User[], filtered: FilteredRepo
         countContributionsByKey((contribution) => contribution.riskFlags, entry.llm.contributions),
       );
     }
-    return { user, points, signals, repos: userRepoCommits(filtered, user) };
+    return { user, points, signals, periodLlm, repos: userRepoCommits(filtered, user) };
   });
 }
 
