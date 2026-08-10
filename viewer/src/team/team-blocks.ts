@@ -166,6 +166,10 @@ function repoComparisonBlock(data: ChartData, labels: string[]): ChartBlockDescr
     description:
       'Commits per period, one line per repository. Pick the repositories you want to compare with the tag selector.',
     tags: data.repos.map((repo) => ({ key: repo.repo, value: repo.commits })),
+    labelOf: repoName,
+    // Many repositories make a tall tag list; the comparison reads
+    // better full-width, like the per-period signal blocks.
+    wide: true,
     optionOf: (selected) => {
       const repos = data.repos.filter((repo) => selected === undefined || selected.has(repo.repo));
       return linesOption(

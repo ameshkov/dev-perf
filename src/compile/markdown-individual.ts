@@ -3,14 +3,14 @@
  * per-user dynamics sections (summary, statistics, two charts, and a
  * link to the full per-person report), the LLM analysis summary
  * (pies, quality and risk tallies, cost), and the appendix
- * (parameters, applied filters, email mapping, size weights,
+ * (parameters, applied filters, email mapping, points weights,
  * methodology). The team half lives in `markdown.ts`; the per-person
  * reports in `markdown-person.ts`.
  */
 import type { ChartAsset } from './chart-util.js';
 import { userSlug } from './chart-util.js';
 import type { ChartData, CountRow, UserSeries } from './chart-data.js';
-import { SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
+import { COMPLEXITY_ORDER, COMPLEXITY_WEIGHTS, SIZE_ORDER, SIZE_WEIGHTS } from './chart-data.js';
 import type { EmailMap } from '../util/email-map.js';
 import { repoSpecLabel } from '../repo/repo-spec.js';
 import { bullets, chartAsset, chartBlock, formatInt, table } from './markdown-util.js';
@@ -233,10 +233,13 @@ function appendixSection(data: ChartData, options: CompileOptions, emailMap: Ema
     );
   }
   sections.push(
-    `### Size weights\n\n${table(
+    `### Points weights\n\n${table(
       ['Size', 'Weight'],
       SIZE_ORDER.map((size) => [size, formatInt(SIZE_WEIGHTS[size])]),
-    )}\n\nWeighted points sum contributions scaled by their size weight.`,
+    )}\n\n${table(
+      ['Complexity', 'Multiplier'],
+      COMPLEXITY_ORDER.map((level) => [level, String(COMPLEXITY_WEIGHTS[level])]),
+    )}\n\nPoints are a contribution's size weight scaled by its complexity multiplier.`,
   );
   sections.push(
     `### Methodology\n\n${bullets([

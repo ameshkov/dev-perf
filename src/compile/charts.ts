@@ -30,8 +30,8 @@ import { barLineSpec, barSpec, groupedBarSpec, lineSeriesSpec, stackedBarSpec } 
 const TOP_SIGNALS = 5;
 
 /**
- * The points chart of the team: the size-weighted contribution points
- * per period, the lead chart of the team dynamics.
+ * The points chart of the team: the size- and complexity-weighted
+ * contribution points per period, the lead chart of the team dynamics.
  *
  * @param data - The chart data.
  * @param labels - The period labels.
@@ -40,7 +40,7 @@ const TOP_SIGNALS = 5;
 function teamPointsChart(data: ChartData, labels: string[]): ChartAsset {
   return {
     file: 'team-points-per-period.svg',
-    caption: 'Points per period (size-weighted).',
+    caption: 'Points per period (size × complexity).',
     spec: barSpec(
       'Team points per period',
       labels,

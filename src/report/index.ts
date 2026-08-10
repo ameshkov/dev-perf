@@ -29,6 +29,7 @@ export {
  */
 export type { LlmAnalysis, LlmToolPayload, TokenUsage } from './schema.js';
 export type {
+  Complexity,
   Contribution,
   ContributionSize,
   DeterministicMetrics,

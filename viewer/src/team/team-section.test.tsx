@@ -50,11 +50,15 @@ describe('TeamSection', () => {
     expect(screen.getByText('Work-type share')).toBeDefined();
   });
 
-  it('renders the wide class on the per-period signal blocks', () => {
+  it('renders the wide class on the repo comparison and the per-period signal blocks', () => {
     const { container } = render(<TeamSection data={buildChartData(buildDemoReport())} />);
 
-    const wide = container.querySelectorAll('.chart-block-wide');
-    expect(wide).toHaveLength(2);
+    const wide = [...container.querySelectorAll('.chart-block-wide')];
+    expect(wide.map((block) => block.querySelector('.chart-block-title')?.textContent)).toEqual([
+      'Commits per repository',
+      'Risk flags per period',
+      'Quality signals per period',
+    ]);
   });
 
   it('renders only the deterministic groups when the LLM is disabled', () => {

@@ -41,6 +41,7 @@ export function DescriptorBlock({
       <TagSelector
         tags={tags}
         selected={selected ?? new Set()}
+        labelOf={descriptor.labelOf}
         {...tagHandlers(tags, selected ?? new Set(), onSelect)}
       />
     );

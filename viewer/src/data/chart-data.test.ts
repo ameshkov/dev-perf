@@ -39,7 +39,7 @@ describe('team points', () => {
       activeUsers: 2,
       contributions: 2,
       cumulativeContributions: 2,
-      weightedPoints: 5,
+      weightedPoints: 6.5,
       sizes: { xs: 0, s: 1, m: 1, l: 0, xl: 0 },
       complexity: { medium: 1, low: 1 },
       workTypes: { feature: 1, bugfix: 1, test: 1 },
@@ -53,7 +53,7 @@ describe('team points', () => {
       activeUsers: 2,
       contributions: 1,
       cumulativeContributions: 3,
-      weightedPoints: 8,
+      weightedPoints: 16,
       sizes: { xs: 0, s: 0, m: 0, l: 0, xl: 1 },
       complexity: { high: 1 },
       workTypes: { feature: 1, security: 1 },
@@ -126,7 +126,7 @@ describe('languages, repos and users', () => {
       commits: 17,
       users: 2,
       contributions: 2,
-      points: 11,
+      points: 20.5,
       topLanguages: [
         { language: 'TypeScript', linesAdded: 140 },
         { language: 'Python', linesAdded: 120 },
@@ -152,7 +152,7 @@ describe('languages, repos and users', () => {
     const [alice, bob] = data.users;
     expect(alice.points.map((point) => point.commits)).toEqual([9, 3]);
     expect(alice.points.map((point) => point.cumulativeCommits)).toEqual([9, 12]);
-    expect(alice.points.map((point) => point.weightedPoints)).toEqual([5, 0]);
+    expect(alice.points.map((point) => point.weightedPoints)).toEqual([6.5, 0]);
     expect(alice.periodLlm.map((llm) => llm.status)).toEqual(['completed', 'skipped']);
     expect(alice.repos).toEqual([
       { repo: 'git@github.com:acme/api.git', commits: 8 },
@@ -179,7 +179,7 @@ describe('totals and bus factor', () => {
     expect(data.totals).toEqual({
       commits: 23,
       contributions: 3,
-      weightedPoints: 13,
+      weightedPoints: 22.5,
       linesAdded: 325,
       linesRemoved: 112,
       netLines: 213,

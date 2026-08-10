@@ -67,12 +67,13 @@ describe('runCompile', () => {
       );
       // The Repositories table uses the same labels and shows the
       // per-repository contribution count and weighted points (one
-      // contribution per period, size m → 3 points each).
+      // contribution per period, size m × complexity medium → 4.5
+      // points each, 9 per repository).
       expect(md).toContain(
         '| Repository | Commits | Contributions | Points | Users | Top languages |',
       );
-      expect(md).toContain('| github.com/acme/app | 2 | 2 | 6 | 1 | TypeScript (20) |');
-      expect(md).toContain('| gitlab.com/team/tools | 2 | 2 | 6 | 1 | TypeScript (20) |');
+      expect(md).toContain('| github.com/acme/app | 2 | 2 | 9 | 1 | TypeScript (20) |');
+      expect(md).toContain('| gitlab.com/team/tools | 2 | 2 | 9 | 1 | TypeScript (20) |');
       // The per-repository comparison chart legend carries just the
       // repository names, not the host/org or the raw URLs.
       const svg = await readFile(
@@ -228,11 +229,12 @@ describe('runCompile', () => {
 
       const md = await readFile(path.join(output, 'report.md'), 'utf8');
       // Each metric has its own leader: Alice by commits (10), Bob by
-      // LLM contributions (3), Carol by points (one xl-sized
-      // contribution weighs 8, more than Alice's s and Bob's three xs).
+      // LLM contributions (3), Carol by points (one xl-sized,
+      // medium-complexity contribution weighs 12, more than Alice's s
+      // and Bob's three xs).
       expect(md).toContain('- Top contributor by commits: Alice (10 commits)');
       expect(md).toContain('- Top contributor by contributions: Bob (3 contributions)');
-      expect(md).toContain('- Top contributor by points: Carol (8 points)');
+      expect(md).toContain('- Top contributor by points: Carol (12 points)');
     });
   });
 
@@ -314,10 +316,10 @@ describe('runCompile', () => {
       const md = await readFile(path.join(output, 'report.md'), 'utf8');
       // Each metric peaks in its own period: January by commits (10),
       // February by LLM contributions (3), March by points (one
-      // xl-sized contribution weighs 8).
+      // xl-sized, medium-complexity contribution weighs 12).
       expect(md).toContain('- Busiest period by commits: 2026-01 (10 commits)');
       expect(md).toContain('- Busiest period by contributions: 2026-02 (3 contributions)');
-      expect(md).toContain('- Busiest period by points: 2026-03 (8 points)');
+      expect(md).toContain('- Busiest period by points: 2026-03 (12 points)');
     });
   });
 

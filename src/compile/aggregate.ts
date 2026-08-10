@@ -6,7 +6,7 @@
  */
 import type { Contribution, ContributionSize, User } from '../report/index.js';
 import type { TeamPoint } from './chart-data.js';
-import { SIZE_WEIGHTS } from './chart-data.js';
+import { COMPLEXITY_WEIGHTS, SIZE_WEIGHTS } from './chart-data.js';
 
 /**
  * Extracts the contribution counts of one user entry.
@@ -28,7 +28,7 @@ function contributionCounts(user: User): {
   for (const contribution of user.llm.contributions) {
     sizes[contribution.size] += 1;
     complexity[contribution.complexity] = (complexity[contribution.complexity] ?? 0) + 1;
-    weightedPoints += SIZE_WEIGHTS[contribution.size];
+    weightedPoints += SIZE_WEIGHTS[contribution.size] * COMPLEXITY_WEIGHTS[contribution.complexity];
     for (const type of contribution.types) {
       workTypes[type] = (workTypes[type] ?? 0) + 1;
     }
@@ -170,14 +170,19 @@ export function allContributions(users: User[]): Contribution[] {
 }
 
 /**
- * The size-weighted points of LLM contributions: the sum of each
- * contribution's size weight (xs=1, s=2, m=3, l=5, xl=8).
+ * The complexity- and size-weighted points of LLM contributions: the
+ * sum of each contribution's size weight (xs=1, s=2, m=3, l=5, xl=8)
+ * scaled by its complexity multiplier (low=1, medium=1.5, high=2).
  *
  * @param contributions - The contributions.
  * @returns The weighted points.
  */
 export function weightedPointsOf(contributions: Contribution[]): number {
-  return contributions.reduce((sum, contribution) => sum + SIZE_WEIGHTS[contribution.size], 0);
+  return contributions.reduce(
+    (sum, contribution) =>
+      sum + SIZE_WEIGHTS[contribution.size] * COMPLEXITY_WEIGHTS[contribution.complexity],
+    0,
+  );
 }
 
 /**

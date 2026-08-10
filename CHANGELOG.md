@@ -8,6 +8,21 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- The viewer's `Commits per repository` chart now spans the full
+  chart width, and its filter shows the short repository name (the
+  last path segment, as in the chart legend) instead of the full
+  clone URL; hovering a chip still shows the full URL.
+- The viewer's intro now links the `dev-perf` name to the project's
+  GitHub repository.
+- Contribution points now take complexity into account: the compile
+  command's `Weighted points` and the viewer's `Points` charts scale
+  each contribution's size weight (xs=1, s=2, m=3, l=5, xl=8) by its
+  LLM-assessed complexity multiplier (low=1, medium=1.5, high=2), so
+  complex work counts more than large-but-simple work. The appendix
+  documents the point weights and multipliers.
+
 ## [v1.1.0] - 2026-08-10
 
 ### Added

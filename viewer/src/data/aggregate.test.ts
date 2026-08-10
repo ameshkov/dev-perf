@@ -67,11 +67,12 @@ describe('countContributionsByKey', () => {
 });
 
 describe('weightedPointsOf', () => {
-  it('weights sizes xs=1 s=2 m=3 l=5 xl=8', () => {
+  it('weights sizes xs=1 s=2 m=3 l=5 xl=8, scaled by the medium complexity multiplier (1.5)', () => {
     const contributions = (['xs', 's', 'm', 'l', 'xl'] as const).map((size) =>
       buildContribution({ size }),
     );
-    expect(weightedPointsOf(contributions)).toBe(19);
+    // 19 size points × medium complexity 1.5.
+    expect(weightedPointsOf(contributions)).toBe(28.5);
   });
 
   it('returns zero for no contributions', () => {
@@ -138,7 +139,7 @@ describe('teamPoint', () => {
       activeUsers: 1,
       contributions: 2,
       cumulativeContributions: 5,
-      weightedPoints: 7,
+      weightedPoints: 10.5,
       sizes: { xs: 0, s: 1, m: 0, l: 1, xl: 0 },
       complexity: { medium: 2 },
       workTypes: { feature: 2, test: 1 },

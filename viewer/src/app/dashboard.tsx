@@ -73,7 +73,7 @@ function kpiItems(data: ChartData): KpiItem[] {
       {
         label: 'Weighted points',
         value: formatInt(totals.weightedPoints),
-        hint: 'xs=1 · s=2 · m=3 · l=5 · xl=8',
+        hint: 'size × complexity (low · med · high)',
       },
     );
   }

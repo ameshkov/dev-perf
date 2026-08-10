@@ -6,7 +6,13 @@
  * computation; rendering and markdown assembly live in `vega.ts`,
  * `charts.ts` and `markdown.ts`.
  */
-import type { ContributionSize, LlmAnalysis, PeriodUnit, User } from '../report/index.js';
+import type {
+  Complexity,
+  ContributionSize,
+  LlmAnalysis,
+  PeriodUnit,
+  User,
+} from '../report/index.js';
 import type { RepoSpec } from '../repo/repo-spec.js';
 import type { FilteredReport } from './filter.js';
 import { combinePeriodUsers } from './filter.js';
@@ -30,11 +36,20 @@ export const SIZE_WEIGHTS: Record<ContributionSize, number> = {
   xl: 8,
 };
 
+/** Contribution complexity multipliers used for the weighted-points
+ * series: a contribution's points are its size weight scaled by its
+ * complexity level. */
+export const COMPLEXITY_WEIGHTS: Record<Complexity, number> = {
+  low: 1,
+  medium: 1.5,
+  high: 2,
+};
+
 /** All contribution sizes in chart order. */
 export const SIZE_ORDER: ContributionSize[] = ['xs', 's', 'm', 'l', 'xl'];
 
 /** All complexity levels in chart order. */
-export const COMPLEXITY_ORDER: string[] = ['low', 'medium', 'high'];
+export const COMPLEXITY_ORDER: Complexity[] = ['low', 'medium', 'high'];
 
 /** One period's identity: bounds and a short label for chart axes. */
 interface PeriodInfo {
@@ -62,7 +77,7 @@ export interface TeamPoint {
   contributions: number;
   /** Cumulative contributions up to and including the period. */
   cumulativeContributions: number;
-  /** Size-weighted contribution points in the period. */
+  /** Size- and complexity-weighted contribution points in the period. */
   weightedPoints: number;
   /** Contributions per size in the period. */
   sizes: Record<ContributionSize, number>;
@@ -133,7 +148,7 @@ interface TeamTotals {
   commits: number;
   /** LLM-assessed contributions across all users. */
   contributions: number;
-  /** Size-weighted contribution points across all users. */
+  /** Size- and complexity-weighted contribution points across all users. */
   weightedPoints: number;
   /** Lines added across all users. */
   linesAdded: number;

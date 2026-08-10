@@ -199,11 +199,11 @@ describe('buildChartAssets', () => {
     const assets = buildChartAssets(data);
 
     const asset = assets.find((chart) => chart.file === 'team-points-per-period.svg');
-    expect(asset?.caption).toBe('Points per period (size-weighted).');
-    // January: A1 l (5) + A2 xs (1); February: A3 m (3).
+    expect(asset?.caption).toBe('Points per period (size × complexity).');
+    // January: A1 l×high (10) + A2 xs×low (1); February: A3 m×medium (4.5).
     expect(specRows(asset?.spec ?? {})).toEqual([
-      { x: '2026-01', key: '2026-01', value: 6 },
-      { x: '2026-02', key: '2026-02', value: 3 },
+      { x: '2026-01', key: '2026-01', value: 11 },
+      { x: '2026-02', key: '2026-02', value: 4.5 },
     ]);
     const files = assets.map((chart) => chart.file);
     expect(files.indexOf('team-points-per-period.svg')).toBeLessThan(
@@ -216,11 +216,12 @@ describe('buildChartAssets', () => {
     const assets = buildChartAssets(data);
 
     const asset = assets.find((chart) => chart.file === 'alice-points-per-period.svg');
-    expect(asset?.caption).toBe('Points per period (size-weighted).');
-    // Alice: A1 l (5) and A2 xs (1) in January, A3 m (3) in February.
+    expect(asset?.caption).toBe('Points per period (size × complexity).');
+    // Alice: A1 l×high (10) and A2 xs×low (1) in January, A3 m×medium
+    // (4.5) in February.
     expect(specRows(asset?.spec ?? {})).toEqual([
-      { x: '2026-01', key: '2026-01', value: 6 },
-      { x: '2026-02', key: '2026-02', value: 3 },
+      { x: '2026-01', key: '2026-01', value: 11 },
+      { x: '2026-02', key: '2026-02', value: 4.5 },
     ]);
   });
 

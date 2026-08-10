@@ -16,7 +16,7 @@ interface RepoAccumulator {
   users: Set<string>;
   /** LLM-assessed contributions across all periods. */
   contributions: number;
-  /** Size-weighted points of the contributions across all periods. */
+  /** Size- and complexity-weighted points of the contributions across all periods. */
   points: number;
   /** Lines added per language across all periods. */
   languages: Map<string, number>;

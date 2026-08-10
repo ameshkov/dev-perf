@@ -73,6 +73,21 @@ describe('buildTeamActivityBlocks', () => {
     ]);
   });
 
+  it('labels the repository chips with the short chart legend names', () => {
+    const repos = blockById(buildTeamActivityBlocks(data, labels), 'team-repos');
+    expect(repos.tags).toEqual([
+      { key: 'git@github.com:acme/api.git', value: 17 },
+      { key: 'https://github.com/acme/web.git', value: 6 },
+    ]);
+    expect(repos.labelOf?.('git@github.com:acme/api.git')).toBe('api');
+    expect(repos.labelOf?.('https://github.com/acme/web.git')).toBe('web');
+  });
+
+  it('spans the repository comparison across the full chart grid', () => {
+    const repos = blockById(buildTeamActivityBlocks(data, labels), 'team-repos');
+    expect(repos.wide).toBe(true);
+  });
+
   it('builds the exact commits series with its cumulative line', () => {
     const series = seriesOf(blockById(buildTeamActivityBlocks(data, labels), 'team-commits'));
     expect(series).toHaveLength(2);
@@ -109,7 +124,7 @@ describe('buildLlmActivityBlocks', () => {
 
   it('builds the exact weighted-points series with the gradient fill', () => {
     const [series] = seriesOf(blockById(buildLlmActivityBlocks(data, labels), 'team-points'));
-    expect(series).toMatchObject({ type: 'bar', name: 'Points', data: [5, 8] });
+    expect(series).toMatchObject({ type: 'bar', name: 'Points', data: [6.5, 16] });
     const color = (series.itemStyle as Record<string, unknown>).color as Record<string, unknown>;
     expect(color.type).toBe('linear');
   });

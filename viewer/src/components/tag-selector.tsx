@@ -14,12 +14,48 @@ export interface TagSelectorProps {
   tags: CountRow[];
   /** The currently selected tag keys. */
   selected: ReadonlySet<string>;
+  /** Renders the chip label of a key; defaults to the key itself. */
+  labelOf?: (key: string) => string;
   /** Toggle one tag in or out of the selection. */
   onToggle: (key: string) => void;
   /** Select every tag. */
   onSelectAll: () => void;
   /** Clear the selection. */
   onClearAll: () => void;
+}
+
+/** The props of one {@link TagChip}. */
+interface TagChipProps {
+  /** The tag the chip represents. */
+  tag: CountRow;
+  /** Whether the tag is part of the selection. */
+  active: boolean;
+  /** Renders the chip label of a key; defaults to the key itself. */
+  labelOf?: (key: string) => string;
+  /** Toggles the tag. */
+  onToggle: (key: string) => void;
+}
+
+/**
+ * Renders one tag chip: the label (or the key itself) and the
+ * formatted total, with the full key as the hover tooltip.
+ *
+ * @param props - Tag, selection state and the toggle handler.
+ * @returns The chip element.
+ */
+function TagChip({ tag, active, labelOf, onToggle }: TagChipProps): ReactElement {
+  return (
+    <button
+      type="button"
+      className={active ? 'tag-chip tag-chip-active' : 'tag-chip'}
+      aria-pressed={active}
+      title={tag.key}
+      onClick={() => onToggle(tag.key)}
+    >
+      <span className="tag-chip-name">{labelOf !== undefined ? labelOf(tag.key) : tag.key}</span>
+      <span className="tag-chip-count">{formatInt(tag.value)}</span>
+    </button>
+  );
 }
 
 /**
@@ -31,6 +67,7 @@ export interface TagSelectorProps {
 export function TagSelector({
   tags,
   selected,
+  labelOf,
   onToggle,
   onSelectAll,
   onClearAll,
@@ -60,16 +97,13 @@ export function TagSelector({
       </div>
       <div className="tag-chips">
         {tags.map((tag) => (
-          <button
+          <TagChip
             key={tag.key}
-            type="button"
-            className={selected.has(tag.key) ? 'tag-chip tag-chip-active' : 'tag-chip'}
-            aria-pressed={selected.has(tag.key)}
-            onClick={() => onToggle(tag.key)}
-          >
-            <span className="tag-chip-name">{tag.key}</span>
-            <span className="tag-chip-count">{formatInt(tag.value)}</span>
-          </button>
+            tag={tag}
+            active={selected.has(tag.key)}
+            labelOf={labelOf}
+            onToggle={onToggle}
+          />
         ))}
       </div>
     </div>

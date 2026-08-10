@@ -69,7 +69,8 @@ function signalColor(palette: string[], tally: CountRow[], key: string): string 
 }
 
 /**
- * The points block: the size-weighted contribution points per period.
+ * The points block: the complexity- and size-weighted contribution
+ * points per period.
  *
  * @param data - The chart data.
  * @param labels - The period labels.
@@ -80,7 +81,7 @@ function pointsBlock(data: ChartData, labels: string[]): ChartBlockDescriptor {
     id: 'team-points',
     title: 'Points per period',
     description:
-      'Size-weighted contribution points per period: every contribution scores its t-shirt size (xs=1, s=2, m=3, l=5, xl=8) — a signal of shipped scope as assessed by the LLM.',
+      'Contribution points per period: every contribution scores its t-shirt size (xs=1, s=2, m=3, l=5, xl=8) scaled by complexity (low=1, medium=1.5, high=2) — a signal of shipped scope as assessed by the LLM.',
     optionOf: () =>
       barOption(
         labels,

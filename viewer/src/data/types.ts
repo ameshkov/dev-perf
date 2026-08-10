@@ -30,7 +30,7 @@ export interface TeamPoint {
   contributions: number;
   /** Cumulative contributions up to and including the period. */
   cumulativeContributions: number;
-  /** Size-weighted contribution points in the period. */
+  /** Size- and complexity-weighted contribution points in the period. */
   weightedPoints: number;
   /** Contributions per size in the period. */
   sizes: Record<ContributionSize, number>;
@@ -84,7 +84,7 @@ export interface RepoSummary {
   users: number;
   /** LLM-assessed contributions across all periods. */
   contributions: number;
-  /** Size-weighted points of the contributions across all periods. */
+  /** Size- and complexity-weighted points of the contributions across all periods. */
   points: number;
   /** Top languages by lines added, best first (top 3). */
   topLanguages: Array<{ language: string; linesAdded: number }>;
@@ -108,7 +108,7 @@ interface TeamTotals {
   commits: number;
   /** LLM-assessed contributions across all users. */
   contributions: number;
-  /** Size-weighted contribution points across all users. */
+  /** Size- and complexity-weighted contribution points across all users. */
   weightedPoints: number;
   /** Lines added across all users. */
   linesAdded: number;

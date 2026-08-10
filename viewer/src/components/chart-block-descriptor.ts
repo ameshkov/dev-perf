@@ -21,6 +21,10 @@ export interface ChartBlockDescriptor {
   /** Tags the block can be narrowed down by; absent for fixed
    * blocks. The list is the full tag set in display order. */
   tags?: CountRow[];
+  /** Renders the tag chip label of a key; defaults to the key
+   * itself. Used when the keys are long identifiers, e.g. repository
+   * URLs shortened to their last path segment. */
+  labelOf?: (key: string) => string;
   /** Spans the full width of the chart grid instead of one column;
    * absent for single-column blocks. */
   wide?: boolean;

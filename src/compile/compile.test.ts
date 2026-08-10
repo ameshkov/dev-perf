@@ -127,7 +127,7 @@ describe('runCompile', () => {
         expect(md).toContain('| Repos |');
         expect(md).toContain('| Top repo |');
         expect(md).toContain(
-          '| Alice | 2 | 6 | 5 | 45 | 4 | 6 | 2 | TypeScript | completed | 1 | repo-a |',
+          '| Alice | 2 | 9 | 5 | 45 | 4 | 6 | 2 | TypeScript | completed | 1 | repo-a |',
         );
         // The individual sections link to the per-person reports.
         expect(md).toContain('[Full individual report →](people/alice.md)');
@@ -135,18 +135,19 @@ describe('runCompile', () => {
         // two periods of the fixture default (100 in / 50 cached in /
         // 20 out per user per period).
         // The top contributors by commits, contributions and points:
-        // Alice and Bob tie on commits (5) and contributions (2), and
-        // Alice leads on points (two m-sized contributions), so the
+        // Alice and Bob tie on commits (5), Alice leads on
+        // contributions (2 vs 1) and on points (two m-sized,
+        // medium-complexity contributions weigh 4.5 each), so the
         // master user order resolves every tie in favor of Alice.
         expect(md).toContain('- Top contributor by commits: Alice (5 commits)');
         expect(md).toContain('- Top contributor by contributions: Alice (2 contributions)');
-        expect(md).toContain('- Top contributor by points: Alice (6 points)');
+        expect(md).toContain('- Top contributor by points: Alice (9 points)');
         // The busiest periods follow the same pattern: January leads on
-        // commits (6 vs 4), and ties on contributions (2) and points (6)
-        // resolve in favor of the older period.
+        // commits (6 vs 4) and contributions (2 vs 1), and on points
+        // (9 vs 4.5) the older period wins outright.
         expect(md).toContain('- Busiest period by commits: 2026-01 (6 commits)');
         expect(md).toContain('- Busiest period by contributions: 2026-01 (2 contributions)');
-        expect(md).toContain('- Busiest period by points: 2026-01 (6 points)');
+        expect(md).toContain('- Busiest period by points: 2026-01 (9 points)');
         expect(md).toContain(
           '| LLM usage | 400 in / 200 cached in / 80 out | Token usage of the LLM analysis |',
         );
@@ -191,7 +192,7 @@ describe('runCompile', () => {
           '![Contributions per period (bars) and cumulative contributions (line).](assets/team-contributions-per-period.svg)',
         );
         expect(md).toContain(
-          '![Points per period (size-weighted).](assets/team-points-per-period.svg)',
+          '![Points per period (size × complexity).](assets/team-points-per-period.svg)',
         );
         expect(md).toContain('assets/team-risk-per-period.svg');
         expect(md).toContain('assets/team-quality-per-period.svg');
@@ -219,7 +220,7 @@ describe('runCompile', () => {
           '![Contributions per period, stacked by complexity (low–high).](assets/alice-contributions-by-complexity-per-period.svg)',
         );
         expect(md).toContain(
-          '![Points per period (size-weighted).](assets/alice-points-per-period.svg)',
+          '![Points per period (size × complexity).](assets/alice-points-per-period.svg)',
         );
         expect(md).toContain('assets/alice-contributions-and-cumulative-per-period.svg');
         expect(md).not.toContain('assets/alice-risk-per-period.svg');

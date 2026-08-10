@@ -115,8 +115,8 @@ describe('buildChartData', () => {
     // Alice: 3 contributions in January, 1 in February.
     expect(data.team.map((point) => point.contributions)).toEqual([3, 1]);
     expect(data.team.map((point) => point.cumulativeContributions)).toEqual([3, 4]);
-    // l=5, xs=1, m=3 → 9; xl=8 → 8.
-    expect(data.team.map((point) => point.weightedPoints)).toEqual([9, 8]);
+    // l×high=10, xs×low=1, m×medium=4.5 → 15.5; xl×medium=12 → 12.
+    expect(data.team.map((point) => point.weightedPoints)).toEqual([15.5, 12]);
   });
 
   it('counts contributions per size across the range', () => {
@@ -247,7 +247,7 @@ describe('buildChartData', () => {
 
     expect(data.totals.commits).toBe(10);
     expect(data.totals.contributions).toBe(4);
-    expect(data.totals.weightedPoints).toBe(17);
+    expect(data.totals.weightedPoints).toBe(27.5);
     expect(data.totals.netLines).toBe(70);
     expect(data.totals.activeUsers).toBe(2);
     expect(data.totals.inputTokens).toBe(200);

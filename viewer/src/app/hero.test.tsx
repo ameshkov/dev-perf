@@ -19,6 +19,12 @@ describe('Hero', () => {
     expect(screen.getByText('Runs entirely in your browser')).toBeDefined();
   });
 
+  it('links the dev-perf name to the GitHub repository', () => {
+    render(<Hero loaded={false} />);
+    const link = screen.getByRole('link', { name: 'dev-perf' });
+    expect(link.getAttribute('href')).toBe('https://github.com/ameshkov/dev-perf');
+  });
+
   it('shows the call-to-action hint only while idle', () => {
     const hint = 'Drop a report below, or try the sample report.';
     const { rerender } = render(<Hero loaded={false} />);

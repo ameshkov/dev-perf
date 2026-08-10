@@ -42,8 +42,16 @@
 }
 
 .hero-lead strong {
-  color: var(--text-1);
   font-weight: 650;
+}
+
+.hero-lead a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+.hero-lead a:hover {
+  text-decoration: underline;
 }
 
 .hero-features {

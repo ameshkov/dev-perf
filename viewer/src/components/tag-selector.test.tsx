@@ -47,6 +47,22 @@ describe('TagSelector', () => {
     expect(screen.getByText('5')).toBeDefined();
   });
 
+  it('renders the labelOf label and keeps the full key as the tooltip', () => {
+    render(
+      <TagSelector
+        tags={[{ key: 'git@github.com:acme/api.git', value: 17 }]}
+        selected={new Set(['git@github.com:acme/api.git'])}
+        labelOf={(key) => key.replace(/^git@github\.com:acme\//, '').replace(/\.git$/, '')}
+        onToggle={vi.fn()}
+        onSelectAll={vi.fn()}
+        onClearAll={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('api')).toBeDefined();
+    const chip = screen.getByRole('button', { name: /api/ });
+    expect(chip.getAttribute('title')).toBe('git@github.com:acme/api.git');
+  });
+
   it('marks the selected chips active and toggles by click', () => {
     const { onToggle } = renderSelector(new Set(['tests-added']));
 

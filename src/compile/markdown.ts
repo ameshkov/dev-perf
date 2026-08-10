@@ -140,7 +140,7 @@ function totalsTable(data: ChartData): string {
     rows.splice(2, 0, [
       'Weighted points (LLM)',
       formatInt(totals.weightedPoints),
-      'Contributions scaled by size weight',
+      'Contributions scaled by size weight and complexity',
     ]);
     rows.push([
       'LLM usage',

@@ -227,10 +227,8 @@ export type RiskFlag = z.infer<typeof riskFlagSchema>;
 export const complexitySchema = z.enum(['low', 'medium', 'high']);
 
 /**
- * Complexity level of a contribution.
- *
- * @internal Exported for tests only; referenced by `contributionSchema`
- * within the module. Not part of the public module API.
+ * Complexity level of a contribution, derived from {@link
+ * complexitySchema}.
  */
 export type Complexity = z.infer<typeof complexitySchema>;
 

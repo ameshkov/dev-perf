@@ -58,7 +58,8 @@ function userTags(series: UserSeries, kind: 'workTypes' | 'quality' | 'risk'): C
 }
 
 /**
- * The points block of one user: size-weighted points per period.
+ * The points block of one user: size- and complexity-weighted points
+ * per period.
  *
  * @param series - The user's series.
  * @param labels - The period labels.
@@ -68,7 +69,8 @@ function userPointsBlock(series: UserSeries, labels: string[]): ChartBlockDescri
   return {
     id: 'user-points',
     title: 'Points per period',
-    description: 'Size-weighted contribution points per period (xs=1 to xl=8).',
+    description:
+      'Points per period: size weight (xs=1 to xl=8) scaled by the complexity multiplier (low=1, medium=1.5, high=2).',
     optionOf: () =>
       barOption(
         labels,

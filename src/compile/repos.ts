@@ -18,7 +18,7 @@ export interface RepoSummary {
   users: number;
   /** LLM-assessed contributions across all periods. */
   contributions: number;
-  /** Size-weighted points of the contributions across all periods. */
+  /** Size- and complexity-weighted points of the contributions across all periods. */
   points: number;
   /** Top languages by lines added, best first (top 3). */
   topLanguages: Array<{ language: string; linesAdded: number }>;
@@ -34,7 +34,7 @@ interface RepoAccumulator {
   users: Set<string>;
   /** LLM-assessed contributions across all periods. */
   contributions: number;
-  /** Size-weighted points of the contributions across all periods. */
+  /** Size- and complexity-weighted points of the contributions across all periods. */
   points: number;
   /** Lines added per language across all periods. */
   languages: Map<string, number>;

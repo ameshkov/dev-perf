@@ -34,11 +34,14 @@ export function Hero({ loaded }: HeroProps): ReactElement {
         See what your team&apos;s git history <span className="hero-gradient">really built</span>.
       </h1>
       <p className="hero-lead">
-        Upload a <code>reports.json</code> produced by the <strong>dev-perf</strong> CLI and explore
-        it here: deterministic metrics straight from git history — commits, lines, files, languages
-        — layered with the LLM&apos;s assessment of what cannot be counted: work types, complexity,
-        impact, and quality and risk signals. Team first, then one report per person. The file never
-        leaves your browser.
+        Upload a <code>reports.json</code> produced by the{' '}
+        <a href="https://github.com/ameshkov/dev-perf" target="_blank" rel="noopener noreferrer">
+          <strong>dev-perf</strong>
+        </a>{' '}
+        CLI and explore it here: deterministic metrics straight from git history — commits, lines,
+        files, languages — layered with the LLM&apos;s assessment of what cannot be counted: work
+        types, complexity, impact, and quality and risk signals. Team first, then one report per
+        person. The file never leaves your browser.
       </p>
       <ul className="hero-features">
         {FEATURES.map((feature) => (

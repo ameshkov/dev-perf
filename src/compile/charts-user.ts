@@ -239,8 +239,9 @@ function contributionsCumulativeChart(
 }
 
 /**
- * The points chart of one user: the size-weighted contribution points
- * per period, the lead chart of the user's LLM dynamics.
+ * The points chart of one user: the size- and complexity-weighted
+ * contribution points per period, the lead chart of the user's LLM
+ * dynamics.
  *
  * @param series - The user's series.
  * @param labels - The period labels.
@@ -250,7 +251,7 @@ function contributionsCumulativeChart(
 function pointsChart(series: UserSeries, labels: string[], slug: string): ChartAsset {
   return {
     file: `${slug}-points-per-period.svg`,
-    caption: 'Points per period (size-weighted).',
+    caption: 'Points per period (size × complexity).',
     spec: barSpec(
       `${series.user.name} — points per period`,
       labels,

@@ -107,7 +107,7 @@ describe('Dashboard', () => {
       'Bus factor',
     ]);
     const values = [...container.querySelectorAll('.kpi-value')].map((node) => node.textContent);
-    expect(values).toEqual(['23', '+325', '−112', '+213', '11', '2', '3', '13', '1']);
+    expect(values).toEqual(['23', '+325', '−112', '+213', '11', '2', '3', '22.5', '1']);
     expect(screen.getByText('2 contributors')).toBeDefined();
     expect(screen.getByText('assessed by the LLM')).toBeDefined();
     expect(screen.getByText('Alice Nguyen cover 52.17% of commits')).toBeDefined();
@@ -219,7 +219,7 @@ describe('Dashboard scope filters', () => {
     expect(kpiValue(container, 'Lines added')).toBe('+145');
     expect(kpiValue(container, 'Active users')).toBe('1');
     expect(kpiValue(container, 'Contributions')).toBe('1');
-    expect(kpiValue(container, 'Weighted points')).toBe('8');
+    expect(kpiValue(container, 'Weighted points')).toBe('16');
     expect(screen.getByText('Bob Fisher cover 100% of commits')).toBeDefined();
   });
 
