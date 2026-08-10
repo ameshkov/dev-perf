@@ -7,7 +7,7 @@ import {
   removeFixtureRepo,
   type FixtureRepo,
 } from '../../test/fixtures/repo-builder.js';
-import { jitteredDelay, isPromisorFetchFailure, shouldRetryGitError } from './git-retry.js';
+import { jitteredDelay, shouldRetryGitError } from './git-retry.js';
 import { GitError, gitLog, gitRevParse, gitShortlog, gitShow, runGit } from './git.js';
 
 /** A fixture with two authors and one commit per author. */
@@ -195,7 +195,7 @@ describe('runGit retry', () => {
       // Each retry is printed with the attempt, the delay, and the cause.
       const stderr = stderrWrite.mock.calls.map((call) => String(call[0])).join('');
       expect(stderr).toMatch(
-        /git "log" failed \(attempt \d\/\d; retrying in 0\.0 s\): Connection refused/,
+        /git "log" failed in ".*" \(attempt \d\/\d; retrying in 0\.0 s\): Connection refused/,
       );
       expect(stderr.match(/retrying in/g)).toHaveLength(2);
     } finally {
@@ -325,11 +325,6 @@ describe('shouldRetryGitError', () => {
     ).toBe(true);
     expect(
       shouldRetryGitError(
-        at('fatal: could not fetch 3d611319a2681ac07ddf29117a544a6175160527 from promisor remote'),
-      ),
-    ).toBe(true);
-    expect(
-      shouldRetryGitError(
         at(
           "fatal: unable to access 'https://host/repo': Failed to connect to host: Operation timed out",
         ),
@@ -341,9 +336,7 @@ describe('shouldRetryGitError', () => {
   it('does not retry permanent failures', () => {
     expect(shouldRetryGitError(at("fatal: repository 'x' not found"))).toBe(false);
     expect(shouldRetryGitError(at('fatal: Authentication failed'))).toBe(false);
-    expect(shouldRetryGitError(at("fatal: remote error: filter 'blob:none' not supported"))).toBe(
-      false,
-    );
+    expect(shouldRetryGitError(at('fatal: remote error: Repository not found'))).toBe(false);
     expect(
       shouldRetryGitError(at("fatal: your current branch 'main' does not have any commits yet")),
     ).toBe(false);
@@ -361,41 +354,6 @@ describe('shouldRetryGitError', () => {
     });
     expect(timedOut.message).toContain('git log --numstat timed out after 300 s');
     expect(shouldRetryGitError(timedOut)).toBe(false);
-  });
-});
-
-describe('isPromisorFetchFailure', () => {
-  /** A typed git error with the given stderr, for classification. */
-  const at = (stderr: string): GitError =>
-    new GitError(['log', '--numstat'], { cwd: '/cache/entry/repo', stderr });
-
-  it('detects the on-demand blob fetch of a partial clone failing', () => {
-    expect(
-      isPromisorFetchFailure(
-        at(
-          'fatal: could not fetch 8fc64aaae33316fb07dfdff1c09e17cd42bb40f4 from promisor remote: Command failed with exit code 128',
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      isPromisorFetchFailure(
-        at(
-          'ssh: connect to host github.com port 22: Connection refused\n' +
-            'fatal: could not fetch 8fc64aaae33316fb07dfdff1c09e17cd42bb40f4 from promisor remote',
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  it('does not treat other git failures as a promisor fetch', () => {
-    expect(
-      isPromisorFetchFailure(at('ssh: connect to host github.com port 22: Connection refused')),
-    ).toBe(false);
-    expect(isPromisorFetchFailure(at('fatal: Authentication failed'))).toBe(false);
-    expect(isPromisorFetchFailure(at("fatal: repository 'x' not found"))).toBe(false);
-    expect(
-      isPromisorFetchFailure(at("fatal: remote error: filter 'blob:none' not supported")),
-    ).toBe(false);
   });
 });
 

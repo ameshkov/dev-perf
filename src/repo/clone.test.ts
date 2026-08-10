@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,7 +9,7 @@ import {
   type FixtureRepo,
 } from '../../test/fixtures/repo-builder.js';
 import { setVerbose } from '../util/log.js';
-import { cacheEntryDir, entryHash, readCloneInfo } from './cache.js';
+import { cacheEntryDir, entryHash, readCloneInfo, writeCloneInfo } from './cache.js';
 import { cloneTarget, ensureClone, isRemoteUrl } from './clone.js';
 import { gitRevParse, runGit } from './git.js';
 
@@ -38,27 +38,32 @@ async function tempCacheDir(): Promise<string> {
 }
 
 /**
- * Writes a fake git executable that fails on `--filter=blob:none` (like
- * a hosting that rejects partial clones) and delegates everything else
- * to the real git. The marker file is written when the filter attempt
- * happens, so tests can assert the fallback really ran.
+ * Seeds a cache entry with a stale partial clone — a `blob:none` clone
+ * (with `remote.origin.promisor` = `true`) of the kind dev-perf created
+ * before switching to full clones — plus its `clone.json`, so
+ * `ensureClone` reuses it only after re-cloning it as a full clone.
+ * Returns the seeded clone's working tree path.
  */
-async function writeFilterRejectingGit(dir: string): Promise<{ shim: string; marker: string }> {
-  const shim = path.join(dir, 'fake-git');
-  const marker = path.join(dir, 'partial-attempted');
-  const script = `#!/bin/sh
-for arg in "$@"; do
-  if [ "$arg" = "--filter=blob:none" ]; then
-    echo attempted > "${marker}"
-    echo "fatal: remote error: filter 'blob:none' not supported" >&2
-    exit 1
-  fi
-done
-exec git "$@"
-`;
-  await writeFile(shim, script);
-  await chmod(shim, 0o755);
-  return { shim, marker };
+async function seedPartialClone(
+  fixture: FixtureRepo,
+  entryDir: string,
+  branch?: string,
+): Promise<string> {
+  await mkdir(entryDir, { recursive: true });
+  const branchArgs = branch === undefined ? [] : ['--branch', branch];
+  await runGit(entryDir, ['clone', '--filter=blob:none', ...branchArgs, fixture.url, 'repo'], {
+    env: { GIT_PROTOCOL: 'version=2' },
+  });
+  const repoDir = path.join(entryDir, 'repo');
+  const branchName = (await runGit(repoDir, ['branch', '--show-current'])).trim();
+  const head = (await runGit(repoDir, ['rev-parse', 'HEAD'])).trim();
+  await writeCloneInfo(entryDir, {
+    url: fixture.url,
+    clonedAt: new Date().toISOString(),
+    branch: branchName,
+    head,
+  });
+  return repoDir;
 }
 
 /** Adds one commit to a fixture repo. */
@@ -114,7 +119,7 @@ describe('cloneTarget', () => {
 });
 
 describe('ensureClone', () => {
-  it('clones a local path with a partial clone and writes clone.json', async () => {
+  it('clones a local path in full (every blob local) and writes clone.json', async () => {
     const fixture = await buildFixture();
     const cacheDir = await tempCacheDir();
     try {
@@ -125,9 +130,10 @@ describe('ensureClone', () => {
       expect(result.head).toBe(await gitRevParse(fixture.dir, ['HEAD']));
       expect(result.repoDir).toBe(path.join(cacheDir, entryHash(fixture.dir), 'repo'));
 
-      // The file:// form makes the partial clone apply for local paths.
+      // The clone carries no partial-clone filter, so every blob is
+      // local and the analysis never depends on the remote.
       const config = await readFile(path.join(result.repoDir, '.git', 'config'), 'utf8');
-      expect(config).toContain('partialclonefilter = blob:none');
+      expect(config).not.toContain('partialclonefilter');
 
       const info = await readCloneInfo(cacheEntryDir(cacheDir, fixture.dir));
       expect(info).toEqual({
@@ -195,44 +201,26 @@ describe('ensureClone', () => {
     }
   });
 
-  it('falls back to a full clone when the hosting rejects partial clones', async () => {
-    const fixture = await buildFixture();
-    const cacheDir = await tempCacheDir();
-    const tmp = path.dirname(cacheDir);
-    try {
-      const { shim, marker } = await writeFilterRejectingGit(tmp);
-
-      const result = await ensureClone(fixture.dir, { cacheDir, gitBinary: shim });
-
-      // The partial-clone attempt happened and failed; the fallback
-      // produced a working full clone.
-      expect(await readFile(marker, 'utf8')).toBe('attempted\n');
-      expect(result.reused).toBe(false);
-      expect(result.branch).toBe('main');
-      expect(result.head).toBe(await gitRevParse(fixture.dir, ['HEAD']));
-    } finally {
-      await removeFixtureRepo(fixture);
-      await rm(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it('clones as a full clone when `full` is set, keeping blobs local', async () => {
+  it('reuses a cached full clone, but re-clones a stale partial clone as a full clone', async () => {
     const fixture = await buildFixture();
     const cacheDir = await tempCacheDir();
     try {
-      const result = await ensureClone(fixture.dir, { cacheDir, full: true });
+      // A cache entry created as a `blob:none` partial clone (the pre-
+      // full-clone format) still matches clone.json by URL...
+      const entryDir = cacheEntryDir(cacheDir, fixture.dir);
+      const seeded = await seedPartialClone(fixture, entryDir);
+      const seededConfig = await readFile(path.join(seeded, '.git', 'config'), 'utf8');
+      expect(seededConfig).toContain('partialclonefilter');
 
+      // ...but it is not reused: it would fetch blobs lazily and depend
+      // on the remote, so `ensureClone` re-clones it as a full clone.
+      const result = await ensureClone(fixture.dir, { cacheDir });
       expect(result.reused).toBe(false);
       expect(result.head).toBe(await gitRevParse(fixture.dir, ['HEAD']));
-      // A full clone carries no partial-clone filter, so every blob is
-      // local and git log never depends on the remote.
       const config = await readFile(path.join(result.repoDir, '.git', 'config'), 'utf8');
       expect(config).not.toContain('partialclonefilter');
-      // The full clone still analyzes (commits, numstats) offline.
-      const log = await runGit(result.repoDir, ['log', '--numstat', '--no-renames']);
-      expect(log).toContain('a.txt');
 
-      // The cached full clone is reused on the next run.
+      // A full clone is reused on the next run.
       const again = await ensureClone(fixture.dir, { cacheDir });
       expect(again.reused).toBe(true);
       expect(again.repoDir).toBe(result.repoDir);
@@ -242,21 +230,22 @@ describe('ensureClone', () => {
     }
   });
 
-  it('re-clones a partial clone as a full clone with `refresh` and `full`', async () => {
+  it('re-clones a stale partial clone keeping the requested branch', async () => {
     const fixture = await buildFixture();
+    // dev branches from main with one extra commit.
+    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
+    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
     const cacheDir = await tempCacheDir();
     try {
-      const partial = await ensureClone(fixture.dir, { cacheDir });
-      const partialConfig = await readFile(path.join(partial.repoDir, '.git', 'config'), 'utf8');
-      expect(partialConfig).toContain('partialclonefilter = blob:none');
+      const entryDir = cacheEntryDir(cacheDir, fixture.dir, 'dev');
+      await seedPartialClone(fixture, entryDir, 'dev');
 
-      // The analysis-time fallback forces a fresh full clone of the same
-      // entry; the partial-clone marker is gone afterwards.
-      const full = await ensureClone(fixture.dir, { cacheDir, refresh: true, full: true });
-      expect(full.reused).toBe(false);
-      expect(full.head).toBe(partial.head);
-      const fullConfig = await readFile(path.join(full.repoDir, '.git', 'config'), 'utf8');
-      expect(fullConfig).not.toContain('partialclonefilter');
+      const result = await ensureClone(fixture.dir, { cacheDir, branch: 'dev' });
+      expect(result.reused).toBe(false);
+      expect(result.branch).toBe('dev');
+      expect(result.head).toBe(devHead);
+      const config = await readFile(path.join(result.repoDir, '.git', 'config'), 'utf8');
+      expect(config).not.toContain('partialclonefilter');
     } finally {
       await removeFixtureRepo(fixture);
       await rm(path.dirname(cacheDir), { recursive: true, force: true });
@@ -397,28 +386,6 @@ describe('ensureClone', () => {
     } finally {
       await removeFixtureRepo(fixture);
       await rm(path.dirname(cacheDir), { recursive: true, force: true });
-    }
-  });
-
-  it('keeps the requested branch when falling back to a full clone', async () => {
-    const fixture = await buildFixture();
-    await addBranchCommit(fixture, 'dev', 'dev commit', '2026-01-03T12:00:00Z');
-    const devHead = await gitRevParse(fixture.dir, ['HEAD']);
-    const cacheDir = await tempCacheDir();
-    const tmp = path.dirname(cacheDir);
-    try {
-      const { shim, marker } = await writeFilterRejectingGit(tmp);
-
-      const result = await ensureClone(fixture.dir, { cacheDir, branch: 'dev', gitBinary: shim });
-
-      // The partial-clone attempt happened and failed; the full-clone
-      // fallback still checked out the requested branch.
-      expect(await readFile(marker, 'utf8')).toBe('attempted\n');
-      expect(result.branch).toBe('dev');
-      expect(result.head).toBe(devHead);
-    } finally {
-      await removeFixtureRepo(fixture);
-      await rm(tmp, { recursive: true, force: true });
     }
   });
 });

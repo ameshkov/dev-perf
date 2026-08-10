@@ -47,7 +47,7 @@
 Pipeline phases, in order:
 
 1. **Clone** — for each repo, clone into `<tmpdir>/.dev-cache/<hash>/repo`
-   (partial clone, see §4).
+   (in full, so every blob is local; see §4).
 2. **Deterministic analysis** — enumerate commits in the range, compute per-user
    metrics (§5). This is fast and cheap; it also produces the inputs (commit list,
    stats) the LLM layer will need.
@@ -146,10 +146,12 @@ registers the provider and model in code, keeps credentials in memory,
 and uses a logical `pi/home/` agent home that is never created on disk
 (§6.2), so the `pi/` directory is left out of the layout entirely.
 
-- Clone strategy: `git clone --filter=blob:none` (partial clone). Full history is
-  needed for the date range, but blobs are fetched on demand when the deterministic
-  layer reads numstat data or the LLM agent requests a diff. Falls back to a full
-  clone when the hosting does not support partial clones. A structured
+- Clone strategy: full clone — every blob is local right after the
+  clone, so the deterministic numstat read, the branch-delta base
+  resolution, and the LLM agent's file diffs never depend on the remote.
+  A stale partial clone (`blob:none`, created before dev-perf switched
+  to full clones) is detected by its promisor config and re-cloned as a
+  full clone before reuse. A structured
   `repos` entry (`{ repo, branch?, base?, ignore? }`, written as
   `base-branch` in the config file) carries the branch to analyze, the base branch
   the analysis is scoped against, plus the gitignore-style
@@ -203,12 +205,13 @@ and uses a logical `pi/home/` agent home that is never created on disk
 
 All git invocations funnel through a single `runGit` wrapper
 (`src/repo/git.ts`): every command runs under a per-command timeout (5 minutes by
-default), so a hung git process — e.g. a `git log --numstat` on a partial clone
-whose lazy blob fetch stalls against an unresponsive promisor remote — is killed
-and surfaces as a typed `GitError` (`timed out after N s`) instead of blocking
-the run. Transient failures (refused/timed-out connections, a dropped remote, a
-failing on-demand blob fetch) are retried with a hard-coded backoff (1s, 5s, 30s
-with jitter); a timed-out command is deliberately *not* retried.
+default), so a hung git process — e.g. a `git log --numstat` over a huge history
+— is killed and surfaces as a typed `GitError` (`timed out after N s`) instead
+of blocking the run. Transient failures (refused/timed-out connections, a
+dropped remote) are retried with a hard-coded backoff (1s, 5s, 30s with
+jitter); a timed-out command is deliberately *not* retried. Because repositories
+are cloned in full, the commit read is entirely local and never depends on the
+remote, so transient-failure retries apply only to the clone itself.
 
 ### 5.2 Metrics (per user)
 
@@ -608,8 +611,9 @@ dev-perf/
 - **In-process provider calls** — the LLM layer runs inside the dev-perf
   process; a stuck provider call surfaces as an error that ends the run (the
   heartbeat keeps long waits visible in verbose logs).
-- **Large repos** — partial clones and lazy per-commit diffs keep the common path
-  cheap; a repo with huge binary blobs in history is documented as a worst case.
+- **Large repos** — full clones and local per-commit diffs keep the common path
+  cheap and offline; a repo with huge binary blobs in history is documented as a
+  worst case.
 - **Session/directory scoping** — each session is created with the clone as
   `cwd` and the isolated `agentDir`, so tools and prompts are scoped to the
   analyzed repo.

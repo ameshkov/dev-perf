@@ -31,7 +31,8 @@ and a date range, and produces a JSON report of contributions **per
 user**:
 
 1. **Clone** — each repository is cloned into a cache directory in the
-   OS temp directory (`<tmpdir>/.dev-cache` by default, partial clone).
+   OS temp directory (`<tmpdir>/.dev-cache` by default, as a full clone
+   so every blob is local).
 2. **Deterministic analysis** — commits, added/removed lines, files
    touched, churn, active days, and per-language contribution sizes,
    counted straight from git history.

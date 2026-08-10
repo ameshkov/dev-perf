@@ -115,8 +115,6 @@ export async function runPipeline(options: ReportOptions): Promise<TrendReport> 
     // part — share this gate, so no more than `parallel` of them run at
     // once across every repository combined.
     const sessionLimit = createLimit(options.parallel);
-    // Each repository spec may carry its own branch and ignored paths;
-    // the specs drive the clone (branch) and the report entries.
     const analyzed = await analyzeAllRepos(options, repos, emailMap, sessionLimit);
     const report = assembleTrendReport({
       repos,

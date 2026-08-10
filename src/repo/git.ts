@@ -3,15 +3,13 @@
  * operations in the project go through `runGit` or one of the helpers,
  * so failure handling stays in one place. Every command runs under a
  * per-command timeout (default `DEFAULT_GIT_TIMEOUT_MS`), so a git
- * invocation that hangs — e.g. a `git log --numstat` on a partial
- * clone whose lazy blob fetch stalls against an unresponsive promisor
- * remote — is killed and surfaces as a typed failure instead of
+ * invocation that hangs — e.g. a `git log --numstat` over a huge
+ * history — is killed and surfaces as a typed failure instead of
  * blocking the run forever. Transient failures — a
- * dropped connection, a timing-out remote, a partial clone whose
- * on-demand blob fetch fails — are retried with the backoff in
- * `./git-retry.ts` (1s, 5s, 30s with jitter) and a warning per retry;
- * a time-out is deliberately *not* retried (a stuck command would just
- * hang again).
+ * dropped connection, a timing-out remote — are retried with the
+ * backoff in `./git-retry.ts` (1s, 5s, 30s with jitter) and a warning
+ * per retry; a time-out is deliberately *not* retried (a stuck command
+ * would just hang again).
  */
 import { execa, ExecaError } from 'execa';
 import {
@@ -32,7 +30,9 @@ import { logWarn } from '../util/log.js';
  */
 const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Options accepted by `runGit`. */
+/**
+ * Options accepted by `runGit`.
+ */
 export interface RunGitOptions {
   /** Git executable to run; defaults to `git`. */
   gitBinary?: string;
@@ -80,7 +80,7 @@ export interface GitErrorOptions {
 /**
  * Typed error for a failed git invocation: carries the arguments, the
  * working directory, the exit code, and stderr so callers can react to
- * specific failures (e.g. a host rejecting partial clones). A command
+ * specific failures. A command
  * killed by the per-command timeout is marked with `isTimeout` and
  * reported distinctly (`timed out after N s`), so the cause of the
  * failure — a hang, not an error git produced — stays visible.
@@ -170,16 +170,15 @@ function toGitError(args: string[], repoDir: string, timeoutMs: number, error: u
  * `options.timeoutMs`): one still running after it is killed and
  * surfaces as a non-retried `GitError` — a hang is a failure, not
  * something to wait out. Transient failures — a refused or
- * timed-out connection, a dropped remote, a partial clone whose
- * on-demand blob fetch fails — are retried with the built-in backoff
- * (~1s, ~5s, ~30s, each with jitter), logging a warning per retry, and
- * the last attempt's error is thrown when they all fail. All other
- * (permanent) failures throw immediately.
+ * timed-out connection, a dropped remote — are retried with the
+ * built-in backoff (~1s, ~5s, ~30s, each with jitter), logging a
+ * warning per retry, and the last attempt's error is thrown when they
+ * all fail. All other (permanent) failures throw immediately.
  *
  * @param repoDir - Directory to run git in (the repo working tree for
  * repo operations, the cache entry dir for clones).
  * @param args - Arguments passed to git, e.g. `['rev-parse', 'HEAD']`.
- * @param options - Executable overrides.
+ * @param options - Overrides for the git invocation (binary, env, timeout, retry delays).
  * @returns The command's stdout.
  * @throws {GitError} When the command fails (non-zero exit, could not
  * start, or timed out), after all retries are exhausted for a transient
@@ -189,6 +188,26 @@ export async function runGit(
   repoDir: string,
   args: string[],
   options: RunGitOptions = {},
+): Promise<string> {
+  return runGitCommand(repoDir, args, options);
+}
+
+/**
+ * Runs a git command with its retry loop: the actual execa invocation,
+ * the per-command timeout, and the transient-failure retries with the
+ * built-in backoff. See `runGit` for the full contract.
+ *
+ * @param repoDir - Directory to run git in.
+ * @param args - Arguments passed to git.
+ * @param options - Overrides for the git invocation.
+ * @returns The command's stdout.
+ * @throws {GitError} When the command fails, after all retries are
+ * exhausted for a transient failure.
+ */
+async function runGitCommand(
+  repoDir: string,
+  args: string[],
+  options: RunGitOptions,
 ): Promise<string> {
   const { gitBinary = 'git', env, retryDelays, timeoutMs } = options;
   const delays = retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
@@ -206,7 +225,8 @@ export async function runGit(
       }
       const waitMs = jitteredDelay(delayMs);
       logWarn(
-        `git "${args[0] ?? 'git'}" failed (attempt ${attempt + 1}/${delays.length + 1}; ` +
+        `git "${args[0] ?? 'git'}" failed in "${repoDir}" ` +
+          `(attempt ${attempt + 1}/${delays.length + 1}; ` +
           `retrying in ${(waitMs / 1000).toFixed(1)} s): ${transientDetail(gitError)}`,
       );
       await sleep(waitMs);
@@ -220,8 +240,7 @@ export async function runGit(
  * (`repo/` is created inside it).
  *
  * @param cwd - Directory to run the clone in (the cache entry dir).
- * @param args - Arguments after `clone`, e.g. `['--filter=blob:none',
- * url, 'repo']`.
+ * @param args - Arguments after `clone`, e.g. `[url, 'repo']`.
  * @param options - Overrides for the git invocation.
  * @returns The clone command's stdout.
  * @throws {GitError} When the clone fails.

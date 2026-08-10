@@ -10,6 +10,17 @@ and this project adheres to
 
 ### Changed
 
+- Repositories are now cloned in full (`git clone`, no partial-clone
+  filter), so every blob is local right after the clone and the whole
+  analysis — reading commits (`git log --numstat`), resolving the
+  branch-delta base, and the LLM reads — runs fully offline and never
+  touches the remote. The previous partial clone fetched missing blobs
+  lazily, one network connection per blob, which made the commit read
+  depend on remote connectivity and fail with `Connection refused` when
+  the host throttled or the network dropped; a full clone removes that
+  failure mode entirely at the cost of the blobs transferring up front.
+  A cached partial clone from an older version is detected and re-cloned
+  as a full clone once.
 - The `Commits per period, one line per repository` chart (and the
   viewer's `Commits per repository` chart) now shows the full commit
   count of a repository that is analyzed on several branches: when the
@@ -18,10 +29,9 @@ and this project adheres to
   commits, so the timeline matches the repository's total.
 - Git operations now run under a per-command timeout (5 minutes by
   default): a git command that hangs instead of completing — e.g. a
-  `git log` on a partial clone whose lazy blob fetch stalls against an
-  unresponsive promisor remote — is killed and fails the analysis with
-  a `git ... timed out after N s` error, just like any other git
-  failure, instead of blocking the run forever.
+  `git log --numstat` over a huge history — is killed and fails the
+  analysis with a `git ... timed out after N s` error, just like any
+  other git failure, instead of blocking the run forever.
 - The viewer's `Commits per repository` chart now spans the full
   chart width, and its filter shows the short repository name (the
   last path segment, as in the chart legend) instead of the full
@@ -40,6 +50,20 @@ and this project adheres to
   LLM-assessed complexity multiplier (low=1, medium=1.5, high=2), so
   complex work counts more than large-but-simple work. The appendix
   documents the point weights and multipliers.
+- The retry warning for a transient git failure — e.g.
+  `git "log" failed ... : Connection refused` — now names the
+  repository directory the command ran in
+  (`git "log" failed in "..." ...`), so it is clear which repository
+  is being retried instead of only that a git command failed.
+
+### Removed
+
+- The `git-parallel-per-host` option is removed: it capped how many
+  parallel git operations ran against one remote host, which existed to
+  pace the per-blob lazy fetches of a partial clone. Repositories are
+  now cloned in full with a single transfer each, so the per-host cap
+  is no longer needed (repositories still analyze in parallel up to
+  `parallel`).
 
 ## [v1.1.0] - 2026-08-10
 
