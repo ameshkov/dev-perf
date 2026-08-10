@@ -76,6 +76,9 @@ describe('runGit', () => {
       expect(error.stderr).toContain('not a git repository');
       expect(error.message).toContain('git rev-parse HEAD failed with exit 128');
       expect(error.message).toContain('not a git repository');
+      // An ordinary failure is not a hang: no timeout is recorded.
+      expect(error.isTimeout).toBe(false);
+      expect(error.timeoutMs).toBeUndefined();
     } finally {
       await rm(notARepo, { recursive: true, force: true });
     }
@@ -264,6 +267,51 @@ describe('runGit retry', () => {
       await rm(tmp, { recursive: true, force: true });
     }
   });
+
+  it('kills a command that exceeds the timeout and fails without retrying', async () => {
+    const repo = await buildTwoAuthorRepo();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-git-timeout-'));
+    const marker = path.join(tmp, 'attempts');
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      // A fake git that hangs forever (a long sleep); `exec` replaces
+      // the shell so one process covers the whole hang.
+      const shim = path.join(tmp, 'hanging-git');
+      const script = `#!/bin/sh
+echo attempt >> "${marker}"
+exec /bin/sleep 30
+`;
+      await writeFile(shim, script);
+      await chmod(shim, 0o755);
+
+      const startedAt = Date.now();
+      const caught = await runGit(repo.dir, ['log', '--format=%an'], {
+        gitBinary: shim,
+        timeoutMs: 500,
+        retryDelays: [0, 0],
+      }).then(
+        () => null,
+        (error) => error,
+      );
+
+      expect(caught).toBeInstanceOf(GitError);
+      const gitError = caught as GitError;
+      expect(gitError.isTimeout).toBe(true);
+      expect(gitError.timeoutMs).toBe(500);
+      expect(gitError.cwd).toBe(repo.dir);
+      expect(gitError.message).toContain('git log --format=%an timed out after 0.5 s');
+      // The timeout bound the command: it did not wait out the sleep.
+      expect(Date.now() - startedAt).toBeLessThan(10000);
+      // A timeout is a permanent failure: one attempt, no retry log.
+      expect(await readFile(marker, 'utf8').then((text) => text.trim().split('\n'))).toHaveLength(
+        1,
+      );
+      expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringMatching(/retrying in/));
+    } finally {
+      await removeFixtureRepo(repo);
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('shouldRetryGitError', () => {
@@ -299,6 +347,20 @@ describe('shouldRetryGitError', () => {
     expect(
       shouldRetryGitError(at("fatal: your current branch 'main' does not have any commits yet")),
     ).toBe(false);
+  });
+
+  it('does not retry a command that timed out, even when its text says "timed out"', () => {
+    // A timed-out command is a stuck operation: retrying it would just
+    // wait out another timeout window. The timeout message must not be
+    // misclassified as a transient "timed out" network failure. Without
+    // a timeoutMs the error renders the built-in default (5 minutes).
+    const timedOut = new GitError(['log', '--numstat'], {
+      cwd: '/cache/entry/repo',
+      stderr: '',
+      isTimeout: true,
+    });
+    expect(timedOut.message).toContain('git log --numstat timed out after 300 s');
+    expect(shouldRetryGitError(timedOut)).toBe(false);
   });
 });
 

@@ -1,10 +1,17 @@
 /**
  * The small `execa`-based git wrapper: all git
  * operations in the project go through `runGit` or one of the helpers,
- * so failure handling stays in one place. Transient failures — a
+ * so failure handling stays in one place. Every command runs under a
+ * per-command timeout (default `DEFAULT_GIT_TIMEOUT_MS`), so a git
+ * invocation that hangs — e.g. a `git log --numstat` on a partial
+ * clone whose lazy blob fetch stalls against an unresponsive promisor
+ * remote — is killed and surfaces as a typed failure instead of
+ * blocking the run forever. Transient failures — a
  * dropped connection, a timing-out remote, a partial clone whose
  * on-demand blob fetch fails — are retried with the backoff in
- * `./git-retry.ts` (1s, 5s, 30s with jitter) and a warning per retry.
+ * `./git-retry.ts` (1s, 5s, 30s with jitter) and a warning per retry;
+ * a time-out is deliberately *not* retried (a stuck command would just
+ * hang again).
  */
 import { execa, ExecaError } from 'execa';
 import {
@@ -14,6 +21,16 @@ import {
   transientDetail,
 } from './git-retry.js';
 import { logWarn } from '../util/log.js';
+
+/**
+ * Default per-command timeout for git operations, in milliseconds: a
+ * git command still running after this is killed and surfaces as a
+ * failure. Hard-coded like the retry backoff in `./git-retry.ts` — a
+ * hang is rare and the timeout is the safety net, not a budget to
+ * tune. Callers can override per call through
+ * `RunGitOptions.timeoutMs`; `0` disables the timeout.
+ */
+const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Options accepted by `runGit`. */
 export interface RunGitOptions {
@@ -26,6 +43,13 @@ export interface RunGitOptions {
    * (`TZ=UTC`).
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Per-command timeout in milliseconds: a git command still running
+   * after this is killed (SIGTERM, then SIGKILL) and surfaces as a
+   * non-retried `GitError`. Defaults to `DEFAULT_GIT_TIMEOUT_MS`;
+   * `0` disables the timeout. Tests pass small values.
+   */
+  timeoutMs?: number;
   /**
    * Backoff delays between attempts, in milliseconds, after each
    * transient failure until the last one — one entry per retry, skipped
@@ -44,6 +68,11 @@ export interface GitErrorOptions {
   exitCode?: number;
   /** Stderr of the failed command. */
   stderr: string;
+  /** True when the command was killed for exceeding the per-command
+   * timeout, instead of failing on its own. */
+  isTimeout?: boolean;
+  /** The per-command timeout in milliseconds, when the command timed out. */
+  timeoutMs?: number;
   /** Original execa error. */
   cause?: unknown;
 }
@@ -51,7 +80,10 @@ export interface GitErrorOptions {
 /**
  * Typed error for a failed git invocation: carries the arguments, the
  * working directory, the exit code, and stderr so callers can react to
- * specific failures (e.g. a host rejecting partial clones).
+ * specific failures (e.g. a host rejecting partial clones). A command
+ * killed by the per-command timeout is marked with `isTimeout` and
+ * reported distinctly (`timed out after N s`), so the cause of the
+ * failure — a hang, not an error git produced — stays visible.
  */
 export class GitError extends Error {
   /** Args of the failing git invocation (without the git binary). */
@@ -62,19 +94,32 @@ export class GitError extends Error {
   readonly exitCode?: number;
   /** Stderr of the failed command. */
   readonly stderr: string;
+  /** True when the command was killed for exceeding the per-command
+   * timeout, instead of failing on its own. */
+  readonly isTimeout: boolean;
+  /** The per-command timeout in milliseconds, when the command timed out. */
+  readonly timeoutMs: number | undefined;
 
   constructor(args: string[], options: GitErrorOptions) {
     const where = options.cwd === undefined ? '' : ` in ${options.cwd}`;
-    const status = options.exitCode === undefined ? 'could not start' : `exit ${options.exitCode}`;
-    const detail = options.stderr.trim() === '' ? '' : `: ${options.stderr.trim()}`;
-    super(`git ${args.join(' ')} failed with ${status}${where}${detail}`, {
-      cause: options.cause,
-    });
+    let message: string;
+    if (options.isTimeout === true) {
+      const seconds = (options.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS) / 1000;
+      message = `git ${args.join(' ')} timed out after ${seconds.toFixed(seconds < 1 ? 1 : 0)} s${where}`;
+    } else {
+      const status =
+        options.exitCode === undefined ? 'could not start' : `exit ${options.exitCode}`;
+      const detail = options.stderr.trim() === '' ? '' : `: ${options.stderr.trim()}`;
+      message = `git ${args.join(' ')} failed with ${status}${where}${detail}`;
+    }
+    super(message, { cause: options.cause });
     this.name = 'GitError';
     this.args = args;
     this.cwd = options.cwd;
     this.exitCode = options.exitCode;
     this.stderr = options.stderr;
+    this.isTimeout = options.isTimeout ?? false;
+    this.timeoutMs = options.timeoutMs;
   }
 }
 
@@ -93,19 +138,25 @@ function sleep(ms: number): Promise<void> {
 /**
  * Converts a thrown execa error into the module's typed `GitError`;
  * errors that are not execa failures (e.g. a broken spawn) propagate
- * unchanged — they are not transient and are not retried.
+ * unchanged — they are not transient and are not retried. A command
+ * killed by the per-command timeout (execa's `timedOut`) is marked
+ * `isTimeout`, so callers and the retry classification can tell a
+ * hang from an error git produced itself.
  *
  * @param args - Args of the failing git invocation.
  * @param repoDir - Directory the command ran in.
+ * @param timeoutMs - The per-command timeout in effect, for the error.
  * @param error - The thrown error.
  * @returns The typed git error.
  */
-function toGitError(args: string[], repoDir: string, error: unknown): GitError {
+function toGitError(args: string[], repoDir: string, timeoutMs: number, error: unknown): GitError {
   if (error instanceof ExecaError) {
     return new GitError(args, {
       cwd: repoDir,
       exitCode: error.exitCode,
       stderr: error.stderr ?? '',
+      isTimeout: error.timedOut,
+      timeoutMs: error.timedOut ? timeoutMs : undefined,
       cause: error,
     });
   }
@@ -114,7 +165,11 @@ function toGitError(args: string[], repoDir: string, error: unknown): GitError {
 
 /**
  * Runs a git command in the given directory and returns its stdout
- * (without the trailing newline). Transient failures — a refused or
+ * (without the trailing newline). Every command runs under the
+ * per-command timeout (`DEFAULT_GIT_TIMEOUT_MS`, or
+ * `options.timeoutMs`): one still running after it is killed and
+ * surfaces as a non-retried `GitError` — a hang is a failure, not
+ * something to wait out. Transient failures — a refused or
  * timed-out connection, a dropped remote, a partial clone whose
  * on-demand blob fetch fails — are retried with the built-in backoff
  * (~1s, ~5s, ~30s, each with jitter), logging a warning per retry, and
@@ -126,23 +181,25 @@ function toGitError(args: string[], repoDir: string, error: unknown): GitError {
  * @param args - Arguments passed to git, e.g. `['rev-parse', 'HEAD']`.
  * @param options - Executable overrides.
  * @returns The command's stdout.
- * @throws {GitError} When the command fails (non-zero exit or could not
- * start), after all retries are exhausted for a transient failure.
+ * @throws {GitError} When the command fails (non-zero exit, could not
+ * start, or timed out), after all retries are exhausted for a transient
+ * failure.
  */
 export async function runGit(
   repoDir: string,
   args: string[],
   options: RunGitOptions = {},
 ): Promise<string> {
-  const { gitBinary = 'git', env, retryDelays } = options;
+  const { gitBinary = 'git', env, retryDelays, timeoutMs } = options;
   const delays = retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
+  const timeout = timeoutMs === undefined ? DEFAULT_GIT_TIMEOUT_MS : timeoutMs;
   let attempt = 0;
   for (;;) {
     try {
-      const result = await execa(gitBinary, args, { cwd: repoDir, env });
+      const result = await execa(gitBinary, args, { cwd: repoDir, env, timeout });
       return result.stdout;
     } catch (error) {
-      const gitError = toGitError(args, repoDir, error);
+      const gitError = toGitError(args, repoDir, timeout, error);
       const delayMs = delays[attempt];
       if (delayMs === undefined || !shouldRetryGitError(gitError)) {
         throw gitError;

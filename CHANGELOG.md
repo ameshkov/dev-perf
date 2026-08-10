@@ -10,6 +10,12 @@ and this project adheres to
 
 ### Changed
 
+- Git operations now run under a per-command timeout (5 minutes by
+  default): a git command that hangs instead of completing — e.g. a
+  `git log` on a partial clone whose lazy blob fetch stalls against an
+  unresponsive promisor remote — is killed and fails the analysis with
+  a `git ... timed out after N s` error, just like any other git
+  failure, instead of blocking the run forever.
 - The viewer's `Commits per repository` chart now spans the full
   chart width, and its filter shows the short repository name (the
   last path segment, as in the chart legend) instead of the full

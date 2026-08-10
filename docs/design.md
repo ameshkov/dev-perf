@@ -201,6 +201,15 @@ and uses a logical `pi/home/` agent home that is never created on disk
 - Per-commit diffs (only when the LLM layer or verbose output needs them, fetched
   lazily): `git show --format=fuller --stat --patch <sha>`.
 
+All git invocations funnel through a single `runGit` wrapper
+(`src/repo/git.ts`): every command runs under a per-command timeout (5 minutes by
+default), so a hung git process — e.g. a `git log --numstat` on a partial clone
+whose lazy blob fetch stalls against an unresponsive promisor remote — is killed
+and surfaces as a typed `GitError` (`timed out after N s`) instead of blocking
+the run. Transient failures (refused/timed-out connections, a dropped remote, a
+failing on-demand blob fetch) are retried with a hard-coded backoff (1s, 5s, 30s
+with jitter); a timed-out command is deliberately *not* retried.
+
 ### 5.2 Metrics (per user)
 
 Core set (v1):

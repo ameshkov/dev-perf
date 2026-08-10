@@ -5,8 +5,10 @@
  * fetch failed) and how long to wait between attempts. `runGit` in
  * `./git.ts` re-runs a failing command through these defaults — 1s,
  * 5s, 30s, each with jitter — so a short network hiccup does not fail
- * an analysis outright. The backoff is hard-coded here; no
- * configuration controls it.
+ * an analysis outright. A command killed by the per-command timeout is
+ * **not** retried: a hang is a stuck operation, and re-running it
+ * would just wait out another timeout window. The backoff is
+ * hard-coded here; no configuration controls it.
  */
 import type { GitError } from './git.js';
 
@@ -52,7 +54,9 @@ const TRANSIENT_PATTERNS: readonly RegExp[] = [
 
 /**
  * Whether a failed git command looks transient and so should be
- * retried: the error message or stderr carries one of
+ * retried: either a command killed by the per-command timeout — always
+ * a failure, never retried, since a stuck command would just hang
+ * again — or an error whose message or stderr carries one of
  * `TRANSIENT_PATTERNS` (a dropped/timed-out connection, a refused
  * host, or a partial clone's failing on-demand blob fetch). Permanent
  * failures — unknown repository, auth failure, a rejected
@@ -63,6 +67,9 @@ const TRANSIENT_PATTERNS: readonly RegExp[] = [
  * @returns True when retrying the command makes sense.
  */
 export function shouldRetryGitError(error: GitError): boolean {
+  if (error.isTimeout) {
+    return false;
+  }
   const text = `${error.message}\n${error.stderr}`;
   return TRANSIENT_PATTERNS.some((pattern) => pattern.test(text));
 }
