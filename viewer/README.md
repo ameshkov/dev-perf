@@ -12,8 +12,11 @@ subset of repositories and/or contributors — the overview KPIs, team
 dynamics, distributions, and individual reports all recompute for the
 selection. The panel is hidden by default and closes on an outside
 click, on Escape, or when a section link navigates; the overview meta
-bar shows one chip per repository even when a repository was analyzed
-on several branches.
+bar shows one chip per analyzed repository spec — a repository
+analyzed on several branches, or with a different base scoping or
+ignore filters, shows one distinguishable chip per spec — and long
+lists collapse behind a single "N repositories" chip that expands on
+click.
 
 Everything is parsed and rendered locally in the browser — reports
 never leave your machine. Both the current report schema (v3 trend

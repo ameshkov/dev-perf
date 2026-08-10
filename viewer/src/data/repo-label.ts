@@ -3,9 +3,10 @@
  * as given on the command line is shortened to `host/org/repo` — no
  * scheme, no user part, no port, no `.git` suffix. Local paths and
  * bare names pass through unchanged. Mirrors `src/compile/
- * repo-label.ts` of the parent CLI. Also deduplicates the repository
- * chips of the report meta bar, where the same repository may appear
- * once per analyzed branch.
+ * repo-label.ts` of the parent CLI. Also builds the repository chips
+ * of the report meta bar: one chip per analyzed spec, so the same
+ * repository analyzed on several branches or with different base
+ * scoping or ignore filters shows one distinguishable chip per spec.
  */
 import type { RepoSpec } from '../report/index.js';
 
@@ -63,63 +64,57 @@ export function repoName(repo: string): string {
   return index === -1 ? label : label.slice(index + 1);
 }
 
-/** One deduplicated repository chip of the report meta bar. */
+/** One repository chip of the report meta bar, one per analyzed spec. */
 export interface RepoChip {
   /** The short label shown on the chip. */
   label: string;
-  /** The tooltip: the clone target and the analyzed branches. */
+  /** The non-default spec fields shown after the label — branch,
+   * base, ignored paths; absent when the spec carries none. */
+  detail?: string;
+  /** The tooltip: the clone target plus the non-default fields. */
   title: string;
 }
 
-/** One repository label plus the specs recorded under it. */
-interface RepoLabelGroup {
-  /** The first spec of the group; its clone target starts the tooltip. */
-  first: RepoSpec;
-  /** The analyzed branches of the group's specs, in report order. */
-  branches: string[];
-}
-
 /**
- * The tooltip of one repository chip: the clone target as given on the
- * command line, with the analyzed branches in parentheses when any
- * spec names one.
+ * The non-default fields of one repository spec, mirroring the parent
+ * CLI's `repoSpecLabel`: `branch: <name>`, `base: <name>` (an empty
+ * base — the full-history opt-out — reads `base: full history`), and
+ * `ignore: <paths>`.
  *
- * @param group - The specs behind one label, in report order.
- * @returns The tooltip text.
+ * @param spec - The repository spec as recorded in the report.
+ * @returns One entry per set field, in display order.
  */
-function chipTitle(group: RepoLabelGroup): string {
-  if (group.branches.length === 0) {
-    return group.first.repo;
+function specExtras(spec: RepoSpec): string[] {
+  const extras: string[] = [];
+  if (spec.branch !== undefined) {
+    extras.push(`branch: ${spec.branch}`);
   }
-  return `${group.first.repo} (${group.branches.join(', ')})`;
+  if (spec.base !== undefined) {
+    extras.push(`base: ${spec.base === '' ? 'full history' : spec.base}`);
+  }
+  if (spec.ignore !== undefined && spec.ignore.length > 0) {
+    extras.push(`ignore: ${spec.ignore.join(', ')}`);
+  }
+  return extras;
 }
 
 /**
- * The deduplicated repository chips of the meta bar: one chip per
- * repository label, in first-seen order, even when the same repository
- * was analyzed more than once (one spec per branch). The tooltip keeps
- * the full clone target and the analyzed branches.
+ * The repository chips of the meta bar: one chip per analyzed spec, in
+ * report order, so the same repository analyzed more than once (one
+ * spec per branch, base scoping, or ignore filter) shows one chip per
+ * spec. The chip carries the short label, the spec's non-default
+ * fields as a visible detail, and the full spec as the tooltip.
  *
  * @param repos - Repository specs as recorded in the report.
- * @returns One chip per distinct repository label.
+ * @returns One chip per spec.
  */
 export function repoChips(repos: readonly RepoSpec[]): RepoChip[] {
-  const chips: RepoChip[] = [];
-  const groups = new Map<string, RepoLabelGroup>();
-  for (const spec of repos) {
-    const label = repoLabel(spec.repo);
-    const group = groups.get(label);
-    if (group === undefined) {
-      groups.set(label, {
-        first: spec,
-        branches: spec.branch === undefined ? [] : [spec.branch],
-      });
-    } else if (spec.branch !== undefined) {
-      group.branches.push(spec.branch);
-    }
-  }
-  for (const [label, group] of groups) {
-    chips.push({ label, title: chipTitle(group) });
-  }
-  return chips;
+  return repos.map((spec) => {
+    const detail = specExtras(spec).join(', ');
+    return {
+      label: repoLabel(spec.repo),
+      ...(detail === '' ? {} : { detail }),
+      title: detail === '' ? spec.repo : `${spec.repo} (${detail})`,
+    };
+  });
 }

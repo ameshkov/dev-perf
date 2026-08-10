@@ -1,9 +1,9 @@
 /**
- * Tests for the dashboard: the meta bar (with deduplicated repository
- * chips), the KPI grid values, the two sections, the navigation panel
- * (hidden by default, closed on Escape, backdrop click and section
- * navigation), and the repository/contributor scope filters (chips,
- * reset).
+ * Tests for the dashboard: the meta bar (per-spec repository chips,
+ * collapsed behind a toggle when many), the KPI grid values, the two
+ * sections, the navigation panel (hidden by default, closed on
+ * Escape, backdrop click and section navigation), and the
+ * repository/contributor scope filters (chips, reset).
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,7 +70,7 @@ describe('Dashboard', () => {
     expect(screen.getByText('generated Mar 1, 2026, 12:00 AM UTC')).toBeDefined();
   });
 
-  it('renders one meta chip per repository even with several specs per repo', () => {
+  it('renders one meta chip per repository spec, with the extras visible', () => {
     const multiSpec = buildTrendReport({
       repos: [
         { repo: 'https://github.com/acme/api.git', branch: 'master' },
@@ -82,14 +82,32 @@ describe('Dashboard', () => {
     const bar = container.querySelector('.meta-bar');
     expect(bar).not.toBeNull();
     const chips = [...(bar as HTMLElement).querySelectorAll('.meta-chip')];
-    const api = chips.filter((chip) => chip.textContent === 'github.com/acme/api');
-    expect(api).toHaveLength(1);
-    expect(api[0]?.getAttribute('title')).toBe(
-      'https://github.com/acme/api.git (master, release/v2)',
-    );
+    const api = chips.filter((chip) => chip.textContent?.startsWith('github.com/acme/api'));
+    expect(api).toHaveLength(2);
+    expect(api[0]?.textContent).toBe('github.com/acme/api · branch: master');
+    expect(api[0]?.getAttribute('title')).toBe('https://github.com/acme/api.git (branch: master)');
+    expect(api[1]?.textContent).toBe('github.com/acme/api · branch: release/v2, base: master');
     const web = chips.filter((chip) => chip.textContent === 'github.com/acme/web');
     expect(web).toHaveLength(1);
     expect(web[0]?.getAttribute('title')).toBe('https://github.com/acme/web.git');
+  });
+
+  it('collapses a long repository list behind a toggle in the meta bar', () => {
+    const repos = Array.from({ length: 7 }, (_, index) => ({
+      repo: `https://github.com/acme/repo-${index}.git`,
+    }));
+    const many = buildTrendReport({ repos });
+    const { container } = renderDashboard({ report: many, navOpen: false });
+    const bar = container.querySelector('.meta-bar') as HTMLElement;
+    const repoChipCount = (): number =>
+      [...bar.querySelectorAll('.meta-chip')].filter((chip) =>
+        chip.textContent?.startsWith('github.com/acme/repo-'),
+      ).length;
+    expect(screen.getByRole('button', { name: '7 repositories' })).toBeDefined();
+    expect(repoChipCount()).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: '7 repositories' }));
+    expect(repoChipCount()).toBe(7);
   });
 
   it('renders the KPI grid with the exact totals and the bus factor', () => {

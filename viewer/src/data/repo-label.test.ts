@@ -1,7 +1,7 @@
 /**
  * Tests for repository display labels and names: remote URL
- * shortening, local-path pass-through, and the deduplicated meta bar
- * chips.
+ * shortening, local-path pass-through, and the per-spec meta bar
+ * chips with their visible branch/base/ignore extras.
  */
 import { describe, expect, it } from 'vitest';
 import { repoChips, repoLabel, repoName } from './index.js';
@@ -44,25 +44,42 @@ describe('repoName', () => {
 });
 
 describe('repoChips', () => {
-  it('keeps one chip per distinct label, in first-seen order', () => {
+  it('keeps one chip per spec, in report order', () => {
     const chips = repoChips([
       { repo: 'https://github.com/acme/api.git', branch: 'master' },
       { repo: 'https://github.com/acme/web.git' },
       { repo: 'git@github.com:acme/api.git', branch: 'release/v2' },
     ]);
-    expect(chips.map((chip) => chip.label)).toEqual(['github.com/acme/api', 'github.com/acme/web']);
-  });
-
-  it('collects the branches of every spec behind a label into the tooltip', () => {
-    const [chip] = repoChips([
-      { repo: 'https://github.com/acme/api.git', branch: 'master' },
-      { repo: 'https://github.com/acme/api.git', branch: 'release/v2', base: 'master' },
+    expect(chips.map((chip) => chip.label)).toEqual([
+      'github.com/acme/api',
+      'github.com/acme/web',
+      'github.com/acme/api',
     ]);
-    expect(chip.title).toBe('https://github.com/acme/api.git (master, release/v2)');
   });
 
-  it('uses the bare clone target as the tooltip without branches', () => {
+  it('shows the branch, base and ignore extras as the chip detail', () => {
+    const [chip] = repoChips([
+      {
+        repo: 'https://github.com/acme/api.git',
+        branch: 'release/v2',
+        base: 'master',
+        ignore: ['vendor', 'dist'],
+      },
+    ]);
+    expect(chip.detail).toBe('branch: release/v2, base: master, ignore: vendor, dist');
+    expect(chip.title).toBe(
+      'https://github.com/acme/api.git (branch: release/v2, base: master, ignore: vendor, dist)',
+    );
+  });
+
+  it('reads an empty base as the full-history opt-out', () => {
+    const [chip] = repoChips([{ repo: 'https://github.com/acme/api.git', base: '' }]);
+    expect(chip.detail).toBe('base: full history');
+  });
+
+  it('omits the detail and uses the bare clone target as the tooltip without extras', () => {
     const [chip] = repoChips([{ repo: 'https://github.com/acme/web.git' }]);
+    expect(chip.detail).toBeUndefined();
     expect(chip.title).toBe('https://github.com/acme/web.git');
   });
 });

@@ -4,7 +4,13 @@
  * numbers, so every aggregate can be asserted exactly.
  */
 import { describe, expect, it } from 'vitest';
-import { buildDemoReport } from '../../test/report-builder.js';
+import {
+  buildDemoReport,
+  buildDeterministic,
+  buildRepository,
+  buildTrendReport,
+  buildUser,
+} from '../../test/report-builder.js';
 import { buildChartData } from './index.js';
 
 const data = buildChartData(buildDemoReport());
@@ -145,6 +151,50 @@ describe('languages, repos and users', () => {
       ],
       perPeriodCommits: [3, 3],
     });
+  });
+
+  it('sums the per-period commits of the branches of one repository', () => {
+    // The same repository URL analyzed on several branches appears as
+    // one entry per branch; the per-period timeline must cover all of
+    // them, not just the first branch.
+    const repo = 'ssh://git@host:7999/extensions/browser-extension.git';
+    const report = buildTrendReport({
+      periods: [
+        {
+          since: '2026-01-01T00:00:00.000Z',
+          until: '2026-01-31T23:59:59.999Z',
+          repositories: [
+            buildRepository({
+              repo,
+              branch: 'release/v5.5',
+              users: [buildUser({ deterministic: buildDeterministic({ commits: 2 }) })],
+            }),
+            buildRepository({
+              repo,
+              branch: 'stable/v5.4',
+              users: [buildUser({ deterministic: buildDeterministic({ commits: 3 }) })],
+            }),
+          ],
+        },
+        {
+          since: '2026-02-01T00:00:00.000Z',
+          until: '2026-02-28T23:59:59.999Z',
+          repositories: [
+            buildRepository({
+              repo,
+              branch: 'master',
+              users: [buildUser({ deterministic: buildDeterministic({ commits: 4 }) })],
+            }),
+          ],
+        },
+      ],
+    });
+    const sut = buildChartData(report);
+
+    expect(sut.repos).toHaveLength(1);
+    expect(sut.repos[0].commits).toBe(9);
+    // January sums the two branches (2 + 3), February carries the single branch.
+    expect(sut.repos[0].perPeriodCommits).toEqual([5, 4]);
   });
 
   it('orders master users by contributions and aligns their per-period points', () => {

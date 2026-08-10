@@ -15,12 +15,12 @@ import {
   formatInt,
   formatNumber,
   formatRange,
-  repoChips,
 } from '../data/index.js';
 import type { KpiItem } from '../components/index.js';
 import { KpiGrid } from '../components/index.js';
 import { TeamSection } from '../team/index.js';
 import { IndividualSection } from '../individual/index.js';
+import { RepoChips } from './repo-chips.js';
 import { useReportScope } from './report-scope.js';
 import { SectionNav } from './section-nav.js';
 import type { SectionNavItem } from './section-nav.js';
@@ -108,11 +108,7 @@ function metaBar(data: ChartData, fileName: string): ReactElement {
       <span className="meta-chip meta-chip-file" title={`Loaded from ${fileName}`}>
         {fileName}
       </span>
-      {repoChips(parameters.repos).map((chip) => (
-        <span key={chip.label} className="meta-chip" title={chip.title}>
-          {chip.label}
-        </span>
-      ))}
+      <RepoChips repos={parameters.repos} />
       <span className="meta-chip">{formatRange(parameters.since, parameters.until)}</span>
       <span className="meta-chip">{unit}</span>
       <span className="meta-chip">{llm}</span>

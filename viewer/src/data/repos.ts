@@ -48,7 +48,9 @@ function accumulateRepository(summary: RepoAccumulator, repository: Repository):
 /**
  * The repository summary of one accumulator: the aggregated totals,
  * the top 3 languages, and the per-period commit counts aligned with
- * the report's periods.
+ * the report's periods. When the same repository URL is analyzed on
+ * several branches (aliased specs), the per-period counts are the sum
+ * across those branch entries, so the timeline matches the total.
  *
  * @param repo - The repository as given on the command line.
  * @param summary - The accumulator.
@@ -70,9 +72,10 @@ function toRepoSummary(
       .sort(([aName, aLines], [bName, bLines]) => bLines - aLines || aName.localeCompare(bName))
       .slice(0, 3)
       .map(([language, linesAdded]) => ({ language, linesAdded })),
-    perPeriodCommits: periods.map(
-      (period) =>
-        period.repositories.find((repository) => repository.repo === repo)?.stats.totalCommits ?? 0,
+    perPeriodCommits: periods.map((period) =>
+      period.repositories
+        .filter((repository) => repository.repo === repo)
+        .reduce((sum, repository) => sum + repository.stats.totalCommits, 0),
     ),
   };
 }
@@ -80,7 +83,10 @@ function toRepoSummary(
 /**
  * Aggregates every repository across all periods: commits, LLM
  * contributions and languages are summed, user identities are counted
- * distinctly.
+ * distinctly. When the same repository URL is analyzed on several
+ * branches (aliased specs), all branch entries contribute to the one
+ * summary, so the totals and the per-period timeline cover the whole
+ * repository.
  *
  * @param report - The report.
  * @returns The repository summaries, sorted by LLM contributions

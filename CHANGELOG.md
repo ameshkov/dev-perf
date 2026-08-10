@@ -10,6 +10,12 @@ and this project adheres to
 
 ### Changed
 
+- The `Commits per period, one line per repository` chart (and the
+  viewer's `Commits per repository` chart) now shows the full commit
+  count of a repository that is analyzed on several branches: when the
+  same repository URL appears with different branches, each period's
+  point sums the branches instead of showing only the first branch's
+  commits, so the timeline matches the repository's total.
 - Git operations now run under a per-command timeout (5 minutes by
   default): a git command that hangs instead of completing — e.g. a
   `git log` on a partial clone whose lazy blob fetch stalls against an
@@ -22,6 +28,12 @@ and this project adheres to
   clone URL; hovering a chip still shows the full URL.
 - The viewer's intro now links the `dev-perf` name to the project's
   GitHub repository.
+- The viewer's meta bar now collapses long repository lists behind a
+  single "N repositories" chip that expands on click, and shows one
+  chip per analyzed repository spec: when the same repository was
+  analyzed with different branches, base branches, or ignore filters,
+  each spec gets its own chip with those fields visible next to the
+  repository name.
 - Contribution points now take complexity into account: the compile
   command's `Weighted points` and the viewer's `Points` charts scale
   each contribution's size weight (xs=1, s=2, m=3, l=5, xl=8) by its

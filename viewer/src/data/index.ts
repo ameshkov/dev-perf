@@ -16,5 +16,6 @@ export {
   toggleScopedValue,
 } from './filter.js';
 export { flagsPerContribution, signalShareValues } from './signals.js';
+export type { RepoChip } from './repo-label.js';
 export { repoChips, repoLabel, repoName } from './repo-label.js';
 export { formatCompact, formatDateTime, formatInt, formatNumber, formatRange } from './format.js';

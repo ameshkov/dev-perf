@@ -88,7 +88,9 @@ export interface RepoSummary {
   points: number;
   /** Top languages by lines added, best first (top 3). */
   topLanguages: Array<{ language: string; linesAdded: number }>;
-  /** Commits per period, aligned with the periods of the report. */
+  /** Commits per period, aligned with the periods of the report; when
+   * the same repository URL is analyzed on several branches, each
+   * period sums the branch entries. */
   perPeriodCommits: number[];
 }
 

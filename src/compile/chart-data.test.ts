@@ -275,6 +275,65 @@ describe('buildChartData', () => {
     expect(data.repos[0].topLanguages[0]).toEqual({ language: 'TypeScript', linesAdded: 70 });
   });
 
+  it('sums the per-period commits of the branches of one repository', () => {
+    // The same repository URL analyzed on several branches appears as
+    // one entry per branch; the per-period timeline must cover all of
+    // them, not just the first branch.
+    const report = buildTrendReport({
+      periods: [
+        {
+          since: '2026-01-01T00:00:00.000Z',
+          until: '2026-01-31T23:59:59.999Z',
+          repositories: [
+            {
+              repo: 'ssh://git@host:7999/extensions/browser-extension.git',
+              users: [
+                {
+                  name: 'Alice',
+                  emails: ['alice@example.com'],
+                  deterministic: { commits: 2, linesAdded: 20, activeDays: ['2026-01-02'] },
+                },
+              ],
+            },
+            {
+              repo: 'ssh://git@host:7999/extensions/browser-extension.git',
+              users: [
+                {
+                  name: 'Bob',
+                  emails: ['bob@example.com'],
+                  deterministic: { commits: 3, linesAdded: 30, activeDays: ['2026-01-03'] },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          since: '2026-02-01T00:00:00.000Z',
+          until: '2026-02-28T23:59:59.999Z',
+          repositories: [
+            {
+              repo: 'ssh://git@host:7999/extensions/browser-extension.git',
+              users: [
+                {
+                  name: 'Carol',
+                  emails: ['carol@example.com'],
+                  deterministic: { commits: 4, linesAdded: 40, activeDays: ['2026-02-02'] },
+                  llm: { status: 'skipped', contributions: [] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const data = buildChartData(filterReport(report, { emailMap: {} }));
+
+    expect(data.repos).toHaveLength(1);
+    expect(data.repos[0].commits).toBe(9);
+    // January sums the two branches (2 + 3), February carries the single branch.
+    expect(data.repos[0].perPeriodCommits).toEqual([5, 4]);
+  });
+
   it('sorts repositories by contributions, not commits', () => {
     const report = buildTrendReport({
       periods: [
