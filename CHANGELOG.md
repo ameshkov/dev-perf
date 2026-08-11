@@ -8,6 +8,19 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- The built-in extension→language map now recognizes Apple Xcode and
+  localization files (`pbxproj`, `strings`, `plist`, `xcconfig`, …),
+  Unity editor-serialized assets (scenes, prefabs, animators,
+  materials, …), and markup/media files (`svg`, `xsd`, images, fonts,
+  audio, video) — platform, resource, and asset files are reported
+  under their real names instead of flooding reports as
+  `Text`/`Unknown`.
+- Unity's per-asset `.meta` sidecar files are now excluded from the
+  per-language stats as generated; they still count toward the
+  aggregate totals and are reported under the `generated` stat.
+
 ## [v1.2.0] - 2026-08-11
 
 ### Added

@@ -14,8 +14,7 @@
  * flagged by average line length, `DO NOT EDIT` headers by probes).
  * Content probes are a deliberate future extension: the deterministic
  * layer currently sees only paths.
- */
-import type { LanguageContribution } from '../report/index.js';
+ */ import type { LanguageContribution } from '../report/index.js';
 import type { Commit } from './commits.js';
 
 /** Lock-file basenames a package manager writes, at any depth. */
@@ -82,6 +81,11 @@ const VENDORED_DOMAIN_PATTERN = /(?:^|\/)vendor\/[^/]+\.[^/]+\//;
 /** Minified JS/CSS named with the conventional `.min.` segment. */
 const MINIFIED_PATTERN = /\.min\.(?:js|mjs|cjs|css)$/;
 
+/** Unity editor-generated `.meta` sidecars, one per imported asset
+ * (`Assets/Sprites/hero.png` gets `hero.png.meta` with its GUID and
+ * importer settings); they churn on every asset add or move. */
+const UNITY_META_SUFFIX = '.meta';
+
 /** Source maps named after their source (`app.js.map`). */
 const SOURCE_MAP_PATTERN = /\.(?:js|mjs|cjs|css|ts|tsx)\.map$/;
 
@@ -98,13 +102,15 @@ const CODEGEN_SUFFIXES = [
 /**
  * Whether a file path is generated per the built-in path heuristic:
  * the basename is matched against the lock-file and named-generated
- * sets, snapshot and minified/source-map suffixes, then the path is
- * checked for generated dependency/vendored directory segments and
- * codegen suffixes. Matching is case-insensitive.
+ * sets, snapshot, Unity `.meta` sidecar, and minified/source-map
+ * suffixes, then the path is checked for generated
+ * dependency/vendored directory segments and codegen suffixes.
+ * Matching is case-insensitive.
  *
  * @param filePath - Path as reported by git numstat.
- * @returns True when the file is a lock file, test snapshot, minified
- * or source-map artifact, vendored dependency, or compiler output.
+ * @returns True when the file is a lock file, test snapshot, Unity
+ * `.meta` sidecar, minified or source-map artifact, vendored
+ * dependency, or compiler output.
  */
 export function isGeneratedPath(filePath: string): boolean {
   const lowered = filePath.toLowerCase();
@@ -113,6 +119,9 @@ export function isGeneratedPath(filePath: string): boolean {
     return true;
   }
   if (baseName.endsWith('.snap')) {
+    return true;
+  }
+  if (baseName.endsWith(UNITY_META_SUFFIX)) {
     return true;
   }
   if (MINIFIED_PATTERN.test(baseName) || SOURCE_MAP_PATTERN.test(baseName)) {

@@ -284,6 +284,9 @@ suggests — are classified by a built-in path heuristic
   `uv.lock`, `flake.lock`, `go.sum` / `go.work.sum`, `Package.resolved`,
   `.terraform.lock.hcl`, and friends.
 - **Test snapshots** (`*.snap`) written by snapshot runners.
+- **Unity editor `.meta` sidecars** (`*.meta`), one per imported asset —
+  the GUID/importer files Unity writes and rewrites on every asset add
+  or move; the `.cs`/`.png`/… asset itself stays counted.
 - **Minified and source-map artifacts** (`*.min.js` / `*.min.css`,
   `*.js.map`), named build-tool outputs (`lcov.info`, Yarn PnP
   files, `gradlew` / `mvnw` wrappers).

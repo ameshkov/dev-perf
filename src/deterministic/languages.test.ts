@@ -48,8 +48,43 @@ describe('languageForPath', () => {
     expect(languageForPath('Resources.resx')).toBe('XML');
     expect(languageForPath('Installer/Bundle.wxs')).toBe('XML');
     expect(languageForPath('packages.config')).toBe('Text');
-    expect(languageForPath('project.pbxproj')).toBe('Text');
     expect(languageForPath('assets/firmware.bin')).toBe('Binary');
+  });
+
+  it('maps Apple Xcode and localization files', () => {
+    expect(languageForPath('project.pbxproj')).toBe('Xcode Project');
+    expect(languageForPath('App.xcworkspace/contents.xcworkspacedata')).toBe('Xcode Workspace');
+    expect(languageForPath('App.xcscheme')).toBe('Xcode Scheme');
+    expect(languageForPath('Config.xcconfig')).toBe('Xcode Config');
+    expect(languageForPath('en.lproj/Localizable.strings')).toBe('Apple Localization');
+    expect(languageForPath('en.lproj/Localizable.stringsdict')).toBe('Apple Localization');
+    expect(languageForPath('Info.plist')).toBe('Apple Property List');
+    expect(languageForPath('App.entitlements')).toBe('Apple Entitlements');
+  });
+
+  it('maps Unity editor-serialized assets to a single Unity bucket', () => {
+    expect(languageForPath('Assets/Scenes/Main.unity')).toBe('Unity');
+    expect(languageForPath('Assets/Enemy.prefab')).toBe('Unity');
+    expect(languageForPath('Assets/Scene.asset')).toBe('Unity');
+    expect(languageForPath('Assets/Walk.anim')).toBe('Unity');
+    expect(languageForPath('Assets/Walk.controller')).toBe('Unity');
+    expect(languageForPath('Assets/Material.mat')).toBe('Unity');
+    expect(languageForPath('Assets/Style.uss')).toBe('Unity');
+    expect(languageForPath('Assets/UI.uxml')).toBe('Unity UI');
+    expect(languageForPath('Assets/Gray.shadergraph')).toBe('Unity Shader');
+    expect(languageForPath('Assets/Player.cs')).toBe('C#');
+  });
+
+  it('maps markup and media assets out of Unknown', () => {
+    expect(languageForPath('icon.svg')).toBe('SVG');
+    expect(languageForPath('schema.xsd')).toBe('XML Schema');
+    expect(languageForPath('photo.png')).toBe('Image');
+    expect(languageForPath('photo.jpeg')).toBe('Image');
+    expect(languageForPath('font.ttf')).toBe('Font');
+    expect(languageForPath('font.woff2')).toBe('Font');
+    expect(languageForPath('music.ogg')).toBe('Audio');
+    expect(languageForPath('clip.mp4')).toBe('Video');
+    expect(languageForPath('doc.pdf')).toBe('PDF');
   });
 
   it('maps C-family variants, Objective-C, and module formats', () => {
@@ -87,8 +122,8 @@ describe('languageForPath', () => {
   it('falls back to Unknown for unrecognized paths', () => {
     expect(languageForPath('noextension')).toBe('Unknown');
     expect(languageForPath('.gitignore')).toBe('Unknown');
-    expect(languageForPath('assets/font.woff2')).toBe('Unknown');
-    expect(languageForPath('image.png')).toBe('Unknown');
+    expect(languageForPath('assets/font.raw')).toBe('Unknown');
+    expect(languageForPath('texture.nomap')).toBe('Unknown');
   });
 });
 

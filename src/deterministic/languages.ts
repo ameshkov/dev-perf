@@ -2,7 +2,10 @@
  * Language identification: a built-in
  * extension→language map, so per-language contribution counts can be
  * computed cloc-style from numstat paths — applied to contributions,
- * not the whole tree.
+ * not the whole tree. The map covers the common programming languages
+ * plus the platform file types that otherwise flood reports as
+ * `Text`/`Unknown`: Apple Xcode and localization files, Unity
+ * editor-serialized assets, markup/media, and documents.
  */
 import type { LanguageContribution } from '../report/index.js';
 import type { Commit } from './commits.js';
@@ -48,7 +51,6 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   rb: 'Ruby',
   php: 'PHP',
   swift: 'Swift',
-  pbxproj: 'Text',
   kt: 'Kotlin',
   kts: 'Kotlin',
   scala: 'Scala',
@@ -77,6 +79,59 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   txt: 'Text',
   config: 'Text',
   bin: 'Binary',
+  // Apple platform files: Xcode project/build configuration and Apple
+  // resource formats — neither code nor plain text. Unity's per-asset
+  // `.meta` sidecars are excluded as generated in
+  // `src/deterministic/generated.ts`, not mapped to a language here.
+  pbxproj: 'Xcode Project',
+  xcworkspacedata: 'Xcode Workspace',
+  xcscheme: 'Xcode Scheme',
+  xcconfig: 'Xcode Config',
+  strings: 'Apple Localization',
+  stringsdict: 'Apple Localization',
+  plist: 'Apple Property List',
+  entitlements: 'Apple Entitlements',
+  // Unity editor-serialized assets: scenes, prefabs, animators, and
+  // the other YAML-ish files the editor rewrites.
+  unity: 'Unity',
+  prefab: 'Unity',
+  asset: 'Unity',
+  anim: 'Unity',
+  controller: 'Unity',
+  overridecontroller: 'Unity',
+  mat: 'Unity',
+  uss: 'Unity',
+  uxml: 'Unity UI',
+  inputactions: 'Unity',
+  asmdef: 'Unity',
+  lighting: 'Unity',
+  shader: 'Unity Shader',
+  shadergraph: 'Unity Shader',
+  // Declarative and markup formats.
+  svg: 'SVG',
+  xsd: 'XML Schema',
+  // Authored media and document assets (contribute line counts only
+  // when git reports them as text; binary media count as touched only).
+  png: 'Image',
+  jpg: 'Image',
+  jpeg: 'Image',
+  gif: 'Image',
+  webp: 'Image',
+  ico: 'Image',
+  ttf: 'Font',
+  otf: 'Font',
+  woff: 'Font',
+  woff2: 'Font',
+  ogg: 'Audio',
+  wav: 'Audio',
+  mp3: 'Audio',
+  aiff: 'Audio',
+  m4a: 'Audio',
+  mp4: 'Video',
+  mov: 'Video',
+  m4v: 'Video',
+  webm: 'Video',
+  pdf: 'PDF',
   vue: 'Vue',
   svelte: 'Svelte',
   astro: 'Astro',

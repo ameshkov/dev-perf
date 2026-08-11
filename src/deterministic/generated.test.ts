@@ -69,6 +69,10 @@ describe('isGeneratedPath', () => {
     ['.pnp.cjs', true],
     ['gradlew', true],
     ['mvnw.cmd', true],
+    // Unity editor-generated `.meta` sidecars, one per imported asset.
+    ['Assets/Sprites/hero.png.meta', true],
+    ['Assets/GameData/Scenes/Main.unity.meta', true],
+    ['Assets/Scripts/Player.cs.meta', true],
     // Handwritten code and config stay.
     ['src/app.ts', false],
     ['src/app.tsx', false],
@@ -84,6 +88,10 @@ describe('isGeneratedPath', () => {
     ['go.work', false],
     ['Makefile', false],
     ['Dockerfile', false],
+    // Unity assets themselves are authored, only their `.meta` is not.
+    ['Assets/Sprites/hero.png', false],
+    ['Assets/GameData/Scenes/Main.unity', false],
+    ['Assets/Scripts/Player.cs', false],
   ])('classifies %s', (filePath, expected) => {
     expect(isGeneratedPath(filePath)).toBe(expected);
   });
