@@ -56,6 +56,8 @@ interface RunConfig {
   cacheDir: string;
   /** Whether a fresh clone and re-analysis are forced. */
   refresh: boolean;
+  /** Per-command timeout for git operations, in seconds, when set. */
+  gitTimeout?: number;
   /** Whether LLM analysis is enabled. */
   llm: boolean;
   /** Model id, when LLM analysis is enabled. */
@@ -128,6 +130,9 @@ export function runConfig(options: ReportOptions, repos: readonly RepoSpec[]): R
     ...(options.output === undefined ? {} : { output: options.output }),
     cacheDir: resolveCacheDir(options.cacheDir),
     refresh: options.refresh ?? false,
+    // Optional keys stay absent (not `undefined`) when unset: the
+    // built-in 30-minute git timeout shows no line.
+    ...(options.gitTimeout === undefined ? {} : { gitTimeout: options.gitTimeout }),
     llm: options.llm,
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.providerUrl === undefined ? {} : { providerUrl: options.providerUrl }),

@@ -38,6 +38,7 @@ environment variables are no longer option sources.
 | `output` | report | string | JSON report file |
 | `cache-dir` | report | string | Default: `<tmpdir>/.dev-cache` |
 | `refresh` | report | boolean | Force re-clone and re-analysis |
+| `git-timeout` | report | number | Per-command git timeout; seconds; default 1800 (30 min); `0` = no timeout |
 | `llm` | report | boolean | LLM analysis enabled; default `true` |
 | `model` / `provider-url` / `api-key` | report | string | Required for LLM analysis; never from your global config |
 | `limit-context` / `limit-output` / `llm-retries` | report | number | Defaults 262144 / 65536 / 2 |
@@ -232,6 +233,27 @@ the same cap, so total concurrency stays predictable. The analyzed range
 is resolved once from the first clone before the parallel phase.
 Duplicate repository specs are analyzed once, with a warning; the report
 lists each repository once.
+
+## Git command timeout (`git-timeout`)
+
+Every git invocation of a run — the clone, the base resolution, and the
+commit read — runs under a per-command timeout, so a git command that
+hangs instead of completing is killed and fails the analysis with a
+`git ... timed out after N s` error instead of blocking the run forever.
+The timeout is a generous 30 minutes by default (1800 s), because a
+clone of a large repository or a `git log --numstat` over a huge history
+can legitimately take a long time. `git-timeout` (seconds) overrides it
+for the whole run:
+
+```yaml
+git-timeout: 3600
+```
+
+Setting `git-timeout: 0` disables the per-command timeout entirely — a
+git command is allowed to run as long as it needs. A command killed by
+the timeout is deliberately *not* retried (a stuck command would just
+hang again); other transient failures (refused or dropped connections)
+are retried with the built-in backoff regardless of the timeout.
 
 ## Compile settings (`compile`)
 

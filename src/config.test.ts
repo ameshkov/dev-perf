@@ -29,6 +29,8 @@ describe('reportOptionsSchema', () => {
       // The session limits stay absent (unlimited) unless configured.
       expect(result.data.llmMaxTime).toBeUndefined();
       expect(result.data.llmMaxTurns).toBeUndefined();
+      // The git timeout stays absent (the built-in 30-minute default).
+      expect(result.data.gitTimeout).toBeUndefined();
     }
   });
 
@@ -228,6 +230,37 @@ describe('reportOptionsSchema', () => {
     }
   });
 
+  it('passes git-timeout through, allows zero, and rejects invalid values', () => {
+    const ok = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'git-timeout': 1800 }),
+    );
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.gitTimeout).toBe(1800);
+    }
+
+    // 0 disables the timeout entirely.
+    const zero = reportOptionsSchema.safeParse(
+      resolveReportOptions({ ...validConfig(), 'git-timeout': 0 }),
+    );
+    expect(zero.success).toBe(true);
+    if (zero.success) {
+      expect(zero.data.gitTimeout).toBe(0);
+    }
+
+    for (const value of [-1, 1.5, 'abc']) {
+      const result = reportOptionsSchema.safeParse(
+        resolveReportOptions({ ...validConfig(), 'git-timeout': value as never }),
+      );
+
+      expect(result.success, `expected git-timeout ${String(value)} to be rejected`).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('gitTimeout');
+      }
+    }
+  });
+
   it('accepts every period unit and rejects unknown units', () => {
     for (const unit of ['day', 'week', 'month', 'quarter', 'year']) {
       const result = reportOptionsSchema.safeParse(
@@ -298,6 +331,7 @@ describe('resolveReportOptions', () => {
       output: 'report.json',
       'cache-dir': '/tmp/cache',
       llm: false,
+      'git-timeout': 600,
       model: 'gpt-4.1',
       'provider-url': 'https://api.example.com/v1',
       'api-key': 'config-secret',
@@ -317,6 +351,7 @@ describe('resolveReportOptions', () => {
       output: 'report.json',
       cacheDir: '/tmp/cache',
       llm: false,
+      gitTimeout: 600,
       model: 'gpt-4.1',
       providerUrl: 'https://api.example.com/v1',
       apiKey: 'config-secret',

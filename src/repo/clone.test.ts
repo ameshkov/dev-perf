@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,7 +11,7 @@ import {
 import { setVerbose } from '../util/log.js';
 import { cacheEntryDir, entryHash, readCloneInfo, writeCloneInfo } from './cache.js';
 import { cloneTarget, ensureClone, isRemoteUrl } from './clone.js';
-import { gitRevParse, runGit } from './git.js';
+import { GitError, gitRevParse, runGit } from './git.js';
 
 /** A fixture with two commits by one author. */
 async function buildFixture(): Promise<FixtureRepo> {
@@ -278,6 +278,40 @@ describe('ensureClone', () => {
       );
     } finally {
       await rm(path.dirname(cacheDir), { recursive: true, force: true });
+    }
+  });
+
+  it('kills a clone that exceeds the configured per-command timeout', async () => {
+    const fixture = await buildFixture();
+    const cacheDir = await tempCacheDir();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-clone-timeout-'));
+    // A fake git that hangs forever (a long sleep); `exec` replaces
+    // the shell so one process covers the whole hang.
+    const shim = path.join(tmp, 'hanging-git');
+    await writeFile(shim, '#!/bin/sh\nexec /bin/sleep 30\n');
+    await chmod(shim, 0o755);
+    try {
+      const startedAt = Date.now();
+      const caught = await ensureClone(fixture.dir, {
+        cacheDir,
+        gitBinary: shim,
+        timeoutMs: 500,
+      }).then(
+        () => null,
+        (error) => error,
+      );
+
+      expect(caught).toBeInstanceOf(GitError);
+      const gitError = caught as GitError;
+      expect(gitError.isTimeout).toBe(true);
+      expect(gitError.timeoutMs).toBe(500);
+      expect(gitError.args[0]).toBe('clone');
+      // The timeout bound the clone: it did not wait out the sleep.
+      expect(Date.now() - startedAt).toBeLessThan(10000);
+    } finally {
+      await removeFixtureRepo(fixture);
+      await rm(path.dirname(cacheDir), { recursive: true, force: true });
+      await rm(tmp, { recursive: true, force: true });
     }
   });
 

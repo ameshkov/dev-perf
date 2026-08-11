@@ -23,12 +23,32 @@ import { logWarn } from '../util/log.js';
 /**
  * Default per-command timeout for git operations, in milliseconds: a
  * git command still running after this is killed and surfaces as a
- * failure. Hard-coded like the retry backoff in `./git-retry.ts` — a
- * hang is rare and the timeout is the safety net, not a budget to
- * tune. Callers can override per call through
- * `RunGitOptions.timeoutMs`; `0` disables the timeout.
+ * failure. A clone of a large repository or a `git log --numstat`
+ * over a huge history can legitimately take a while, so the default
+ * is a generous 30 minutes; callers can override it per call through
+ * `RunGitOptions.timeoutMs`, and the config `git-timeout` key (in
+ * seconds, `0` disables the timeout) sets it for the whole run. The
+ * retry backoff in `./git-retry.ts` stays hard-coded — retry delays
+ * are not a budget users tune.
  */
-const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_GIT_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Builds the git-run options carrying the configured per-command git
+ * timeout: the config `git-timeout` value (seconds) rendered as the
+ * millisecond `timeoutMs` field, or an empty object when unset (the
+ * built-in `DEFAULT_GIT_TIMEOUT_MS` applies). `0` disables the
+ * timeout — a command may run as long as it needs.
+ *
+ * @param gitTimeoutSeconds - The configured `git-timeout`, in seconds;
+ * `undefined` keeps the built-in default, `0` disables the timeout.
+ * @returns The run-git options, spread into every git invocation.
+ */
+export function gitTimeoutOptions(
+  gitTimeoutSeconds: number | undefined,
+): Pick<RunGitOptions, 'timeoutMs'> {
+  return gitTimeoutSeconds === undefined ? {} : { timeoutMs: gitTimeoutSeconds * 1000 };
+}
 
 /**
  * Options accepted by `runGit`.

@@ -64,9 +64,9 @@ interface RepoAnalysis {
  * @param emailMap - The compiled email mappings for identity merging.
  * @param sessionLimit - The run's shared gate bounding concurrent LLM
  * sessions, threaded into this repository's LLM phase.
- * @param gitOptions - Overrides for the git invocations (see `runGit`),
- * unset in production. Tests pass a fake `gitBinary` and `retryDelays:
- * []` to keep fixtures fast.
+ * @param gitOptions - Overrides for the git invocations (see `runGit`):
+ * the run's configured `git-timeout` in production. Tests pass a fake
+ * `gitBinary` and `retryDelays: []` to keep fixtures fast.
  * @returns The resolved range, the period bounds, and the per-period
  * entries.
  * @throws {GitError} When a clone or git log fails, or a bound date
@@ -221,14 +221,15 @@ async function prepareClone(
     refresh: options.refresh,
     branch: repo.branch,
     log,
-    gitBinary: gitOptions.gitBinary,
+    ...(gitOptions.gitBinary === undefined ? {} : { gitBinary: gitOptions.gitBinary }),
+    ...(gitOptions.timeoutMs === undefined ? {} : { timeoutMs: gitOptions.timeoutMs }),
   });
   log.progress(
     `${clone.reused ? 'reused cached clone' : 'cloned'} "${repo.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
   // Resolve the branch-delta base once, after the clone, and log the
   // outcome before the commit scan starts.
-  const { exclude, baseName } = await resolveBranchDelta(repo, clone, log);
+  const { exclude, baseName } = await resolveBranchDelta(repo, clone, log, gitOptions);
   return { clone, exclude, baseName };
 }
 
@@ -345,6 +346,7 @@ function ignoredCommitsSummary(spec: IgnoreCommitsSpec): string {
  * @param repo - The repository spec, as given with its optional base.
  * @param clone - The clone the analysis runs in.
  * @param log - The repository's scoped logger.
+ * @param gitOptions - Overrides for the git invocations (see `runGit`).
  * @returns The base-commit exclusion sha and the resolved base name,
  * when delta analysis is in effect.
  */
@@ -352,8 +354,9 @@ async function resolveBranchDelta(
   repo: RepoSpec,
   clone: CloneResult,
   log: ScopedLog,
+  gitOptions: RunGitOptions,
 ): Promise<{ exclude: string | undefined; baseName: string | undefined }> {
-  const base = await resolveBaseSha(clone.repoDir, repo.base, clone.head);
+  const base = await resolveBaseSha(clone.repoDir, repo.base, clone.head, gitOptions);
   const delta = base !== undefined && base.sha !== clone.head ? base : undefined;
   if (delta !== undefined) {
     log.info(`analyzing "${repo.repo}" excluding base "${delta.base}"`);

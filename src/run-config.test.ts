@@ -43,6 +43,7 @@ describe('runConfig', () => {
         output: 'report.json',
         cacheDir: '/tmp/cache',
         refresh: true,
+        gitTimeout: 600,
         llm: true,
         model: 'gpt-4.1',
         providerUrl: 'https://api.openai.com/v1',
@@ -66,6 +67,7 @@ describe('runConfig', () => {
       output: 'report.json',
       cacheDir: '/tmp/cache',
       refresh: true,
+      gitTimeout: 600,
       llm: true,
       model: 'gpt-4.1',
       providerUrl: 'https://api.openai.com/v1',
@@ -103,6 +105,7 @@ describe('runConfig', () => {
     expect('model' in config).toBe(false);
     expect('providerUrl' in config).toBe(false);
     expect('apiKey' in config).toBe(false);
+    expect('gitTimeout' in config).toBe(false);
     expect('llmMaxTime' in config).toBe(false);
     expect('llmMaxTurns' in config).toBe(false);
   });
@@ -164,6 +167,7 @@ describe('runConfigLines', () => {
         output: 'report.json',
         cacheDir: '/tmp/cache',
         refresh: true,
+        gitTimeout: 600,
         llm: true,
         model: 'gpt-4.1',
         providerUrl: 'https://api.openai.com/v1',
@@ -189,6 +193,7 @@ describe('runConfigLines', () => {
       '  output: report.json',
       '  cache-dir: /tmp/cache',
       '  refresh: true',
+      '  git-timeout: 600',
       '  llm: true',
       '  model: gpt-4.1',
       '  provider-url: https://api.openai.com/v1',

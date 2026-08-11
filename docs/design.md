@@ -204,8 +204,10 @@ and uses a logical `pi/home/` agent home that is never created on disk
   lazily): `git show --format=fuller --stat --patch <sha>`.
 
 All git invocations funnel through a single `runGit` wrapper
-(`src/repo/git.ts`): every command runs under a per-command timeout (5 minutes by
-default), so a hung git process — e.g. a `git log --numstat` over a huge history
+(`src/repo/git.ts`): every command runs under a per-command timeout (30 minutes by
+default, configurable via the `git-timeout` config key in seconds; `0` disables it),
+so a hung git process — e.g. a `git clone` stalling on a slow remote or a
+`git log --numstat` over a huge history
 — is killed and surfaces as a typed `GitError` (`timed out after N s`) instead
 of blocking the run. Transient failures (refused/timed-out connections, a
 dropped remote) are retried with a hard-coded backoff (1s, 5s, 30s with

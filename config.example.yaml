@@ -77,6 +77,12 @@ output: output/github-extension/report.json
 # Force re-clone and re-analysis, invalidating the LLM result cache:
 # refresh: true
 
+# Per-command timeout for git operations (clone, base resolution,
+# commit read), in seconds (default: 1800 = 30 minutes; 0 disables the
+# timeout entirely). Raise it for very large repositories or slow
+# networks, or set 0 to let a git command run as long as it needs:
+# git-timeout: 1800
+
 # LLM analysis enabled (default: true; false = deterministic-only):
 llm: false
 

@@ -24,6 +24,8 @@ import { analyzeRepository } from './analyze-repo.js';
 import { assembleTrendReport } from './report/index.js';
 import type { AnalyzedRange, Repository, TrendReport } from './report/index.js';
 import { ensureClone } from './repo/clone.js';
+import { gitTimeoutOptions } from './repo/git.js';
+import type { RunGitOptions } from './repo/git.js';
 import type { RepoSpec } from './repo/repo-spec.js';
 import { runConfigLines } from './run-config.js';
 import { splitPeriods } from './trend/periods.js';
@@ -179,6 +181,11 @@ async function analyzeAllRepos(
       repositories: [],
     };
   }
+  // The configured `git-timeout` (in seconds) becomes the per-command
+  // git timeout of every git invocation of the run: the serial prefix
+  // clone, the range resolution, and each repository's clone, base
+  // resolution, and commit read.
+  const gitOptions = gitTimeoutOptions(options.gitTimeout);
   // Serial prefix: clone the first repo and resolve the run's range
   // and periods from it — git date parsing is repo-independent, and
   // the first clone is then a cache hit inside the parallel pool.
@@ -188,11 +195,12 @@ async function analyzeAllRepos(
     refresh: options.refresh,
     branch: first.branch,
     log: firstLog,
+    ...gitOptions,
   });
   firstLog.progress(
     `${clone.reused ? 'reused cached clone' : 'cloned'} "${first.repo}" in ${Date.now() - startedAt} ms (cache "${clone.entryDir}")`,
   );
-  const range = await resolveRange(clone.repoDir, options.since, options.until);
+  const range = await resolveRange(clone.repoDir, options.since, options.until, gitOptions);
   const periods = splitPeriods(range, options.unit);
   logInfo(`range: ${rangeBound(range.since)} to ${rangeBound(range.until)}`);
   if (options.unit !== undefined) {
@@ -211,6 +219,7 @@ async function analyzeAllRepos(
     periods,
     emailMap,
     sessionLimit,
+    gitOptions,
   );
   return { range, periods, repositories };
 }
@@ -232,6 +241,9 @@ async function analyzeAllRepos(
  * @param emailMap - The compiled email mappings for identity merging.
  * @param sessionLimit - The run's shared gate bounding concurrent LLM
  * sessions, threaded into every repository's LLM phase.
+ * @param gitOptions - Overrides for the git invocations (see
+ * `runGit`): the configured `git-timeout`, so every repository's
+ * clone, base resolution, and commit read honors it.
  * @returns The per-period repository entries.
  * @throws {GitError} When a clone or git log fails.
  * @throws {Error} When the LLM phase fails; the message names the repo
@@ -245,15 +257,23 @@ async function analyzeReposInParallel(
   periods: AnalyzedRange[],
   emailMap: EmailMap,
   sessionLimit: Limit,
+  gitOptions: RunGitOptions,
 ): Promise<Repository[][]> {
   const failures: unknown[] = [];
   const analyzed = await mapLimit(repos, options.parallel, (repo, index) =>
-    analyzeRepository(repo, options, range, periods, logs[index], emailMap, sessionLimit).catch(
-      (error: unknown) => {
-        failures.push(error);
-        throw error;
-      },
-    ),
+    analyzeRepository(
+      repo,
+      options,
+      range,
+      periods,
+      logs[index],
+      emailMap,
+      sessionLimit,
+      gitOptions,
+    ).catch((error: unknown) => {
+      failures.push(error);
+      throw error;
+    }),
   ).catch((error: unknown) => {
     for (const failure of failures) {
       if (failure !== error) {
@@ -374,18 +394,21 @@ function scopedLogs(specs: readonly RepoSpec[]): ScopedLog[] {
  * @param repoDir - Directory to run git in; date parsing needs no repo.
  * @param since - Start bound as given in the config, if any.
  * @param until - End bound as given in the config, if any.
+ * @param options - Overrides for the git invocations (see `runGit`).
  * @returns The resolved range.
  */
 async function resolveRange(
   repoDir: string,
   since: string | undefined,
   until: string | undefined,
+  options: RunGitOptions = {},
 ): Promise<AnalyzedRange> {
   return {
-    since: since === undefined ? '' : (await resolveBoundDate(repoDir, since)).toISOString(),
+    since:
+      since === undefined ? '' : (await resolveBoundDate(repoDir, since, options)).toISOString(),
     until:
       until === undefined
-        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL)).toISOString()
-        : (await resolveBoundDate(repoDir, until)).toISOString(),
+        ? (await resolveBoundDate(repoDir, DEFAULT_UNTIL, options)).toISOString()
+        : (await resolveBoundDate(repoDir, until, options)).toISOString(),
   };
 }

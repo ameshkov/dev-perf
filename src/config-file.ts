@@ -97,7 +97,8 @@ const compileConfigSchema = z
 /**
  * The config file schema: shared top-level keys read by both `report`
  * and `compile` (`repos`, `users-map`, `verbose`), report-only keys
- * (`since`, `until`, `unit`, `output`, `cache-dir`, `refresh`, `llm`,
+ * (`since`, `until`, `unit`, `output`, `cache-dir`, `refresh`,
+ * `git-timeout`, `llm`,
  * `model`, `provider-url`, `api-key`, the `limit-*` keys,
  * `llm-retries`, the `llm-max-*` keys, `parallel`), and the nested
  * `compile` section with `compile`-only keys (`report`, `output`,
@@ -128,6 +129,9 @@ const configFileSchema = z
     'cache-dir': z.string().optional(),
     /** Force re-clone and re-analysis. */
     refresh: z.boolean().optional(),
+    /** Per-command timeout for git operations, in seconds (0 or absent:
+     * built-in default; 0 disables the timeout). */
+    'git-timeout': z.number().optional(),
     /** LLM analysis enabled. */
     llm: z.boolean().optional(),
     /** Model id, required for LLM analysis. */

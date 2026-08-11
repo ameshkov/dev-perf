@@ -13,6 +13,8 @@
  * / `limitOutput` are positive integers with the defaults 262144 /
  * 65536; `llmMaxTime` (seconds) and `llmMaxTurns` are optional positive
  * integers that bound each LLM session, unlimited when unset.
+ * `gitTimeout` is an optional non-negative integer in seconds that
+ * bounds every git command, disabled when `0`.
  */
 import { z } from 'zod';
 import type { DevPerfConfig } from './config-file.js';
@@ -44,6 +46,9 @@ export interface ResolvedReportOptions {
   cacheDir?: string;
   /** Force re-clone and re-analysis even if the cache is present. */
   refresh?: boolean;
+  /** Per-command timeout for git operations, in seconds (default: 30 min;
+   * `0` disables the timeout). */
+  gitTimeout?: number;
   /** LLM analysis enabled (default: true; `llm: false` disables it). */
   llm?: boolean;
   /** Model id, e.g. gpt-4.1. Required when LLM analysis is enabled. */
@@ -100,6 +105,9 @@ export const reportOptionsSchema = z
     cacheDir: z.string().optional(),
     /** Force re-clone and re-analysis even if the cache is present. */
     refresh: z.boolean().optional(),
+    /** Per-command timeout for git operations, in seconds (`0` disables
+     * the timeout; absent uses the built-in 30-minute default). */
+    gitTimeout: z.number().int().min(0).optional(),
     /** LLM analysis enabled (default: true; `llm: false` disables it). */
     llm: z.boolean().default(true),
     /** Model id, e.g. gpt-4.1. Required when LLM analysis is enabled. */
@@ -212,6 +220,7 @@ export function resolveReportOptions(
     output: config.output,
     cacheDir: config['cache-dir'],
     refresh: config.refresh,
+    gitTimeout: config['git-timeout'],
     llm: config.llm,
     model: config.model,
     providerUrl: config['provider-url'],
@@ -242,6 +251,7 @@ const CONFIG_KEY: Readonly<Record<string, string>> = {
   output: 'output',
   cacheDir: 'cache-dir',
   refresh: 'refresh',
+  gitTimeout: 'git-timeout',
   llm: 'llm',
   model: 'model',
   providerUrl: 'provider-url',

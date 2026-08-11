@@ -8,7 +8,15 @@ import {
   type FixtureRepo,
 } from '../../test/fixtures/repo-builder.js';
 import { jitteredDelay, shouldRetryGitError } from './git-retry.js';
-import { GitError, gitLog, gitRevParse, gitShortlog, gitShow, runGit } from './git.js';
+import {
+  GitError,
+  gitLog,
+  gitRevParse,
+  gitShortlog,
+  gitShow,
+  gitTimeoutOptions,
+  runGit,
+} from './git.js';
 
 /** A fixture with two authors and one commit per author. */
 async function buildTwoAuthorRepo(): Promise<FixtureRepo> {
@@ -346,13 +354,13 @@ describe('shouldRetryGitError', () => {
     // A timed-out command is a stuck operation: retrying it would just
     // wait out another timeout window. The timeout message must not be
     // misclassified as a transient "timed out" network failure. Without
-    // a timeoutMs the error renders the built-in default (5 minutes).
+    // a timeoutMs the error renders the built-in default (30 minutes).
     const timedOut = new GitError(['log', '--numstat'], {
       cwd: '/cache/entry/repo',
       stderr: '',
       isTimeout: true,
     });
-    expect(timedOut.message).toContain('git log --numstat timed out after 300 s');
+    expect(timedOut.message).toContain('git log --numstat timed out after 1800 s');
     expect(shouldRetryGitError(timedOut)).toBe(false);
   });
 });
@@ -363,5 +371,16 @@ describe('jitteredDelay', () => {
     expect(jitteredDelay(1000, () => 0.5)).toBe(1000);
     expect(jitteredDelay(1000, () => 1)).toBe(1200);
     expect(jitteredDelay(30000, () => 1)).toBe(36000);
+  });
+});
+
+describe('gitTimeoutOptions', () => {
+  it('renders the configured git-timeout seconds as milliseconds', () => {
+    expect(gitTimeoutOptions(undefined)).toEqual({});
+    // 0 disables the timeout (execa treats it as no timeout).
+    expect(gitTimeoutOptions(0)).toEqual({ timeoutMs: 0 });
+    expect(gitTimeoutOptions(30)).toEqual({ timeoutMs: 30000 });
+    // 30 minutes — the built-in default — is the documented value.
+    expect(gitTimeoutOptions(1800)).toEqual({ timeoutMs: 1800000 });
   });
 });

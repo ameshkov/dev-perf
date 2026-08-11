@@ -10,96 +10,33 @@ and this project adheres to
 
 ### Added
 
-- A per-repository `ignore-commits` option on structured `repos`
-  entries that drops specific commits from that repository's analysis:
-  `hashes` excludes commits by full or abbreviated hash (matched as a
-  case-insensitive prefix of the commit's sha), `messages` excludes
-  commits whose subject matches a case-insensitive regular expression.
-  Excluded commits are dropped before both the deterministic metrics
-  and the LLM analysis (the LLM is told which commits are excluded),
-  and each report entry records the `ignoredCommits` when any were
-  configured.
+- A per-repository `ignore-commits` option on `repos` entries drops
+  specific commits from that repository's analysis: `hashes` matches
+  commit shas by prefix and `messages` matches subjects by
+  case-insensitive regex. Excluded commits are dropped from both the
+  deterministic metrics and the LLM analysis.
 
 ### Changed
 
-- Auto-generated files — dependency lock files (`pnpm-lock.yaml`,
-  `yarn.lock`, `package-lock.json`, `composer.lock`, `Cargo.lock`,
-  `Gemfile.lock`, `poetry.lock`, `go.sum`, `Package.resolved`, …),
-  test snapshots (`*.snap`), minified/source-map and named build
-  artifacts, vendored dependency subtrees (`node_modules/`, Go
-  `vendor/`), and compiler/designer codegen output — are no longer
-  counted in the per-language stats. A `composer.lock` or
-  `pnpm-lock.yaml` no longer inflates `Unknown` or `YAML` (and the
-  other language buckets) with hundreds of thousands of generated
-  lines. Their lines and file touches are still counted in the
-  aggregate totals and reported separately as the per-user and
-  per-repository `generated` stat, and the `compile` command and the
-  viewer surface them (executive-summary "Generated files" row,
-  per-user "Generated lines", viewer author chip) so dependency-churn
-  activity stays visible. See the design doc §5.5.
-- Repositories are now cloned in full (`git clone`, no partial-clone
-  filter), so every blob is local right after the clone and the whole
-  analysis — reading commits (`git log --numstat`), resolving the
-  branch-delta base, and the LLM reads — runs fully offline and never
-  touches the remote. The previous partial clone fetched missing blobs
-  lazily, one network connection per blob, which made the commit read
-  depend on remote connectivity and fail with `Connection refused` when
-  the host throttled or the network dropped; a full clone removes that
-  failure mode entirely at the cost of the blobs transferring up front.
-  A cached partial clone from an older version is detected and re-cloned
-  as a full clone once.
-- The `Commits per period, one line per repository` chart (and the
-  viewer's `Commits per repository` chart) now shows the full commit
-  count of a repository that is analyzed on several branches: when the
-  same repository URL appears with different branches, each period's
-  point sums the branches instead of showing only the first branch's
-  commits, so the timeline matches the repository's total.
-- Git operations now run under a per-command timeout (5 minutes by
-  default): a git command that hangs instead of completing — e.g. a
-  `git log --numstat` over a huge history — is killed and fails the
-  analysis with a `git ... timed out after N s` error, just like any
-  other git failure, instead of blocking the run forever.
-- The viewer's `Commits per repository` chart now spans the full
-  chart width, and its filter shows the short repository name (the
-  last path segment, as in the chart legend) instead of the full
-  clone URL; hovering a chip still shows the full URL.
-- The viewer's `Top languages per period` and `Languages per
-  period` charts (team and individual dynamics) now span the full
-  chart width, like the `Commits per repository` and per-period
-  signal charts, so the stacked language comparison and its tag list
-  get more room.
-- The viewer's individual dynamics `Contribution sizes` and
-  `Complexity distribution` charts are now donut pies with a legend
-  and per-slice labels, like the team distributions and the work-type
-  share, instead of single bars per category.
-- The viewer's intro now links the `dev-perf` name to the project's
-  GitHub repository.
-- The viewer's meta bar now collapses long repository lists behind a
-  single "N repositories" chip that expands on click, and shows one
-  chip per analyzed repository spec: when the same repository was
-  analyzed with different branches, base branches, or ignore filters,
-  each spec gets its own chip with those fields visible next to the
-  repository name.
-- Contribution points now take complexity into account: the compile
-  command's `Weighted points` and the viewer's `Points` charts scale
-  each contribution's size weight (xs=1, s=2, m=3, l=5, xl=8) by its
-  LLM-assessed complexity multiplier (low=1, medium=1.5, high=2), so
-  complex work counts more than large-but-simple work. The appendix
-  documents the point weights and multipliers.
-- The retry warning for a transient git failure — e.g.
-  `git "log" failed ... : Connection refused` — now names the
-  repository directory the command ran in
-  (`git "log" failed in "..." ...`), so it is clear which repository
-  is being retried instead of only that a git command failed.
+- Auto-generated files — dependency lock files, test snapshots, build
+  artifacts, vendored subtrees, and codegen output — are no longer
+  counted in the per-language stats; their lines still count in the
+  aggregate totals and are reported separately as the `generated` stat.
+- Repositories are cloned in full (no partial-clone filter), so every
+  blob is local and the whole analysis runs offline without touching
+  the remote; a cached partial clone is detected and re-cloned once.
+- Git operations run under a per-command timeout (30 minutes by
+  default, configurable with the new `git-timeout` key, `0` disables
+  it) instead of blocking the run forever when a git command hangs.
+- Contribution points now scale each contribution's size weight by its
+  LLM-assessed complexity multiplier, so complex work counts more than
+  large-but-simple work.
 
 ### Removed
 
-- The `git-parallel-per-host` option is removed: it capped how many
-  parallel git operations ran against one remote host, which existed to
-  pace the per-blob lazy fetches of a partial clone. Repositories are
-  now cloned in full with a single transfer each, so the per-host cap
-  is no longer needed (repositories still analyze in parallel up to
-  `parallel`).
+- The `git-parallel-per-host` option is removed: repositories are now
+  cloned in full with a single transfer each, so the per-host cap on
+  parallel git operations is no longer needed.
 
 ## [v1.1.0] - 2026-08-10
 

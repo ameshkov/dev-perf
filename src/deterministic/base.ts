@@ -19,6 +19,7 @@
  * function reports `undefined` immediately.
  */
 import { GitError, runGit } from '../repo/git.js';
+import type { RunGitOptions } from '../repo/git.js';
 
 /** Default base candidates when no explicit base is configured. */
 const DEFAULT_CANDIDATES = ['main', 'origin/main', 'master', 'origin/master'];
@@ -46,12 +47,14 @@ export interface ResolvedBase {
  * default candidates, `''` the full-history opt-out.
  * @param head - The analyzed branch's head sha; a default candidate
  * equal to it is skipped, so a branch is never scoped against itself.
+ * @param options - Overrides for the git invocations (see `runGit`).
  * @returns The resolved base ref name and sha, or `undefined`.
  */
 export async function resolveBaseSha(
   repoDir: string,
   base?: string,
   head?: string,
+  options: RunGitOptions = {},
 ): Promise<ResolvedBase | undefined> {
   if (base === '') {
     // The empty-string base is the explicit full-history opt-out.
@@ -59,10 +62,10 @@ export async function resolveBaseSha(
   }
   const candidates =
     base === undefined
-      ? await resolveDefaultCandidates(repoDir, head ?? '')
+      ? await resolveDefaultCandidates(repoDir, head ?? '', options)
       : [base, `origin/${base}`];
   for (const candidate of candidates) {
-    const sha = await resolveRef(repoDir, candidate);
+    const sha = await resolveRef(repoDir, candidate, options);
     if (sha !== undefined) {
       return { base: candidate, sha };
     }
@@ -86,11 +89,16 @@ export async function resolveBaseSha(
  *
  * @param repoDir - The clone's working tree.
  * @param head - The analyzed branch's head sha.
+ * @param options - Overrides for the git invocations (see `runGit`).
  * @returns The default candidates, most preferred first.
  */
-async function resolveDefaultCandidates(repoDir: string, head: string): Promise<string[]> {
-  const defaultBranch = await parseDefaultBranch(repoDir);
-  if (defaultBranch !== undefined && (await resolveRef(repoDir, defaultBranch)) !== head) {
+async function resolveDefaultCandidates(
+  repoDir: string,
+  head: string,
+  options: RunGitOptions,
+): Promise<string[]> {
+  const defaultBranch = await parseDefaultBranch(repoDir, options);
+  if (defaultBranch !== undefined && (await resolveRef(repoDir, defaultBranch, options)) !== head) {
     return [...new Set([defaultBranch, `origin/${defaultBranch}`, ...DEFAULT_CANDIDATES])];
   }
   return DEFAULT_CANDIDATES;
@@ -105,11 +113,15 @@ async function resolveDefaultCandidates(repoDir: string, head: string): Promise<
  * candidates are used.
  *
  * @param repoDir - The clone's working tree.
+ * @param options - Overrides for the git invocations (see `runGit`).
  * @returns The remote default branch name, or `undefined`.
  */
-async function parseDefaultBranch(repoDir: string): Promise<string | undefined> {
+async function parseDefaultBranch(
+  repoDir: string,
+  options: RunGitOptions,
+): Promise<string | undefined> {
   try {
-    const output = await runGit(repoDir, ['symbolic-ref', 'refs/remotes/origin/HEAD']);
+    const output = await runGit(repoDir, ['symbolic-ref', 'refs/remotes/origin/HEAD'], options);
     const ref = output.trim();
     const prefix = 'refs/remotes/origin/';
     if (ref.startsWith(prefix) && ref.length > prefix.length) {
@@ -146,17 +158,20 @@ async function parseDefaultBranch(repoDir: string): Promise<string | undefined> 
  *
  * @param repoDir - The clone's working tree.
  * @param ref - The ref to resolve, e.g. `master` or `origin/main`.
+ * @param options - Overrides for the git invocations (see `runGit`).
  * @returns The resolved full sha, or `undefined`.
  */
-async function resolveRef(repoDir: string, ref: string): Promise<string | undefined> {
+async function resolveRef(
+  repoDir: string,
+  ref: string,
+  options: RunGitOptions,
+): Promise<string | undefined> {
   try {
-    const output = await runGit(repoDir, [
-      'rev-parse',
-      '--verify',
-      '--quiet',
-      '--end-of-options',
-      ref,
-    ]);
+    const output = await runGit(
+      repoDir,
+      ['rev-parse', '--verify', '--quiet', '--end-of-options', ref],
+      options,
+    );
     const trimmed = output.trim();
     return trimmed === '' ? undefined : trimmed;
   } catch (error) {

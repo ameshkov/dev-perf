@@ -40,6 +40,10 @@ export interface EnsureCloneOptions {
   /** Git executable to run; defaults to `git`. Tests override it to
    * simulate specific git behaviors. */
   gitBinary?: string;
+  /** Per-command timeout in milliseconds for the clone and its
+   * post-clone commands; defaults to the git default (30 minutes).
+   * `0` disables the timeout. */
+  timeoutMs?: number;
 }
 
 /**
@@ -311,7 +315,8 @@ async function isPromisorClone(repoDir: string, gitOptions: RunGitOptions): Prom
 }
 
 /**
- * The git invocation options of a clone: the configured git binary.
+ * The git invocation options of a clone: the configured git binary and
+ * per-command timeout.
  *
  * @param options - The clone options as passed to `ensureClone`.
  * @returns The git options for the clone and its post-clone commands.
@@ -319,6 +324,7 @@ async function isPromisorClone(repoDir: string, gitOptions: RunGitOptions): Prom
 function cloneGitOptions(options: EnsureCloneOptions): RunGitOptions {
   return {
     gitBinary: options.gitBinary,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   };
 }
 
