@@ -220,6 +220,12 @@ export const deterministicMetricsSchema = z.object({
   avgCommitSize: z.number().nonnegative(),
   /** Per-language contributions, keyed by language name. */
   languages: z.record(z.string(), languageContributionSchema),
+  /**
+   * Contributions of generated files — lock files, test snapshots,
+   * minified/build artifacts — kept separate from `languages`, which
+   * excludes them. Absent when the user touched no generated file.
+   */
+  generated: languageContributionSchema.optional(),
 });
 
 /** Deterministic per-user metrics counted from git history. */
@@ -324,6 +330,12 @@ export const repositoryStatsSchema = z.object({
   totalUsers: z.number().int().nonnegative(),
   /** Top languages by lines added, best first. */
   topLanguages: z.array(topLanguageSchema),
+  /**
+   * Contribution of generated files — lock files, test snapshots,
+   * minified/build artifacts — excluded from `topLanguages`. Absent
+   * when no generated file was touched in the range.
+   */
+  generated: languageContributionSchema.optional(),
 });
 
 /** One analyzed repository entry. */

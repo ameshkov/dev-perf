@@ -105,7 +105,7 @@ an unset or empty variable errors naming the file and the variable.
 
 | Key | Commands | Notes |
 | --- | --- | --- |
-| `repos` | report, compile | Repositories (URL or path) as a string or `{ repo, branch?, base-branch?, ignore? }`; a structured `branch` analyzes that branch as a delta vs the base (default: the repo's own default branch, then `main` → `master`); `ignore` excludes gitignore-style paths; `compile` keep-filter |
+| `repos` | report, compile | Repositories (URL or path) as a string or `{ repo, branch?, base-branch?, ignore?, ignore-commits? }`; a structured `branch` analyzes that branch as a delta vs the base (default: the repo's own default branch, then `main` → `master`); `ignore` excludes gitignore-style paths; `ignore-commits` excludes specific commits by hash and/or message pattern (§5.6); `compile` keep-filter |
 | `since` / `until` | report | Analyzed author-date range (§5.1) |
 | `unit` | report | Period split; requires `since` |
 | `output` | report | JSON report file |
@@ -152,10 +152,10 @@ and uses a logical `pi/home/` agent home that is never created on disk
   A stale partial clone (`blob:none`, created before dev-perf switched
   to full clones) is detected by its promisor config and re-cloned as a
   full clone before reuse. A structured
-  `repos` entry (`{ repo, branch?, base?, ignore? }`, written as
-  `base-branch` in the config file) carries the branch to analyze, the base branch
-  the analysis is scoped against, plus the gitignore-style
-  paths excluded for that repository alone. A non-default branch is analyzed as a
+  `repos` entry (`{ repo, branch?, base?, ignore?, ignoreCommits? }`, written as
+  `base-branch` / `ignore-commits` in the config file) carries the branch to analyze,
+  the base branch the analysis is scoped against, plus the gitignore-style
+  paths and the specific commits excluded for that repository alone. A non-default branch is analyzed as a
   branch-delta: only the commits reachable from its head but not from the base
   (`git log HEAD --not <base>`, §5.1). The default base prefers the repository's
   own default branch (resolved from `refs/remotes/origin/HEAD`), then `main`
@@ -229,7 +229,8 @@ Core set (v1):
 | `activeDays` | Distinct author-dates (UTC `YYYY-MM-DD`, sorted; count is `.length`) |
 | `firstCommitAt` / `lastCommitAt` | Author dates |
 | `avgCommitSize` | added/removed per non-merge commit |
-| `languages` | Per extension: linesAdded, linesRemoved, filesTouched (cloc-style counting applied to contributions; extension → language via a built-in map) |
+| `languages` | Per extension: linesAdded, linesRemoved, filesTouched (cloc-style counting applied to contributions; extension → language via a built-in map; generated files excluded) |
+| `generated` | linesAdded, linesRemoved, filesTouched of generated files — lockfile, test-snapshot, minified/build and compiler-output artifacts — kept separate from `languages` so auto-generated churn never inflates a language bucket (see §5.5) |
 | `churn` | (v2) deletions by the author on files they added earlier in range — an approximation of rework |
 
 Repo-level stats: total commits in range, distinct users, top languages by
@@ -266,6 +267,79 @@ contribution.
 - **Merge commits** — counted, but reported separately so the line numbers are
   honest (merge diffs can be misleading).
 - Date filtering uses **author date**, interpreted in UTC.
+
+### 5.5 Generated files
+
+Following GitHub's Linguist "generated" attribute, files that a tool
+produced — not an author's code in whatever language their extension
+suggests — are classified by a built-in path heuristic
+(`src/deterministic/generated.ts`, `isGeneratedPath`):
+
+- **Lock files** every package manager writes: `pnpm-lock.yaml`,
+  `yarn.lock`, `package-lock.json` / `npm-shrinkwrap.json`,
+  `bun.lock*`, `composer.lock`, `Cargo.lock`, `Gemfile.lock`,
+  `Podfile.lock`, `Pipfile.lock` / `poetry.lock` / `pdm.lock` /
+  `uv.lock`, `flake.lock`, `go.sum` / `go.work.sum`, `Package.resolved`,
+  `.terraform.lock.hcl`, and friends.
+- **Test snapshots** (`*.snap`) written by snapshot runners.
+- **Minified and source-map artifacts** (`*.min.js` / `*.min.css`,
+  `*.js.map`), named build-tool outputs (`lcov.info`, Yarn PnP
+  files, `gradlew` / `mvnw` wrappers).
+- **Vendored dependency subtrees** (`node_modules/`, Go `vendor/`
+  import paths, `Godeps/`, `htmlcov/`, `Pods/`) and
+  **compiler/designer codegen** suffixes (`.designer.cs`, `.g.cs`,
+  `.feature.cs`, …).
+
+Detection is path-only (numstat paths), like the language map; content
+probes (Linguist's minified average-line-length, `DO NOT EDIT`
+headers) are a documented future extension. Generated files are:
+
+- **Excluded from `languages`** (per user) and **`topLanguages`** (per
+  repository), so `pnpm-lock.yaml` never shows up as a mountain of
+  `YAML` or `composer.lock` as `Unknown` — they are not authored code
+  in those languages.
+- **Still counted** in the aggregate `linesAdded` / `linesRemoved` /
+  `filesTouched` / `commits` metrics, and reported **separately** as
+  the per-user `generated` and repository `stats.generated` stats, so
+  dependency-churn activity stays visible and attributable.
+- The `compile` command surfaces the totals in the executive-summary
+  table ("Generated files") and the per-user statistics table
+  ("Generated lines"); the viewer adds a "Generated lines" chip to the
+  author header and notes the exclusion in its language block. The
+  language charts of both the compiled report and the viewer therefore
+  show authored languages only.
+- Unlike the per-repository `ignore` patterns (§5.4), generated-file
+  classification is **default behavior with no opt-out** and is not a
+  configurable list; a team that wants a snapshot counted as authored
+  can keep the file out of the generated set only by not committing it
+  under one of the matched paths.
+
+### 5.6 Ignored commits
+
+A structured repository entry can additionally exclude whole commits
+from the analysis (`src/deterministic/commit-ignore.ts`,
+`filterIgnoredCommits`), applied in the same single filtering point as
+the ignored paths (§5.4) — right after the commits are read and before
+they are grouped by author, so both the deterministic metrics and the
+LLM commit list are exclusion-free:
+
+- **By hash** — the configured `hashes` match as a case-insensitive
+  prefix of the commit's full 40-char sha, so a pasted abbreviated hash
+  works and casing never matters.
+- **By message** — the configured `messages` are case-insensitive
+  JavaScript regular expressions matched against the commit subject
+  (the first line of the commit message). Each must compile; an invalid
+  pattern is a config error naming the failing pattern, never a quiet
+  "matches nothing".
+- A matching commit is dropped **entirely** — merges included (an
+  explicit exclusion by hash always wins, unlike the path filter which
+  always keeps merges). The values are trimmed before matching, so an
+  accidental config indent never becomes part of a hash or pattern.
+- The exclusions ride on the `RepoSpec` (`ignoreCommits`), flow into
+  the LLM prompts (orientation and per-user prompt render the excluded
+  hashes and patterns so the agent never attributes them), the LLM
+  result cache key (so a change in exclusions re-runs the analysis),
+  the report entry (`ignoredCommits`), and the run-config dump.
 
 ## 6. LLM-based (agentic) analysis
 
@@ -491,7 +565,7 @@ empty.
   schemaVersion: 3,
   generatedAt: ISO,
   parameters: {
-    repos: [ { repo, branch?, base?, ignore? }, ... ],
+    repos: [ { repo, branch?, base?, ignore?, ignoreCommits? }, ... ],
     since, until, unit?, model?, llmEnabled
   },
   periods: [
@@ -501,6 +575,7 @@ empty.
       repositories: [
         {
           repo, clonePath, branch, baseBranch?, head, ignoredPaths?,
+          ignoredCommits?,
           range: { since, until },
           stats: { totalCommits, totalUsers, topLanguages: [...] },
           users: [
@@ -557,6 +632,7 @@ dev-perf/
 │   │   ├── metrics.ts
 │   │   ├── identity.ts                 # email normalization + grouping
 │   │   ├── path-ignore.ts              # gitignore-style ignore filtering (§5.4)
+│   │   ├── commit-ignore.ts            # commit exclusions by hash/message (§5.6)
 │   │   └── languages.ts                # extension → language map
 │   ├── llm/
 │   │   ├── runtime.ts                   # in-process pi ModelRuntime + provider registration

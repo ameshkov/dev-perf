@@ -119,8 +119,12 @@ async function writeConfig(
 
 /**
  * Builds the fixture repo both e2e cases analyze: two authors, a
- * TypeScript file, a Markdown file, and a binary asset, all inside an
- * explicit author-date range so the report is stable.
+ * TypeScript file, a Markdown file, a generated lock file, and a
+ * binary asset, all inside an explicit author-date range so the report
+ * is stable. The lock file is auto-generated output: it must not
+ * inflate the per-language stats (extensions like `.json` would
+ * otherwise count it) and is reported separately as the `generated`
+ * stat.
  */
 async function buildFixture(): Promise<FixtureRepo> {
   return buildFixtureRepo([
@@ -131,6 +135,7 @@ async function buildFixture(): Promise<FixtureRepo> {
       files: [
         { path: 'src/app.ts', content: 'line1\nline2\n' },
         { path: 'README.md', content: 'hello\n' },
+        { path: 'package-lock.json', content: '{\n  "version": 1\n}\n' },
       ],
     },
     {
@@ -189,6 +194,9 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
                 { language: 'TypeScript', linesAdded: 2 },
                 { language: 'Binary', linesAdded: 0 },
               ],
+              // package-lock.json is auto-generated: excluded from the
+              // languages above, reported here instead.
+              generated: { linesAdded: 3, linesRemoved: 0, filesTouched: 1 },
             },
             users: [
               {
@@ -199,20 +207,21 @@ async function expectedReport(repo: FixtureRepo, cacheDir: string): Promise<unkn
                   commits: 2,
                   nonMergeCommits: 2,
                   mergeCommits: 0,
-                  linesAdded: 3,
+                  linesAdded: 6,
                   linesRemoved: 0,
-                  netLines: 3,
-                  filesTouched: 3,
-                  uniqueFilesTouched: 3,
+                  netLines: 6,
+                  filesTouched: 4,
+                  uniqueFilesTouched: 4,
                   activeDays: ['2026-01-01', '2026-01-03'],
                   firstCommitAt: '2026-01-01T10:00:00.000Z',
                   lastCommitAt: '2026-01-03T09:00:00.000Z',
-                  avgCommitSize: 1.5,
+                  avgCommitSize: 3,
                   languages: {
                     TypeScript: { linesAdded: 2, linesRemoved: 0, filesTouched: 1 },
                     Markdown: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
                     Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
                   },
+                  generated: { linesAdded: 3, linesRemoved: 0, filesTouched: 1 },
                 },
                 llm: { status: 'skipped', contributions: [] },
               },
@@ -777,6 +786,111 @@ describe.skipIf(!existsSync(BUILD_ENTRY))('e2e: deterministic analysis', () => {
       // paths.
       expect(stderr).toContain(`    - ${repo.url} (branch: main, ignore: docs/)`);
       expect(stderr).toContain(`ignored paths for "${repo.url}": "docs/"`);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('honors the ignore-commits option by hash and by message pattern', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'chore: bump lockfile',
+        files: [{ path: 'pnpm-lock.yaml', content: 'lock\n' }],
+      },
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-02T11:00:00Z',
+        message: 'feat: core',
+        files: [{ path: 'src/core.ts', content: 'line1\nline2\n' }],
+      },
+      {
+        author: { name: 'Bob', email: 'bob@example.com' },
+        date: '2026-01-03T09:00:00Z',
+        message: 'feat: util',
+        files: [{ path: 'src/util.ts', content: 'u\n' }],
+      },
+    ]);
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-e2e-cache-'));
+    try {
+      // Bob's commit (HEAD) is excluded by hash, Alice's chore commit
+      // by its `^chore` message pattern — only Alice's `feat: core`
+      // survives.
+      const bobSha = (await runGit(repo.dir, ['rev-parse', 'HEAD'])).trim();
+      await writeFile(
+        path.join(cacheDir, 'config.yaml'),
+        [
+          'repos:',
+          `  - repo: ${repo.url}`,
+          '    branch: main',
+          '    ignore-commits:',
+          '      hashes:',
+          `        - ${bobSha}`,
+          '      messages:',
+          '        - ^chore',
+          `since: ${SINCE}`,
+          `until: ${UNTIL}`,
+          'llm: false',
+          `cache-dir: ${cacheDir}`,
+          'verbose: true',
+          '',
+        ].join('\n'),
+      );
+      const { stdout, stderr } = await execa('node', [BUILD_ENTRY, 'report'], {
+        ...spawnOptions(cacheDir),
+      });
+
+      const report = JSON.parse(stdout) as {
+        parameters: {
+          repos: Array<{
+            repo: string;
+            branch?: string;
+            ignoreCommits?: { hashes: string[]; messages: string[] };
+          }>;
+          llmEnabled: boolean;
+        };
+        periods: Array<{
+          repositories: Array<{
+            repo: string;
+            branch: string;
+            ignoredCommits: { hashes: string[]; messages: string[] };
+            stats: { totalCommits: number };
+            users: Array<{ name: string; deterministic: { commits: number; linesAdded: number } }>;
+          }>;
+        }>;
+      };
+      expect(trendReportSchema.safeParse(report).success).toBe(true);
+      const entry = report.periods[0].repositories[0];
+      expect(entry).toMatchObject({
+        repo: repo.url,
+        branch: 'main',
+        ignoredCommits: { hashes: [bobSha], messages: ['^chore'] },
+      });
+      expect(entry.stats.totalCommits).toBe(1);
+      expect(entry.users.map((user) => user.name)).toEqual(['Alice']);
+      expect(entry.users[0].deterministic).toMatchObject({ commits: 1, linesAdded: 2 });
+      // The parameters list the full spec — clone target, branch, and
+      // the commit exclusions.
+      expect(report.parameters).toMatchObject({
+        repos: [
+          {
+            repo: repo.url,
+            branch: 'main',
+            ignoreCommits: { hashes: [bobSha], messages: ['^chore'] },
+          },
+        ],
+        llmEnabled: false,
+      });
+      // The startup dump lists the full spec with its commit
+      // exclusions, and the verbose ignored-commits line names them.
+      expect(stderr).toContain(
+        `    - ${repo.url} (branch: main, ignored commits: hashes ${bobSha}; messages ^chore)`,
+      );
+      expect(stderr).toContain(
+        `ignored commits for "${repo.url}": hashes "${bobSha}"; messages "^chore"`,
+      );
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
       await removeFixtureRepo(repo);

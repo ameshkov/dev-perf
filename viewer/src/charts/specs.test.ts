@@ -8,7 +8,6 @@ import type { CountRow } from '../data/index.js';
 import {
   barLineOption,
   barOption,
-  categoryBarOption,
   donutOption,
   groupedBarOption,
   linesOption,
@@ -145,24 +144,6 @@ describe('barLineOption', () => {
     expect(bars).toMatchObject({ type: 'bar', name: 'Commits', data: [4] });
     expect(line).toMatchObject({ type: 'line', name: 'Cumulative', yAxisIndex: 1, data: [9] });
     expect((line.lineStyle as Record<string, unknown>).type).toBe('dashed');
-  });
-});
-
-describe('categoryBarOption', () => {
-  it('builds one bar per category on a category axis, no legend', () => {
-    const rows: CountRow[] = [
-      { key: 'xs', value: 2 },
-      { key: 'l', value: 1 },
-    ];
-    const option = categoryBarOption(rows, (key) => (key === 'xs' ? '#7dd3fc' : undefined), format);
-    expect((option.xAxis as Record<string, unknown>).data).toEqual(['xs', 'l']);
-    expect(option.legend).toBeUndefined();
-    const [series] = seriesOf(option);
-    expect(series).toMatchObject({ type: 'bar', name: 'Contributions' });
-    expect(series.data).toEqual([
-      { value: 2, itemStyle: { color: '#7dd3fc' } },
-      { value: 1, itemStyle: { color: undefined } },
-    ]);
   });
 });
 

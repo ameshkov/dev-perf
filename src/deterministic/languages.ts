@@ -6,6 +6,7 @@
  */
 import type { LanguageContribution } from '../report/index.js';
 import type { Commit } from './commits.js';
+import { isGeneratedPath } from './generated.js';
 
 /** Fallback language for file paths no mapping recognizes. */
 const UNKNOWN_LANGUAGE = 'Unknown';
@@ -140,7 +141,12 @@ export function languageForPath(filePath: string): string {
  * `linesAdded`, `linesRemoved`, and `filesTouched` (commit-file pairs)
  * are summed per language mapped from each numstat path. Binary files
  * (no line counts) contribute zero lines but still count as touched;
- * unmapped paths land under `Unknown`.
+ * unmapped paths land under `Unknown`. Generated files — lock files,
+ * test snapshots, minified/build artifacts (`src/deterministic/
+ * generated.ts`) — are excluded from the per-language counts entirely
+ * and are reported separately as the `generated` deterministic stat,
+ * so an auto-generated lockfile can never inflate a language bucket
+ * like `YAML` or `Unknown`.
  *
  * @param commits - Commits to count over, typically one author's.
  * @returns Per-language contribution counts, keyed by language name.
@@ -151,6 +157,9 @@ export function countLanguageContributions(
   const byLanguage = new Map<string, LanguageContribution>();
   for (const commit of commits) {
     for (const file of commit.files) {
+      if (isGeneratedPath(file.path)) {
+        continue;
+      }
       const language = languageForPath(file.path);
       let contribution = byLanguage.get(language);
       if (contribution === undefined) {

@@ -6,7 +6,7 @@
  */
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { repoStats, userMetrics } from '../deterministic/metrics.js';
-import type { RepoSpec } from '../repo/repo-spec.js';
+import type { IgnoreCommitsSpec, RepoSpec } from '../repo/repo-spec.js';
 import { reportSchema, trendReportSchema } from './schema.js';
 import type { LlmAnalysis, PeriodUnit, Report, Repository, TrendReport, User } from './schema.js';
 
@@ -36,6 +36,9 @@ export interface RepositoryEntryInput {
   head: string;
   /** Gitignore-style paths excluded from the analysis, when any. */
   ignoredPaths?: string[];
+  /** Commits excluded from the analysis — by hash and/or by message
+   * pattern — when any. */
+  ignoredCommits?: IgnoreCommitsSpec;
   /** Analyzed author-date range (UTC instants). */
   range: AnalyzedRange;
   /** Author groups of the range, one per user. */
@@ -110,6 +113,7 @@ export function assembleRepository(input: RepositoryEntryInput): Repository {
     ...(input.ignoredPaths === undefined || input.ignoredPaths.length === 0
       ? {}
       : { ignoredPaths: [...input.ignoredPaths] }),
+    ...(input.ignoredCommits === undefined ? {} : { ignoredCommits: input.ignoredCommits }),
     range: input.range,
     stats: repoStats(input.groups),
     users: input.groups.map((group) => userEntry(group, input.llmResults)),

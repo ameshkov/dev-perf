@@ -75,6 +75,15 @@ function statChips(series: UserSeries, llmEnabled: boolean): ReactElement[] {
     statChip('Files touched', formatInt(user.deterministic.filesTouched)),
     statChip('Active days', formatInt(user.deterministic.activeDays.length)),
   ];
+  const generated = user.deterministic.generated;
+  if (generated !== undefined) {
+    chips.push(
+      statChip(
+        'Generated lines',
+        `+${formatInt(generated.linesAdded)} / −${formatInt(generated.linesRemoved)}`,
+      ),
+    );
+  }
   if (llmEnabled) {
     chips.push(
       statChip('Contributions', formatInt(user.llm.contributions.length)),

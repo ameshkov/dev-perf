@@ -135,6 +135,46 @@ describe('userMetrics', () => {
       Binary: { linesAdded: 0, linesRemoved: 0, filesTouched: 1 },
     });
   });
+
+  it('excludes generated files from languages and reports them under `generated`', () => {
+    const metrics = userMetrics([
+      commit({
+        files: [
+          { path: 'src/app.ts', added: 5, deleted: 1 },
+          { path: 'pnpm-lock.yaml', added: 12, deleted: 3 },
+        ],
+      }),
+      commit({
+        sha: '2',
+        authorDate: '2026-01-02T11:00:00Z',
+        files: [{ path: 'test/app.test.js.snap', added: 7, deleted: 0 }],
+      }),
+    ]);
+    // The generated files still count toward the aggregate totals…
+    expect(metrics.linesAdded).toBe(24);
+    expect(metrics.linesRemoved).toBe(4);
+    expect(metrics.filesTouched).toBe(3);
+    expect(metrics.uniqueFilesTouched).toBe(3);
+    // …but the language map sees only the authored file.
+    expect(metrics.languages).toStrictEqual({
+      TypeScript: { linesAdded: 5, linesRemoved: 1, filesTouched: 1 },
+    });
+    expect(metrics.generated).toStrictEqual({
+      linesAdded: 19,
+      linesRemoved: 3,
+      filesTouched: 2,
+    });
+  });
+
+  it('leaves `generated` unset when no generated file was touched', () => {
+    const metrics = userMetrics([
+      commit({ files: [{ path: 'src/app.ts', added: 1, deleted: 0 }] }),
+    ]);
+    expect('generated' in metrics).toBe(false);
+    expect(metrics.languages).toStrictEqual({
+      TypeScript: { linesAdded: 1, linesRemoved: 0, filesTouched: 1 },
+    });
+  });
 });
 
 describe('repoStats', () => {
@@ -218,6 +258,31 @@ describe('repoStats', () => {
 
   it('returns zero stats for no groups', () => {
     expect(repoStats([])).toStrictEqual({ totalCommits: 0, totalUsers: 0, topLanguages: [] });
+  });
+
+  it('aggregates generated contributions across groups, excluded from topLanguages', () => {
+    const groups = groupByAuthor([
+      commit({
+        sha: '1',
+        files: [
+          { path: 'src/a.ts', added: 5, deleted: 0 },
+          { path: 'composer.lock', added: 8, deleted: 2 },
+        ],
+      }),
+      commit({
+        sha: '2',
+        authorName: 'Bob',
+        authorEmail: 'bob@example.com',
+        authorDate: '2026-01-02T10:00:00Z',
+        files: [{ path: 'yarn.lock', added: 4, deleted: 1 }],
+      }),
+    ]);
+    expect(repoStats(groups)).toStrictEqual({
+      totalCommits: 2,
+      totalUsers: 2,
+      topLanguages: [{ language: 'TypeScript', linesAdded: 5 }],
+      generated: { linesAdded: 12, linesRemoved: 3, filesTouched: 2 },
+    });
   });
 });
 

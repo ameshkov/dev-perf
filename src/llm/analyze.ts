@@ -22,9 +22,11 @@ import { createHash } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { hasIgnoreCommits } from '../deterministic/commit-ignore.js';
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { hasIgnorePaths } from '../deterministic/path-ignore.js';
 import { llmDir } from '../repo/cache.js';
+import type { IgnoreCommitsSpec } from '../repo/repo-spec.js';
 import type { AnalyzedRange, LlmAnalysis, LlmToolPayload } from '../report/index.js';
 import { llmToolPayloadSchema, tokenUsageSchema } from '../report/index.js';
 import { errorDetail } from '../util/error.js';
@@ -57,7 +59,7 @@ const CACHE_KEY_LENGTH = 16;
  * the cached-result layout — so stale entries written by an older
  * version are never silently reused after an upgrade.
  */
-const LLM_CACHE_VERSION = 6 as const;
+const LLM_CACHE_VERSION = 7 as const;
 
 /**
  * The persisted LLM result for one user: the
@@ -88,6 +90,14 @@ const cachedResultSchema = z.object({
   exclude: z.string().optional(),
   /** Gitignore-style paths excluded from the analysis, if any. */
   ignore: z.array(z.string()).optional(),
+  /** The commits excluded for the analysis — by hash and/or message
+   * pattern — when any. */
+  ignoreCommits: z
+    .object({
+      hashes: z.array(z.string()).optional(),
+      messages: z.array(z.string()).optional(),
+    })
+    .optional(),
   /** Lowercased author email the analysis belongs to (the identity's primary email). */
   email: z.string(),
   /** Every lowercased email of the identity, sorted. */
@@ -124,6 +134,9 @@ export interface AnalyzeRepoInput {
   exclude?: string;
   /** Gitignore-style paths excluded for this repository, if any. */
   ignore?: string[];
+  /** The commits excluded for this repository — by hash and/or message
+   * pattern — if any. */
+  ignoreCommits?: IgnoreCommitsSpec;
   /** The clone's working tree (session and runtime directory). */
   cloneDir: string;
   /** The cache entry directory (holds the `llm/` results dir). */
@@ -244,7 +257,13 @@ async function createOrientation(input: AnalyzeRepoInput): Promise<OrientationSt
   );
   const context = await input.service.promptSession(
     session,
-    await buildOrientationPrompt(input.repo, input.branch, input.ignore, input.limitHit),
+    await buildOrientationPrompt(
+      input.repo,
+      input.branch,
+      input.ignore,
+      input.ignoreCommits,
+      input.limitHit,
+    ),
     input.repo,
   );
   await rm(sessionReportPath(llmDir(input.entryDir), session.id), { force: true });
@@ -286,6 +305,7 @@ async function analyzeUser(
       branch: input.branch,
       ...(input.base === undefined ? {} : { base: input.base }),
       ...(hasIgnorePaths(input.ignore) ? { ignore: input.ignore } : {}),
+      ...(hasIgnoreCommits(input.ignoreCommits) ? { ignoreCommits: input.ignoreCommits } : {}),
       name: group.name,
       email: group.email,
       emails: group.emails,
@@ -412,12 +432,12 @@ function cachedResultPath(input: AnalyzeRepoInput, group: AuthorGroup): string {
  * set — not just the primary email — stops a newly merged identity from
  * reusing a stale result cached for one of its constituent emails. The
  * analyzed branch, its head sha, and the base the analysis was scoped
- * against are part of the key too: the head and the resolved base sha
- * (together with `since`/`until`/`ignore`) fully determine the commit
- * set, so an advancing branch or base — which keeps the same *name* —
- * still re-keys the cache instead of reusing a stale analysis. The
- * cache version invalidates stale entries when prompt templates, the
- * tool schema, or the result layout change.
+ *  against are part of the key too: the head and the resolved base sha
+ *  (together with `since`/`until`/`ignore`/`ignoreCommits`) fully
+ *  determine the commit set, so an advancing branch or base — which
+ *  keeps the same *name* — still re-keys the cache instead of reusing a
+ *  stale analysis. The cache version invalidates stale entries when
+ *  prompt templates, the tool schema, or the result layout change.
  *
  * @param input - Repo-level analysis input.
  * @param group - The user's author group.
@@ -432,6 +452,18 @@ function llmCacheKeyParts(input: AnalyzeRepoInput, group: AuthorGroup) {
     ...(input.base === undefined ? {} : { base: input.base }),
     ...(input.exclude === undefined ? {} : { exclude: input.exclude }),
     ...(hasIgnorePaths(input.ignore) ? { ignore: [...input.ignore].sort() } : {}),
+    ...(hasIgnoreCommits(input.ignoreCommits)
+      ? {
+          ignoreCommits: {
+            ...(input.ignoreCommits.hashes === undefined
+              ? {}
+              : { hashes: [...input.ignoreCommits.hashes].sort() }),
+            ...(input.ignoreCommits.messages === undefined
+              ? {}
+              : { messages: [...input.ignoreCommits.messages].sort() }),
+          },
+        }
+      : {}),
     email: group.email,
     emails: group.emails,
     since: input.range.since,

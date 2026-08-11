@@ -99,6 +99,18 @@ describe('assembleRepository', () => {
     expect('ignoredPaths' in assembleRepository(repoInput())).toBe(false);
   });
 
+  it('records the ignored commits on the repository entry when configured', () => {
+    const repository = assembleRepository(
+      repoInput({ ignoredCommits: { hashes: ['0123456789'], messages: ['^chore'] } }),
+    );
+
+    expect(repository.ignoredCommits).toEqual({ hashes: ['0123456789'], messages: ['^chore'] });
+  });
+
+  it('omits the ignored commits key when none are configured', () => {
+    expect('ignoredCommits' in assembleRepository(repoInput())).toBe(false);
+  });
+
   it('records the base branch on the repository entry when scoped', () => {
     const repository = assembleRepository(repoInput({ baseBranch: 'origin/main' }));
     expect(repository.baseBranch).toBe('origin/main');

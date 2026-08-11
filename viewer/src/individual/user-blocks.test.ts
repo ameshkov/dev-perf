@@ -121,6 +121,12 @@ describe('buildUserGroups', () => {
     expect(blockById(groups, 'user-risk-rate').wide).toBeUndefined();
   });
 
+  it('renders the languages block full-width', () => {
+    const alice = data.users[0];
+    const groups = buildUserGroups(alice, data);
+    expect(blockById(groups, 'user-languages').wide).toBe(true);
+  });
+
   it('builds only the deterministic groups when the LLM is disabled', () => {
     const deterministicData = buildChartData(buildDemoReport({ llmEnabled: false }));
     const groups = buildUserGroups(deterministicData.users[0], deterministicData);
@@ -154,16 +160,32 @@ describe('buildUserGroups', () => {
     );
   });
 
-  it("counts the user's contributions in the overall size distribution", () => {
+  it("counts the user's contributions in the overall size distribution donut", () => {
     const single = fixtureData(1, 2, true);
     const sizes = blockById(buildUserGroups(single.users[0], single), 'user-sizes');
     const series = sizes.optionOf(undefined).series as unknown as Array<Record<string, unknown>>;
+    expect(series[0]).toMatchObject({ type: 'pie' });
     expect(series[0].data).toEqual([
-      { value: 0, itemStyle: { color: '#7dd3fc' } },
-      { value: 0, itemStyle: { color: '#60a5fa' } },
-      { value: 2, itemStyle: { color: '#818cf8' } },
-      { value: 0, itemStyle: { color: '#a78bfa' } },
-      { value: 0, itemStyle: { color: '#c084fc' } },
+      { name: 'xs', value: 0, itemStyle: { color: '#7dd3fc' } },
+      { name: 's', value: 0, itemStyle: { color: '#60a5fa' } },
+      { name: 'm', value: 2, itemStyle: { color: '#818cf8' } },
+      { name: 'l', value: 0, itemStyle: { color: '#a78bfa' } },
+      { name: 'xl', value: 0, itemStyle: { color: '#c084fc' } },
+    ]);
+  });
+
+  it("counts the user's contributions in the overall complexity distribution donut", () => {
+    // Two contributions, each defaulting to medium complexity.
+    const single = fixtureData(1, 2, true);
+    const complexity = blockById(buildUserGroups(single.users[0], single), 'user-complexity');
+    const series = complexity.optionOf(undefined).series as unknown as Array<
+      Record<string, unknown>
+    >;
+    expect(series[0]).toMatchObject({ type: 'pie' });
+    expect(series[0].data).toEqual([
+      { name: 'low', value: 0, itemStyle: { color: '#34d399' } },
+      { name: 'medium', value: 2, itemStyle: { color: '#fbbf24' } },
+      { name: 'high', value: 0, itemStyle: { color: '#f87171' } },
     ]);
   });
 

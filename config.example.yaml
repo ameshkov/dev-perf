@@ -13,10 +13,11 @@
 # (report), or to keep in the report (compile). URLs or local paths,
 # one per dash item. Append #branch to analyze that repository's branch
 # instead of its default, or use a structured map with an optional
-# branch and gitignore-style paths to exclude from that repository's
+# branch, gitignore-style paths to exclude from that repository's
 # analysis (a trailing / excludes a directory subtree, a pattern without
 # / matches a basename at any depth, slash-carrying patterns are
-# root-anchored; no ! negation):
+# root-anchored; no ! negation), and/or specific commits to exclude by
+# hash or message pattern (see ignore-commits below):
 repos:
   # Full master branch analysis
   - repo: https://github.com/AdguardTeam/AdguardBrowserExtension.git
@@ -48,6 +49,15 @@ repos:
 #     ignore:
 #       - docs/
 #       - vendor/
+#     # Exclude specific commits from this repo's analysis — by full or
+#     # abbreviated hash (matched as a case-insensitive prefix) and/or by
+#     # a case-insensitive regex matched against the commit subject:
+#     ignore-commits:
+#       hashes:
+#         - a1b2c3d4e5f6...
+#       messages:
+#         - '^chore:'
+#         - '\[skip ci\]'
 
 # Analyzed author-date range (any git date format):
 since: 2025-07-01

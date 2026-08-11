@@ -43,6 +43,7 @@ function fixtureReport() {
                   commits: 2,
                   linesAdded: 20,
                   activeDays: ['2026-01-03', '2026-01-08'],
+                  generated: { linesAdded: 20, linesRemoved: 6, filesTouched: 1 },
                 },
               },
             ],
@@ -135,6 +136,7 @@ describe('mergeUsers', () => {
                     linesRemoved: 4,
                     activeDays: ['2026-01-02', '2026-01-05', '2026-01-10'],
                     languages: { TypeScript: { linesAdded: 40, linesRemoved: 4, filesTouched: 4 } },
+                    generated: { linesAdded: 7, linesRemoved: 1, filesTouched: 2 },
                   },
                   llm: { contributions: [fixtureContribution({ title: 'A1' })] },
                 },
@@ -162,6 +164,7 @@ describe('mergeUsers', () => {
                     linesRemoved: 1,
                     activeDays: ['2026-01-10', '2026-01-20', '2026-01-25', '2026-01-30'],
                     languages: { TypeScript: { linesAdded: 10, linesRemoved: 1, filesTouched: 2 } },
+                    generated: { linesAdded: 3, linesRemoved: 0, filesTouched: 1 },
                   },
                   llm: { contributions: [fixtureContribution({ title: 'A2' })] },
                 },
@@ -190,6 +193,12 @@ describe('mergeUsers', () => {
       '2026-01-30',
     ]);
     expect(merged.deterministic.languages.TypeScript.linesAdded).toBe(50);
+    // The generated stats are summed independently of the languages.
+    expect(merged.deterministic.generated).toStrictEqual({
+      linesAdded: 10,
+      linesRemoved: 1,
+      filesTouched: 3,
+    });
     expect(merged.llm.contributions.map((contribution) => contribution.title)).toEqual([
       'A1',
       'A2',
@@ -320,6 +329,8 @@ describe('filterReport', () => {
     expect(stats.totalCommits).toBe(2);
     expect(stats.totalUsers).toBe(1);
     expect(stats.topLanguages[0].language).toBe('TypeScript');
+    // The recomputed repo stats carry Bob's generated contribution.
+    expect(stats.generated).toStrictEqual({ linesAdded: 20, linesRemoved: 6, filesTouched: 1 });
   });
 
   it('sorts the master list by contributions, then commits, then name', () => {

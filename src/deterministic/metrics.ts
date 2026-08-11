@@ -2,8 +2,13 @@
  * Deterministic metrics aggregation: per-user
  * metrics counted from parsed commits, and repo-level statistics.
  */
-import type { DeterministicMetrics, RepositoryStats } from '../report/index.js';
+import type {
+  DeterministicMetrics,
+  LanguageContribution,
+  RepositoryStats,
+} from '../report/index.js';
 import type { Commit } from './commits.js';
+import { countGeneratedContribution } from './generated.js';
 import type { AuthorGroup } from './identity.js';
 import { countLanguageContributions } from './languages.js';
 
@@ -43,7 +48,9 @@ interface DateTotals {
  * per-language contributions. Merge commits count toward `commits` and
  * `mergeCommits` but carry no numstat rows of their own, so they do
  * not skew the line sums or `avgCommitSize` (computed per non-merge
- * commit). `churn` (v2) is left unset. An empty commit list yields
+ * commit). `churn` (v2) is left unset. Generated files are excluded
+ * from the per-language counts and reported as `generated` (set when
+ * the author touched at least one). An empty commit list yields
  * zeroed metrics with empty date strings.
  *
  * @param commits - One author's commits, typically newest first.
@@ -55,6 +62,7 @@ export function userMetrics(commits: Commit[]): DeterministicMetrics {
   }
   const totals = changeTotals(commits);
   const dates = dateTotals(commits);
+  const generated = countGeneratedContribution(commits);
   return {
     commits: commits.length,
     nonMergeCommits: totals.nonMergeCommits,
@@ -69,6 +77,7 @@ export function userMetrics(commits: Commit[]): DeterministicMetrics {
     lastCommitAt: dates.lastAt.toISOString(),
     avgCommitSize: totals.nonMergeCommits === 0 ? 0 : totals.nonMergeSize / totals.nonMergeCommits,
     languages: countLanguageContributions(commits),
+    ...(generated === undefined ? {} : { generated }),
   };
 }
 
@@ -168,7 +177,11 @@ function dateTotals(commits: Commit[]): DateTotals {
  * Computes the repository-level statistics: total
  * commits and users in the range, and the top languages by lines
  * added, best first. Ties break by language name (ascending); the
- * list is capped at `TOP_LANGUAGES_LIMIT` entries.
+ * list is capped at `TOP_LANGUAGES_LIMIT` entries. Generated files
+ * are excluded from the language counts (see
+ * `countLanguageContributions`) and reported as the repository
+ * `generated` stat, set when any generated file was touched in the
+ * range.
  *
  * @param groups - The author groups of the range, one per user.
  * @returns The repository statistics matching `RepositoryStats`.
@@ -176,6 +189,7 @@ function dateTotals(commits: Commit[]): DateTotals {
 export function repoStats(groups: AuthorGroup[]): RepositoryStats {
   let totalCommits = 0;
   const linesByLanguage = new Map<string, number>();
+  let generated: LanguageContribution | undefined;
   for (const group of groups) {
     totalCommits += group.commits.length;
     for (const [language, contribution] of Object.entries(
@@ -183,12 +197,24 @@ export function repoStats(groups: AuthorGroup[]): RepositoryStats {
     )) {
       linesByLanguage.set(language, (linesByLanguage.get(language) ?? 0) + contribution.linesAdded);
     }
+    const groupGenerated = countGeneratedContribution(group.commits);
+    if (groupGenerated !== undefined) {
+      generated ??= { linesAdded: 0, linesRemoved: 0, filesTouched: 0 };
+      generated.linesAdded += groupGenerated.linesAdded;
+      generated.linesRemoved += groupGenerated.linesRemoved;
+      generated.filesTouched += groupGenerated.filesTouched;
+    }
   }
   const topLanguages = [...linesByLanguage.entries()]
     .map(([language, linesAdded]) => ({ language, linesAdded }))
     .sort((a, b) => b.linesAdded - a.linesAdded || compareLanguageNames(a.language, b.language))
     .slice(0, TOP_LANGUAGES_LIMIT);
-  return { totalCommits, totalUsers: groups.length, topLanguages };
+  return {
+    totalCommits,
+    totalUsers: groups.length,
+    topLanguages,
+    ...(generated === undefined ? {} : { generated }),
+  };
 }
 
 /**

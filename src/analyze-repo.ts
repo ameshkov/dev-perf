@@ -18,6 +18,7 @@ import { readCommits } from './deterministic/commits.js';
 import type { Commit } from './deterministic/commits.js';
 import type { AuthorGroup } from './deterministic/identity.js';
 import { groupByAuthor } from './deterministic/identity.js';
+import { filterIgnoredCommits, hasIgnoreCommits } from './deterministic/commit-ignore.js';
 import { filterCommitsIgnoring, hasIgnorePaths } from './deterministic/path-ignore.js';
 import { runLlmPhase } from './llm/repo-phase.js';
 import type { AnalyzedRange, Repository } from './report/index.js';
@@ -25,7 +26,7 @@ import { cacheEntryDir, resolveCacheDir } from './repo/cache.js';
 import { ensureClone, withEntryAnalysisLock } from './repo/clone.js';
 import type { CloneResult } from './repo/clone.js';
 import type { RunGitOptions } from './repo/git.js';
-import type { RepoSpec } from './repo/repo-spec.js';
+import type { IgnoreCommitsSpec, RepoSpec } from './repo/repo-spec.js';
 import type { EmailMap } from './util/email-map.js';
 import { pluralize } from './util/format.js';
 import type { ScopedLog } from './util/log.js';
@@ -232,11 +233,12 @@ async function prepareClone(
 }
 
 /**
- * Removes the repository's ignored-path commits and groups the rest by
- * author. The ignored paths are applied here, once, so both the
+ * Removes the repository's excluded commits — by hash and/or message
+ * pattern — and its ignored-path commits, and groups the rest by
+ * author. Both exclusions are applied here, once, so both the
  * deterministic metrics and the LLM commit list are exclusion-free;
- * without any patterns the list passes through untouched. The ignored
- * paths and the resulting counts are logged.
+ * without any exclusions the list passes through untouched. The
+ * exclusions and the resulting counts are logged.
  *
  * @param repo - The repository spec as given.
  * @param commits - The commits of the whole range, newest first.
@@ -250,12 +252,17 @@ function filterAndGroup(
   emailMap: EmailMap,
   log: ScopedLog,
 ): AuthorGroup[] {
+  // The commit exclusions apply first, so the ignored-path pass below
+  // counts against the commits that survived them.
+  const afterCommits = dropIgnoredCommits(repo, commits, log);
   const ignore = repo.ignore;
-  const filtered = hasIgnorePaths(ignore) ? filterCommitsIgnoring(commits, ignore) : commits;
+  const filtered = hasIgnorePaths(ignore)
+    ? filterCommitsIgnoring(afterCommits, ignore)
+    : afterCommits;
   if (hasIgnorePaths(ignore)) {
     log.info(`ignored paths for "${repo.repo}": ${ignore.map((path) => `"${path}"`).join(', ')}`);
-    if (filtered.length < commits.length) {
-      const dropped = commits.length - filtered.length;
+    if (filtered.length < afterCommits.length) {
+      const dropped = afterCommits.length - filtered.length;
       const message = `${pluralize(dropped, 'commit')} dropped by ignored paths for "${repo.repo}"`;
       // A config that excluded the entire history is almost certainly a
       // misconfiguration: surface it as a warning instead of a quiet
@@ -272,6 +279,57 @@ function filterAndGroup(
     `${pluralize(filtered.length, 'commit')} from ${pluralize(groups.length, 'author')}`,
   );
   return groups;
+}
+
+/**
+ * Drops the repository's excluded commits — by hash and/or message
+ * pattern — and logs the exclusions and the resulting count. Without
+ * any exclusions the list passes through untouched.
+ *
+ * @param repo - The repository spec as given.
+ * @param commits - The commits of the whole range, newest first.
+ * @param log - The repository's scoped logger.
+ * @returns The commits after the exclusions.
+ */
+function dropIgnoredCommits(repo: RepoSpec, commits: Commit[], log: ScopedLog): Commit[] {
+  const spec = repo.ignoreCommits;
+  if (!hasIgnoreCommits(spec)) {
+    return commits;
+  }
+  log.info(`ignored commits for "${repo.repo}": ${ignoredCommitsSummary(spec)}`);
+  const filtered = filterIgnoredCommits(commits, spec);
+  if (filtered.length < commits.length) {
+    const dropped = commits.length - filtered.length;
+    const message = `${pluralize(dropped, 'commit')} dropped by ignored commits for "${repo.repo}"`;
+    // A config that excluded the entire history is almost certainly a
+    // misconfiguration: surface it as a warning instead of a quiet
+    // under-count. A partial drop is normal and stays at `info`.
+    if (filtered.length === 0) {
+      log.warn(`${message}; the report for this repository will be empty`);
+    } else {
+      log.info(message);
+    }
+  }
+  return filtered;
+}
+
+/**
+ * Renders a commit-ignore spec for the log: the hashes and the message
+ * patterns as quoted, comma-separated lists, so empty values stay
+ * visible.
+ *
+ * @param spec - The commit exclusions.
+ * @returns The renderable summary.
+ */
+function ignoredCommitsSummary(spec: IgnoreCommitsSpec): string {
+  const parts: string[] = [];
+  if (spec.hashes !== undefined && spec.hashes.length > 0) {
+    parts.push(`hashes ${spec.hashes.map((hash) => `"${hash}"`).join(', ')}`);
+  }
+  if (spec.messages !== undefined && spec.messages.length > 0) {
+    parts.push(`messages ${spec.messages.map((pattern) => `"${pattern}"`).join(', ')}`);
+  }
+  return parts.join('; ');
 }
 
 /**

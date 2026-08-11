@@ -8,6 +8,7 @@
  */
 import path from 'node:path';
 import type { ReportOptions } from '../config.js';
+import { hasIgnoreCommits } from '../deterministic/commit-ignore.js';
 import type { AuthorGroup } from '../deterministic/identity.js';
 import { hasIgnorePaths } from '../deterministic/path-ignore.js';
 import { analyzeRepositoryLLM } from './analyze.js';
@@ -153,6 +154,7 @@ async function analyzePeriodLlm(
     branch: clone.branch,
     head: clone.head,
     ...(hasIgnorePaths(repo.ignore) ? { ignore: repo.ignore } : {}),
+    ...(hasIgnoreCommits(repo.ignoreCommits) ? { ignoreCommits: repo.ignoreCommits } : {}),
     ...(baseName === undefined ? {} : { base: baseName }),
     ...(exclude === undefined ? {} : { exclude }),
     range: period,
@@ -172,8 +174,9 @@ async function analyzePeriodLlm(
 /**
  * Assembles one repository entry for a period from the repo's spec, the
  * clone identity, and the period's filtered groups and LLM results. The
- * configured ignored paths and the resolved base branch name
- * (branch-delta) are recorded on the entry when any were in effect.
+ * configured ignored paths, the excluded commits, and the resolved base
+ * branch name (branch-delta) are recorded on the entry when any were in
+ * effect.
  *
  * @param repo - The repository spec, as given with its optional branch.
  * @param clone - The clone the analysis runs in.
@@ -201,6 +204,7 @@ function assembleRepoEntry(
     groups,
     llmResults,
     ...(hasIgnorePaths(repo.ignore) ? { ignoredPaths: repo.ignore } : {}),
+    ...(hasIgnoreCommits(repo.ignoreCommits) ? { ignoredCommits: repo.ignoreCommits } : {}),
     ...(baseName === undefined ? {} : { baseBranch: baseName }),
   });
 }

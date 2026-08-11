@@ -275,17 +275,18 @@ async function analyzeReposInParallel(
 /**
  * Removes duplicate repository specs, preserving input order. Duplicate
  * specs — same repo, same branch, same base scoping, and same ignored
- * paths — would race on the same cache entry (concurrent re-clone and
- * LLM writes) and their report entries are identical anyway; a warning
- * names each dropped duplicate.
+ * paths and commits — would race on the same cache entry (concurrent
+ * re-clone and LLM writes) and their report entries are identical
+ * anyway; a warning names each dropped duplicate.
  * The dedupe key is the full spec identity — the repo, the analyzed
  * branch, the base the analysis is scoped against (branch-delta), and
- * the ignore patterns — so two structured entries that share a repo but
- * use different branches, bases, or exclusions are distinct specs,
- * never silently merged. The ignore patterns are sorted before the key
- * is built, so a different listing order is not a different spec; and
- * the base distinguishes the default delta (`undefined`) from the
- * full-history opt-out (`''`), which are distinct analyses.
+ * the ignore patterns and commit exclusions — so two structured entries
+ * that share a repo but use different branches, bases, or exclusions
+ * are distinct specs, never silently merged. The ignore patterns and
+ * commit exclusions are sorted before the key is built, so a different
+ * listing order is not a different spec; and the base distinguishes the
+ * default delta (`undefined`) from the full-history opt-out (`''`),
+ * which are distinct analyses.
  *
  * @param repos - The repository specs as resolved from the config.
  * @returns The unique specs, in input order.
@@ -298,11 +299,23 @@ function dedupeRepos(repos: readonly RepoSpec[]): RepoSpec[] {
     // same patterns in a different order build the same key and the
     // second one is dropped instead of racing on a shared cache entry.
     const ignoreKey = (repo.ignore === undefined ? [] : [...repo.ignore].sort()).join('\u0000');
+    const ignoreCommitsKey = (
+      repo.ignoreCommits === undefined
+        ? []
+        : [
+            ...(repo.ignoreCommits.hashes === undefined
+              ? []
+              : [...repo.ignoreCommits.hashes].sort()),
+            ...(repo.ignoreCommits.messages === undefined
+              ? []
+              : [...repo.ignoreCommits.messages].sort()),
+          ]
+    ).join('\u0000');
     // `base: undefined` (the default main/master delta) and `base: ''`
     // (the full-history opt-out) are distinct analyses, so each gets a
     // distinct key.
     const baseKey = repo.base === undefined ? '<default>' : repo.base;
-    const key = `${repo.repo}\u0000${repo.branch ?? ''}\u0000${baseKey}\u0000${ignoreKey}`;
+    const key = `${repo.repo}\u0000${repo.branch ?? ''}\u0000${baseKey}\u0000${ignoreKey}\u0000${ignoreCommitsKey}`;
     if (seen.has(key)) {
       logWarn(`duplicate repository skipped: "${repo.repo}"`);
       continue;

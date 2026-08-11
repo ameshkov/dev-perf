@@ -70,4 +70,17 @@ describe('IndividualSection', () => {
     const { container } = render(<IndividualSection data={empty} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('shows the generated lines chip when an identity touched generated files', () => {
+    const report = buildDemoReport();
+    report.periods[0].repositories[0].users[0].deterministic.generated = {
+      linesAdded: 30,
+      linesRemoved: 4,
+      filesTouched: 2,
+    };
+    render(<IndividualSection data={buildChartData(report)} />);
+
+    expect(screen.getByText('Generated lines')).toBeDefined();
+    expect(screen.getByText('+30 / −4')).toBeDefined();
+  });
 });

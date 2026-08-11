@@ -405,4 +405,55 @@ describe('runCompile', () => {
       expect(md).toContain('| alice@example.com | Alice Smith |');
     });
   });
+
+  it('keeps generated-file lines out of the language stats and reports them separately', async () => {
+    await withTempDir(async (dir) => {
+      const reportFile = path.join(dir, 'report.json');
+      await writeFile(
+        reportFile,
+        trendReportJson({
+          periods: [
+            {
+              since: '2026-01-01T00:00:00.000Z',
+              until: '2026-01-31T23:59:59.999Z',
+              repositories: [
+                {
+                  repo: 'repo-a',
+                  users: [
+                    {
+                      name: 'Alice',
+                      emails: ['alice@example.com'],
+                      deterministic: {
+                        commits: 1,
+                        linesAdded: 15,
+                        languages: {
+                          TypeScript: { linesAdded: 3, linesRemoved: 0, filesTouched: 1 },
+                        },
+                        generated: { linesAdded: 12, linesRemoved: 2, filesTouched: 1 },
+                      },
+                      llm: { status: 'skipped', contributions: [] },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      const output = path.join(dir, 'out');
+
+      await runCompile(
+        reportFile,
+        parseCompileOptions({ report: reportFile, output, unit: 'month' }),
+      );
+
+      const md = await readFile(path.join(output, 'report.md'), 'utf8');
+      // The totals table surfaces the generated lines separately from
+      // the language stats.
+      expect(md).toContain('| Generated files | +12 / −2 lines |');
+      // The per-person report lists them in the user's statistics table.
+      const alice = await readFile(path.join(output, 'people', 'alice.md'), 'utf8');
+      expect(alice).toContain('| Generated lines | +12 / −2 |');
+    });
+  });
 });

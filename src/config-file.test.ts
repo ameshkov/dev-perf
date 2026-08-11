@@ -208,6 +208,56 @@ describe('loadDevPerfConfig', () => {
     await expect(loadDevPerfConfig(both)).rejects.toThrow(/repos\.0/);
   });
 
+  it('accepts a kebab ignore-commits key on a structured repos entry', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const file = path.join(dir, 'config.yaml');
+    await writeFile(
+      file,
+      [
+        'repos:',
+        '  - repo: https://github.com/org/other.git',
+        '    ignore-commits:',
+        '      hashes:',
+        '        - abc1234',
+        '      messages:',
+        '        - ^WIP',
+        '        - \\[skip ci\\]',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(loadDevPerfConfig(file)).resolves.toEqual({
+      repos: [
+        {
+          repo: 'https://github.com/org/other.git',
+          ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP', '\\[skip ci\\]'] },
+        },
+      ],
+    });
+  });
+
+  it('rejects a camelCase ignoreCommits key on a structured repos entry', async () => {
+    // Only the kebab `ignore-commits` is a config key; the camelCase
+    // `ignoreCommits` reuses the shared spec field name and would
+    // otherwise slip past `.strict()`.
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const camel = path.join(dir, 'camel.yaml');
+    await writeFile(camel, 'repos:\n  - repo: r\n    ignoreCommits:\n      hashes: [a]\n');
+    // The rejected entry collapses to `repos.0: Invalid input` in the
+    // union — the entry is rejected loudly, never accepted.
+    await expect(loadDevPerfConfig(camel)).rejects.toThrow(/repos\.0/);
+  });
+
+  it('rejects an invalid message pattern in ignore-commits, naming it', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
+    const file = path.join(dir, 'config.yaml');
+    await writeFile(file, 'repos:\n  - repo: r\n    ignore-commits:\n      messages: ["("]\n');
+
+    await expect(loadDevPerfConfig(file)).rejects.toThrow(
+      /repos\.0\.ignore-commits\.messages\.0: invalid message pattern/,
+    );
+  });
+
   it('rejects malformed structured repos entries, naming the item', async () => {
     dir = await mkdtemp(path.join(os.tmpdir(), 'dev-perf-config-file-'));
     // Each malformed entry must be rejected loudly instead of parsed.

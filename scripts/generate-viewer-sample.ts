@@ -360,10 +360,14 @@ function botOfMonth(month: string): FixtureUser {
       linesRemoved: 400,
       filesTouched: 16,
       activeDays: days(month, 4),
+      // The lock files the bot regenerates are auto-generated: their
+      // lines land in `generated`, not in a language. Only the authored
+      // manifests (package.json, workflow YAML) count as JSON/YAML.
       languages: langs([
-        ['JSON', 300, 290, 12],
-        ['YAML', 120, 110, 4],
+        ['JSON', 20, 18, 2],
+        ['YAML', 40, 36, 2],
       ]),
+      generated: { linesAdded: 360, linesRemoved: 346, filesTouched: 12 },
     },
     llm: {
       overview: 'Automated dependency updates across the lock files and CI action versions.',

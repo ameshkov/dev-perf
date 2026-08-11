@@ -51,16 +51,16 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
-              },
-              {
                 "language": "SQL",
                 "linesAdded": 200
               },
               {
                 "language": "YAML",
-                "linesAdded": 120
+                "linesAdded": 40
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -383,15 +383,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -447,12 +452,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -655,15 +660,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -729,16 +739,16 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
-              },
-              {
                 "language": "SQL",
                 "linesAdded": 230
               },
               {
                 "language": "YAML",
-                "linesAdded": 120
+                "linesAdded": 40
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -1061,15 +1071,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -1125,12 +1140,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -1333,15 +1348,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -1403,16 +1423,16 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
-              },
-              {
                 "language": "SQL",
                 "linesAdded": 260
               },
               {
                 "language": "YAML",
-                "linesAdded": 120
+                "linesAdded": 40
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -1640,15 +1660,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -1704,12 +1729,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -1912,15 +1937,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -1986,16 +2016,16 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
-              },
-              {
                 "language": "SQL",
                 "linesAdded": 290
               },
               {
                 "language": "YAML",
-                "linesAdded": 120
+                "linesAdded": 40
+              },
+              {
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -2318,15 +2348,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -2382,12 +2417,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -2590,15 +2625,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -2668,12 +2708,12 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -2996,15 +3036,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -3060,12 +3105,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -3268,15 +3313,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -3346,12 +3396,12 @@
                 "linesAdded": 300
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -3674,15 +3724,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {
@@ -3738,12 +3793,12 @@
                 "linesAdded": 400
               },
               {
-                "language": "JSON",
-                "linesAdded": 300
+                "language": "YAML",
+                "linesAdded": 40
               },
               {
-                "language": "YAML",
-                "linesAdded": 120
+                "language": "JSON",
+                "linesAdded": 20
               }
             ]
           },
@@ -3946,15 +4001,20 @@
                 "avgCommitSize": 820,
                 "languages": {
                   "JSON": {
-                    "linesAdded": 300,
-                    "linesRemoved": 290,
-                    "filesTouched": 12
+                    "linesAdded": 20,
+                    "linesRemoved": 18,
+                    "filesTouched": 2
                   },
                   "YAML": {
-                    "linesAdded": 120,
-                    "linesRemoved": 110,
-                    "filesTouched": 4
+                    "linesAdded": 40,
+                    "linesRemoved": 36,
+                    "filesTouched": 2
                   }
+                },
+                "generated": {
+                  "linesAdded": 360,
+                  "linesRemoved": 346,
+                  "filesTouched": 12
                 }
               },
               "llm": {

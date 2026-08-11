@@ -267,39 +267,6 @@ export function barLineOption(
 }
 
 /**
- * The option of one bar per category with an individual color per
- * bar — the chart kind of the whole-range size and complexity
- * distributions. Bars carry no legend: the category axis names them.
- *
- * @param rows - One bar per row, in display order.
- * @param colorOf - The bar color per row key; palette when absent.
- * @param format - The value formatter.
- * @returns The chart option.
- */
-export function categoryBarOption(
-  rows: CountRow[],
-  colorOf: (key: string) => string | undefined,
-  format: ValueFormatter,
-): EChartsOption {
-  return {
-    grid: { ...GRID, top: 24 },
-    tooltip: axisTooltip(format),
-    xAxis: categoryAxis(rows.map((row) => row.key)),
-    yAxis: { type: 'value' },
-    series: [
-      {
-        type: 'bar',
-        name: 'Contributions',
-        data: rows.map((row) => ({
-          value: row.value,
-          itemStyle: { color: colorOf(row.key) },
-        })),
-      },
-    ],
-  };
-}
-
-/**
  * The option of a donut pie: one slice per counted row, legend under
  * the ring, slice labels with the name and the formatted value.
  *

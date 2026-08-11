@@ -95,15 +95,28 @@ describe('buildOrientationPrompt', () => {
     expect(prompt).not.toContain('the "dev"x`y" branch');
   });
 
-  it('names the analyzed branch and the excluded paths', async () => {
-    const prompt = await buildOrientationPrompt('https://example.com/repo.git', 'dev', [
-      'docs/',
-      'vendor/locked',
-    ]);
+  it('names the analyzed branch and the excluded paths and commits', async () => {
+    const prompt = await buildOrientationPrompt(
+      'https://example.com/repo.git',
+      'dev',
+      ['docs/', 'vendor/locked'],
+      { hashes: ['abc1234'] },
+    );
     expect(prompt).toContain('The analysis covers the "dev" branch');
     expect(prompt).toContain('- `docs/`');
     expect(prompt).toContain('- `vendor/locked`');
     expect(prompt).not.toContain('none.');
+  });
+
+  it('names the excluded commits', async () => {
+    const prompt = await buildOrientationPrompt('https://example.com/repo.git', 'main', undefined, {
+      hashes: ['abc1234'],
+      messages: ['^WIP'],
+    });
+
+    expect(prompt).toContain('The following commits are excluded from the analysis');
+    expect(prompt).toContain('- `abc1234` (commit hash)');
+    expect(prompt).toContain('- `^WIP` (message pattern)');
   });
 
   it('ends with the required tool-call instruction', async () => {
@@ -114,11 +127,17 @@ describe('buildOrientationPrompt', () => {
     const plain = await buildOrientationPrompt('https://example.com/repo.git', 'main');
     expect(plain).not.toContain('less thorough');
 
-    const retry = await buildOrientationPrompt('https://example.com/repo.git', 'main', undefined, {
-      kind: 'time',
-      cap: 60,
-      sessionId: 'ses_1',
-    });
+    const retry = await buildOrientationPrompt(
+      'https://example.com/repo.git',
+      'main',
+      undefined,
+      undefined,
+      {
+        kind: 'time',
+        cap: 60,
+        sessionId: 'ses_1',
+      },
+    );
     expect(retry).toContain('the 60-second max-time cap');
     expect(retry).toContain('less thorough but faster');
     expect(retry).toContain('Retry after a session limit');
@@ -207,9 +226,13 @@ describe('buildUserPrompt', () => {
     expect(prompt).toContain('the beginning to now (UTC)');
   });
 
-  it('scopes the analysis to the branch and enumerates the excluded paths', async () => {
+  it('scopes the analysis to the branch and enumerates the excluded paths and commits', async () => {
     const prompt = await buildUserPrompt(
-      userInput({ branch: 'dev', ignore: ['docs/', 'vendor/locked'] }),
+      userInput({
+        branch: 'dev',
+        ignore: ['docs/', 'vendor/locked'],
+        ignoreCommits: { hashes: ['abc1234'] },
+      }),
     );
     expect(prompt).toContain('(UTC) on the "dev" branch');
     expect(prompt).toContain('The following paths are excluded from the analysis');
@@ -239,13 +262,39 @@ describe('buildUserPrompt', () => {
     // whitespace-only pattern is a useless bullet telling the LLM a
     // path is excluded that the filters actually drop, so it degrades
     // to "none.".
-    const prompt = await buildUserPrompt(userInput({ ignore: ['  ', ' docs/ '] }));
+    const prompt = await buildUserPrompt(
+      userInput({ ignore: ['  ', ' docs/ '], ignoreCommits: { hashes: ['abc1234'] } }),
+    );
     expect(prompt).toContain('- `docs/`');
     expect(prompt).not.toContain('- ``');
     expect(prompt).not.toContain('none.');
 
     const onlyWhitespace = await buildUserPrompt(userInput({ ignore: ['   '] }));
     expect(onlyWhitespace).toContain('none.');
+  });
+
+  it('enumerates the excluded commits, and renders none when unset', async () => {
+    const prompt = await buildUserPrompt(
+      userInput({ ignoreCommits: { hashes: ['abc1234'], messages: ['^chore'] } }),
+    );
+    expect(prompt).toContain('The following commits are excluded from the analysis');
+    expect(prompt).toContain('- `abc1234` (commit hash)');
+    expect(prompt).toContain('- `^chore` (message pattern)');
+
+    const without = await buildUserPrompt(userInput());
+    // Without commit exclusions the value renders "none." like the
+    // paths block.
+    expect(without).toContain('none.');
+  });
+
+  it('normalizes ignored commit values like the deterministic matcher', async () => {
+    // The matcher trims each hash and pattern and drops the empty ones;
+    // the prompt only enumerates exclusions the filters actually apply.
+    const prompt = await buildUserPrompt(
+      userInput({ ignoreCommits: { hashes: ['  abc1234  '], messages: ['   '] } }),
+    );
+    expect(prompt).toContain('- `abc1234` (commit hash)');
+    expect(prompt).not.toContain('(message pattern)');
   });
 
   it('renders the branch-delta scope note when a base is in effect', async () => {

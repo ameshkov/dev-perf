@@ -13,6 +13,10 @@ or weigh changes inside them, even when they appear while you inspect
 the commits:
 {{ignoredPaths}}
 
+The following commits are excluded from the analysis — do not attribute
+or weigh them, even when they appear in the commit list you inspect:
+{{ignoredCommits}}
+
 ## Repository context
 
 {{repoContext}}

@@ -27,6 +27,7 @@ function fixtureData() {
                     TypeScript: { linesAdded: 30, linesRemoved: 4, filesTouched: 4 },
                     Markdown: { linesAdded: 10, linesRemoved: 0, filesTouched: 2 },
                   },
+                  generated: { linesAdded: 12, linesRemoved: 2, filesTouched: 3 },
                 },
                 llm: {
                   contributions: [
@@ -250,6 +251,8 @@ describe('buildChartData', () => {
     expect(data.totals.weightedPoints).toBe(27.5);
     expect(data.totals.netLines).toBe(70);
     expect(data.totals.activeUsers).toBe(2);
+    expect(data.totals.generatedLinesAdded).toBe(12);
+    expect(data.totals.generatedLinesRemoved).toBe(2);
     expect(data.totals.inputTokens).toBe(200);
     expect(data.totals.cacheReadTokens).toBe(100);
     expect(data.totals.outputTokens).toBe(40);

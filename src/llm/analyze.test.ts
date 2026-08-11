@@ -346,6 +346,7 @@ describe('analyzeRepositoryLLM', () => {
       branch: string;
       head: string;
       ignore: string[] | undefined;
+      ignoreCommits: { hashes: string[]; messages: string[] } | undefined;
       email: string;
       emails: string[];
       since: string;
@@ -356,11 +357,12 @@ describe('analyzeRepositoryLLM', () => {
     };
     // The key parts the filename hash is derived from, self-described.
     expect(cached.payload.overview).toBe(PAYLOAD_A.overview);
-    expect(cached.cacheVersion).toBe(6);
+    expect(cached.cacheVersion).toBe(7);
     expect(cached.repo).toBe('https://example.com/repo.git');
     expect(cached.branch).toBe('main');
     expect(cached.head).toBe('cafebabe12345678');
     expect(cached.ignore).toBeUndefined();
+    expect(cached.ignoreCommits).toBeUndefined();
     expect(cached.email).toBe('alice@example.com');
     expect(cached.emails).toEqual(['alice@example.com']);
     expect(cached.since).toBe(RANGE.since);
@@ -472,6 +474,26 @@ describe('analyzeRepositoryLLM', () => {
     const otherIgnore = stub(true, PAYLOAD_A);
     await analyzeRepositoryLLM({ ...inputFor(otherIgnore, [alice]), ignore: ['vendor/'] });
     expect(otherIgnore.prompts.length).toBeGreaterThan(0);
+  });
+
+  it('keys cached results by the ignored commits', async () => {
+    const first = stub(true, PAYLOAD_A);
+    const alice = group('alice@example.com', 'Alice', 'abc1234d', 'Add pipeline');
+    await analyzeRepositoryLLM({
+      ...inputFor(first, [alice]),
+      ignoreCommits: { hashes: ['abc1234'] },
+    });
+    expect(first.prompts.length).toBeGreaterThan(0);
+
+    // A run with different commit exclusions on the same branch must not
+    // reuse the earlier result — the analyzed commit pool differs.
+    const otherExclusions = stub(true, PAYLOAD_B);
+    const results = await analyzeRepositoryLLM({
+      ...inputFor(otherExclusions, [alice]),
+      ignoreCommits: { hashes: ['def5678'], messages: ['^chore'] },
+    });
+    expect(otherExclusions.prompts.length).toBeGreaterThan(0);
+    expect(results[0]?.llm.overview).toBe(PAYLOAD_B.overview);
   });
 
   it('keys cached results by the base branch of the branch-delta', async () => {

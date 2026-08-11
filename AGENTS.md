@@ -87,7 +87,7 @@ dev-perf/
 │   ├── run-config.ts          # Per-line run configuration dump for the startup log
 │   ├── version.ts             # Application version from package.json
 │   ├── repo/                  # Clone/cache management
-│   ├── deterministic/         # Deterministic analysis (commits, identity, ignore filtering, metrics, languages, base resolution)
+│   ├── deterministic/         # Deterministic analysis (commits, identity, ignore filtering, metrics, languages, generated-file classification, base resolution)
 │   ├── llm/                   # LLM agentic layer (runtime, tools, prompts, sessions, orchestration)
 │   ├── compile/               # Compile layer: JSON report → markdown report with charts
 │   ├── trend/                 # Time-based period splitting

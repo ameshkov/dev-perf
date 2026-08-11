@@ -150,6 +150,7 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
     .map((entry) => entry.lastCommitAt)
     .filter((value) => value !== '')
     .sort();
+  const generated = mergeGenerated(entries);
   return {
     ...summed,
     activeDays,
@@ -160,7 +161,29 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
         ? 0
         : (summed.linesAdded + summed.linesRemoved) / summed.nonMergeCommits,
     languages: mergeLanguages(entries),
+    ...(generated === undefined ? {} : { generated }),
   };
+}
+
+/**
+ * Merges the `generated` stats by summing each entry's counts; the
+ * result is `undefined` when none of the entries carried the stat.
+ *
+ * @param entries - The metrics to merge.
+ * @returns The merged generated contribution, or `undefined`.
+ */
+function mergeGenerated(entries: DeterministicMetrics[]): LanguageContribution | undefined {
+  let merged: LanguageContribution | undefined;
+  for (const entry of entries) {
+    if (entry.generated === undefined) {
+      continue;
+    }
+    merged ??= { linesAdded: 0, linesRemoved: 0, filesTouched: 0 };
+    merged.linesAdded += entry.generated.linesAdded;
+    merged.linesRemoved += entry.generated.linesRemoved;
+    merged.filesTouched += entry.generated.filesTouched;
+  }
+  return merged;
 }
 
 /**
@@ -280,17 +303,30 @@ function keepRepo(repo: string, options: FilterOptions): boolean {
 function recomputeStats(users: User[]): Repository['stats'] {
   const languages: Record<string, number> = {};
   let commits = 0;
+  let generated: LanguageContribution | undefined;
   for (const user of users) {
     commits += user.deterministic.commits;
     for (const [language, contribution] of Object.entries(user.deterministic.languages)) {
       languages[language] = (languages[language] ?? 0) + contribution.linesAdded;
+    }
+    const userGenerated = user.deterministic.generated;
+    if (userGenerated !== undefined) {
+      generated ??= { linesAdded: 0, linesRemoved: 0, filesTouched: 0 };
+      generated.linesAdded += userGenerated.linesAdded;
+      generated.linesRemoved += userGenerated.linesRemoved;
+      generated.filesTouched += userGenerated.filesTouched;
     }
   }
   const topLanguages = Object.entries(languages)
     .sort(([aName, aLines], [bName, bLines]) => bLines - aLines || aName.localeCompare(bName))
     .slice(0, 10)
     .map(([language, linesAdded]) => ({ language, linesAdded }));
-  return { totalCommits: commits, totalUsers: users.length, topLanguages };
+  return {
+    totalCommits: commits,
+    totalUsers: users.length,
+    topLanguages,
+    ...(generated === undefined ? {} : { generated }),
+  };
 }
 
 /**

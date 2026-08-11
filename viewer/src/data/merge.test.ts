@@ -32,6 +32,7 @@ describe('mergeUsers', () => {
             firstCommitAt: '2026-01-06T09:00:00.000Z',
             lastCommitAt: '2026-01-08T09:00:00.000Z',
             languages: { TypeScript: { linesAdded: 100, linesRemoved: 20, filesTouched: 3 } },
+            generated: { linesAdded: 30, linesRemoved: 2, filesTouched: 1 },
           }),
         }),
         buildUser({
@@ -51,6 +52,7 @@ describe('mergeUsers', () => {
               TypeScript: { linesAdded: 50, linesRemoved: 10, filesTouched: 2 },
               Go: { linesAdded: 12, linesRemoved: 4, filesTouched: 1 },
             },
+            generated: { linesAdded: 6, linesRemoved: 1, filesTouched: 2 },
           }),
         }),
       ],
@@ -72,6 +74,12 @@ describe('mergeUsers', () => {
     expect(merged.deterministic.languages).toEqual({
       TypeScript: { linesAdded: 150, linesRemoved: 30, filesTouched: 5 },
       Go: { linesAdded: 12, linesRemoved: 4, filesTouched: 1 },
+    });
+    // The generated stats are summed independently of the languages.
+    expect(merged.deterministic.generated).toStrictEqual({
+      linesAdded: 36,
+      linesRemoved: 3,
+      filesTouched: 3,
     });
   });
 

@@ -88,6 +88,12 @@ export const deterministicMetricsSchema = z.object({
   avgCommitSize: z.number().nonnegative(),
   /** Per-language contributions, keyed by language name. */
   languages: z.record(z.string(), languageContributionSchema),
+  /**
+   * Contributions of generated files — lock files, test snapshots,
+   * minified/build artifacts — kept separate from `languages`, which
+   * excludes them. Absent when the user touched no generated file.
+   */
+  generated: languageContributionSchema.optional(),
   /** Churn per file (v2, not computed in v1). */
   churn: churnSchema.optional(),
 });
@@ -471,6 +477,12 @@ export const repositoryStatsSchema = z.object({
   totalUsers: z.number().int().nonnegative(),
   /** Top languages by lines added, best first. */
   topLanguages: z.array(topLanguageSchema),
+  /**
+   * Contribution of generated files — lock files, test snapshots,
+   * minified/build artifacts — excluded from `topLanguages`. Absent
+   * when no generated file was touched in the range.
+   */
+  generated: languageContributionSchema.optional(),
 });
 
 /**
@@ -478,6 +490,21 @@ export const repositoryStatsSchema = z.object({
  * deterministic layer.
  */
 export type RepositoryStats = z.infer<typeof repositoryStatsSchema>;
+
+/**
+ * The commits excluded from the analysis of one repository: full or
+ * abbreviated hashes and/or case-insensitive message patterns, as
+ * configured. Mirrors `IgnoreCommitsSpec`.
+ *
+ * @internal Exported for tests only; referenced by `repositorySchema`
+ * within the module. Not part of the public module API.
+ */
+export const ignoredCommitsSchema = z.object({
+  /** Full or abbreviated commit hashes excluded. */
+  hashes: z.array(z.string()).optional(),
+  /** Case-insensitive message patterns excluded. */
+  messages: z.array(z.string()).optional(),
+});
 
 /**
  * One analyzed repository entry.
@@ -501,6 +528,9 @@ export const repositorySchema = z.object({
   /** Gitignore-style paths excluded from the analysis of this
    * repository, when any were configured. */
   ignoredPaths: z.array(z.string()).optional(),
+  /** Commits excluded from the analysis of this repository, when any
+   * were configured — by hash and/or by message pattern. */
+  ignoredCommits: ignoredCommitsSchema.optional(),
   /** Analyzed date range (author dates, UTC). */
   range: z.object({
     /** Start of the range. */
@@ -523,12 +553,12 @@ export type Repository = z.infer<typeof repositorySchema>;
 /**
  * One `parameters.repos` entry: the full spec of an analyzed
  * repository — the clone target plus its optional branch, the base the
- * analysis is scoped against, and the ignored paths. The entry schema
- * reuses `repoSpecSchema` (the same validation as the resolved config
- * specs), and additionally accepts a legacy plain-string entry — a bare
- * clone target — from reports written before the spec was recorded;
- * both forms normalize to a spec, so the report type always carries
- * `RepoSpec[]`.
+ * analysis is scoped against, and the ignored paths and commits. The
+ * entry schema reuses `repoSpecSchema` (the same validation as the
+ * resolved config specs), and additionally accepts a legacy plain-string
+ * entry — a bare clone target — from reports written before the spec
+ * was recorded; both forms normalize to a spec, so the report type
+ * always carries `RepoSpec[]`.
  */
 const repoSpecEntrySchema = z.preprocess(
   (value) => (typeof value === 'string' ? { repo: value } : value),
@@ -543,8 +573,8 @@ const repoSpecEntrySchema = z.preprocess(
  */
 export const parametersSchema = z.object({
   /** Repositories analyzed, as full specs — the clone target plus the
-   * branch, base scoping, and ignored paths used for the analysis — in
-   * input order, one per analyzed entry. */
+   * branch, base scoping, and ignored paths and commits used for the
+   * analysis — in input order, one per analyzed entry. */
   repos: z.array(repoSpecEntrySchema).min(1),
   /** Start of the analyzed range (author date, UTC). */
   since: z.string(),

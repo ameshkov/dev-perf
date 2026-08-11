@@ -50,12 +50,13 @@ describe('TeamSection', () => {
     expect(screen.getByText('Work-type share')).toBeDefined();
   });
 
-  it('renders the wide class on the repo comparison and the per-period signal blocks', () => {
+  it('renders the wide class on the repo comparison, the languages block and the per-period signal blocks', () => {
     const { container } = render(<TeamSection data={buildChartData(buildDemoReport())} />);
 
     const wide = [...container.querySelectorAll('.chart-block-wide')];
     expect(wide.map((block) => block.querySelector('.chart-block-title')?.textContent)).toEqual([
       'Commits per repository',
+      'Top languages per period',
       'Risk flags per period',
       'Quality signals per period',
     ]);

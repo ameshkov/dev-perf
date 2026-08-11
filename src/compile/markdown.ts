@@ -160,6 +160,13 @@ function totalsTable(data: ChartData): string {
     data.topLanguages.length > 0 ? data.topLanguages.join(', ') : '-',
     'Top languages by lines added',
   ]);
+  if (totals.generatedLinesAdded > 0 || totals.generatedLinesRemoved > 0) {
+    rows.push([
+      'Generated files',
+      `+${formatInt(totals.generatedLinesAdded)} / −${formatInt(totals.generatedLinesRemoved)} lines`,
+      'Lines in generated files (lockfiles, snapshots, build output), excluded from the language stats',
+    ]);
+  }
   return table(['Metric', 'Value', 'Description'], rows);
 }
 

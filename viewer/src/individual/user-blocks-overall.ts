@@ -12,7 +12,6 @@ import {
   COMPLEXITY_COLORS,
   SIZE_COLORS,
   WORK_TYPE_COLORS,
-  categoryBarOption,
   cycleColor,
   donutOption,
 } from '../charts/index.js';
@@ -30,7 +29,7 @@ function overallSizesBlock(series: UserSeries): ChartBlockDescriptor {
     title: 'Contribution sizes',
     description: 'Contribution sizes over the whole range (xs to xl t-shirt sizing).',
     optionOf: () =>
-      categoryBarOption(
+      donutOption(
         SIZE_ORDER.map((size) => ({
           key: size,
           value: contributions.filter((contribution) => contribution.size === size).length,
@@ -54,7 +53,7 @@ function overallComplexityBlock(series: UserSeries): ChartBlockDescriptor {
     title: 'Complexity distribution',
     description: 'Contribution complexity over the whole range (low, medium, high).',
     optionOf: () =>
-      categoryBarOption(
+      donutOption(
         COMPLEXITY_ORDER.map((level) => ({
           key: level,
           value: contributions.filter((contribution) => contribution.complexity === level).length,

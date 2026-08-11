@@ -5,7 +5,12 @@
  * analysis is scoped against, and the ignored paths.
  */
 import { describe, expect, it } from 'vitest';
-import { parseRepoConfigItem, parseRepoSpec, repoSpecLabel } from './repo-spec.js';
+import {
+  hasIgnoreCommits,
+  parseRepoConfigItem,
+  parseRepoSpec,
+  repoSpecLabel,
+} from './repo-spec.js';
 
 describe('parseRepoSpec', () => {
   it('builds the spec of a bare repository string', () => {
@@ -101,6 +106,49 @@ describe('parseRepoConfigItem', () => {
   it('leaves the base absent on a plain string entry (default scoping)', () => {
     expect(parseRepoConfigItem('https://github.com/org/repo.git').base).toBeUndefined();
   });
+
+  it('carries the commits to exclude, dropping the empty sides', () => {
+    expect(
+      parseRepoConfigItem({
+        repo: 'https://github.com/org/repo.git',
+        ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP', '\\[skip ci\\]'] },
+      }),
+    ).toEqual({
+      repo: 'https://github.com/org/repo.git',
+      ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP', '\\[skip ci\\]'] },
+    });
+    expect(
+      parseRepoConfigItem({
+        repo: 'https://github.com/org/repo.git',
+        ignoreCommits: { hashes: ['abc1234'], messages: [] },
+      }),
+    ).toEqual({
+      repo: 'https://github.com/org/repo.git',
+      ignoreCommits: { hashes: ['abc1234'] },
+    });
+  });
+
+  it('drops an effectively-empty ignore-commits spec', () => {
+    expect(
+      parseRepoConfigItem({
+        repo: 'https://github.com/org/repo.git',
+        ignoreCommits: { hashes: [], messages: [] },
+      }).ignoreCommits,
+    ).toBeUndefined();
+    expect(parseRepoConfigItem({ repo: 'r' }).ignoreCommits).toBeUndefined();
+  });
+});
+
+describe('hasIgnoreCommits', () => {
+  it('treats undefined and empty specs as "no exclusions"', () => {
+    expect(hasIgnoreCommits(undefined)).toBe(false);
+    expect(hasIgnoreCommits({ hashes: [], messages: [] })).toBe(false);
+  });
+
+  it('returns true when any hash or pattern is configured', () => {
+    expect(hasIgnoreCommits({ hashes: ['a'] })).toBe(true);
+    expect(hasIgnoreCommits({ messages: ['a'] })).toBe(true);
+  });
 });
 
 describe('repoSpecLabel', () => {
@@ -124,9 +172,24 @@ describe('repoSpecLabel', () => {
     );
   });
 
+  it('appends the ignored commits when set', () => {
+    expect(
+      repoSpecLabel({
+        repo: 'r',
+        ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP', '\\[skip ci\\]'] },
+      }),
+    ).toBe('r (ignored commits: hashes abc1234; messages ^WIP, \\[skip ci\\])');
+  });
+
   it('joins every non-default field in order', () => {
-    expect(repoSpecLabel({ repo: 'r', branch: 'dev', base: 'main', ignore: ['docs/'] })).toBe(
-      'r (branch: dev, base: main, ignore: docs/)',
-    );
+    expect(
+      repoSpecLabel({
+        repo: 'r',
+        branch: 'dev',
+        base: 'main',
+        ignore: ['docs/'],
+        ignoreCommits: { hashes: ['abc1234'] },
+      }),
+    ).toBe('r (branch: dev, base: main, ignore: docs/, ignored commits: hashes abc1234)');
   });
 });

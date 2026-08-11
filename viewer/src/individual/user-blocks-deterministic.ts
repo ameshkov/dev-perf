@@ -117,6 +117,9 @@ function userLanguagesBlock(series: UserSeries, labels: string[]): ChartBlockDes
     description:
       'Lines added per period, stacked by language — pick the languages you want to see with the tag selector.',
     tags: languages,
+    // Many languages make a tall tag list; the stacked comparison
+    // reads better full-width, like the per-period signal blocks.
+    wide: true,
     optionOf: (selected) =>
       stackedBarOption(
         labels,

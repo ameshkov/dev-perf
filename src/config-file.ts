@@ -29,34 +29,46 @@ const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 /**
  * A structured `repos` config entry: the bare clone target plus an
  * optional branch to analyze, an optional `base-branch` the analysis is
- * scoped against (branch-delta), and gitignore-style paths to exclude
- * for that repository alone. Unknown keys are rejected. The field
- * validations come from `repoEntryFields` — the same constraints the
- * spec schema uses, so the config-file validation and spec normalization
- * can never drift — with the kebab `base-branch` key renamed to the
- * schema's camelCase `base` before validation. The rename happens in a
+ * scoped against (branch-delta), gitignore-style paths to exclude, and
+ * the commits to exclude (`ignore-commits`, by hash and/or message
+ * pattern) for that repository alone. Unknown keys are rejected. The
+ * field validations come from `repoEntryFields` — the same constraints
+ * the spec schema uses, so the config-file validation and spec
+ * normalization can never drift — with the kebab `base-branch` /
+ * `ignore-commits` keys renamed to the schema's camelCase `base` /
+ * `ignoreCommits` before validation. The rename happens in a
  * `preprocess` (not a `transform`), so the schema stays a plain object
  * and a field-level rejection keeps its precise error path
  * (`repos.0.repo: …`) inside the union; an unknown-key rejection still
  * collapses to `repos.0: Invalid input` in the union.
  */
 const repoConfigEntrySchema: z.ZodType<RepoConfigEntry, unknown> = z.preprocess((value) => {
-  // Rename the kebab `base-branch` key to the schema's camelCase
-  // `base`; everything else passes through. A non-object value (the
-  // union's string arm) is returned unchanged.
+  // Rename the kebab `base-branch` / `ignore-commits` keys to the
+  // schema's camelCase `base` / `ignoreCommits`; everything else passes
+  // through. A non-object value (the union's string arm) is returned
+  // unchanged.
   if (typeof value !== 'object' || value === null) {
     return value;
   }
-  const { 'base-branch': base, base: camelBase, ...rest } = value as Record<string, unknown>;
-  // Only the kebab `base-branch` is a config key. The camelCase `base`
-  // is the shared spec field's name: it would otherwise slip past
-  // `.strict()` and be silently discarded when both keys are set.
-  // Reroute it to a name the strict schema does not know so the entry
-  // is rejected loudly instead of accepted as the kebab form.
+  const {
+    'base-branch': base,
+    base: camelBase,
+    'ignore-commits': ignoreCommits,
+    ignoreCommits: camelIgnoreCommits,
+    ...rest
+  } = value as Record<string, unknown>;
+  // Only the kebab forms are config keys. The camelCase `base` /
+  // `ignoreCommits` are the shared spec fields' names: they would
+  // otherwise slip past `.strict()` and be silently discarded when both
+  // keys are set. Reroute them to names the strict schema does not know
+  // so the entry is rejected loudly instead of accepted as the kebab
+  // form.
   return {
     ...rest,
     ...(base === undefined ? {} : { base }),
     ...(camelBase === undefined ? {} : { baseCamel: camelBase }),
+    ...(ignoreCommits === undefined ? {} : { ignoreCommits }),
+    ...(camelIgnoreCommits === undefined ? {} : { ignoreCommitsCamel: camelIgnoreCommits }),
   };
 }, z.object(repoEntryFields).strict());
 
@@ -234,11 +246,40 @@ export async function loadDevPerfConfig(
   const result = configFileSchema.safeParse(parsed ?? {});
   if (!result.success) {
     const details = result.error.issues
-      .map((issue) => `${issue.path.join('.') || '$'}: ${issue.message}`)
+      .map((issue) => `${configKeyPath(issue.path) || '$'}: ${issue.message}`)
       .join('\n');
     throw new Error(`Invalid config file (${file}):\n${details}`);
   }
   return result.data;
+}
+
+/**
+ * Renders a validation issue path as the config keys the user set: each
+ * field segment is kebab-cased, so a nested repo field like
+ * `ignoreCommits.messages` — the schema's camelCase name, after the
+ * `repoConfigEntrySchema` preprocess renamed the kebab `ignore-commits`
+ * key — renders as the config key `ignore-commits.messages`. Numeric
+ * segments (list indexes) pass through unchanged.
+ *
+ * @param path - The zod issue path.
+ * @returns The config key path.
+ */
+function configKeyPath(path: PropertyKey[]): string {
+  return path
+    .map((segment) => (typeof segment === 'number' ? String(segment) : kebabCase(String(segment))))
+    .join('.');
+}
+
+/**
+ * Renders a camelCase name as its kebab-case config key
+ * (`ignoreCommits` → `ignore-commits`); a name with no capitals is
+ * returned unchanged.
+ *
+ * @param name - The camelCase field name.
+ * @returns The kebab-case config key.
+ */
+function kebabCase(name: string): string {
+  return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
 }
 
 /**

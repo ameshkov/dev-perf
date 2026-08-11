@@ -114,6 +114,11 @@ describe('buildTeamWorkBlocks', () => {
     expect(series).toHaveLength(1);
     expect(series[0]).toMatchObject({ name: 'CSS', data: [30, 10] });
   });
+
+  it('spans the languages block across the full chart grid', () => {
+    const [languages] = buildTeamWorkBlocks(data, labels);
+    expect(languages.wide).toBe(true);
+  });
 });
 
 describe('buildLlmActivityBlocks', () => {

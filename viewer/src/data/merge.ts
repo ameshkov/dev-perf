@@ -88,6 +88,7 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
     .map((entry) => entry.lastCommitAt)
     .filter((value) => value !== '')
     .sort();
+  const generated = mergeGenerated(entries);
   return {
     ...summed,
     activeDays,
@@ -98,7 +99,29 @@ function mergeDeterministic(entries: DeterministicMetrics[]): DeterministicMetri
         ? 0
         : (summed.linesAdded + summed.linesRemoved) / summed.nonMergeCommits,
     languages: mergeLanguages(entries),
+    ...(generated === undefined ? {} : { generated }),
   };
+}
+
+/**
+ * Merges the `generated` stats by summing each entry's counts; the
+ * result is `undefined` when none of the entries carried the stat.
+ *
+ * @param entries - The metrics to merge.
+ * @returns The merged generated contribution, or `undefined`.
+ */
+function mergeGenerated(entries: DeterministicMetrics[]): LanguageContribution | undefined {
+  let merged: LanguageContribution | undefined;
+  for (const entry of entries) {
+    if (entry.generated === undefined) {
+      continue;
+    }
+    merged ??= { linesAdded: 0, linesRemoved: 0, filesTouched: 0 };
+    merged.linesAdded += entry.generated.linesAdded;
+    merged.linesRemoved += entry.generated.linesRemoved;
+    merged.filesTouched += entry.generated.filesTouched;
+  }
+  return merged;
 }
 
 /**

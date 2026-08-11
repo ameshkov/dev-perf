@@ -67,6 +67,13 @@ export function statisticsTable(series: UserSeries, data: ChartData): string {
     ['Active days', formatInt(user.deterministic.activeDays.length)],
     ['Top language', topLanguageOf(user)],
   ];
+  const generated = user.deterministic.generated;
+  if (generated !== undefined) {
+    rows.push([
+      'Generated lines',
+      `+${formatInt(generated.linesAdded)} / −${formatInt(generated.linesRemoved)}`,
+    ]);
+  }
   if (data.parameters.llmEnabled) {
     rows.push(
       ['Contributions (LLM)', formatInt(user.llm.contributions.length)],

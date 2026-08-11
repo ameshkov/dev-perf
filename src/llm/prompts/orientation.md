@@ -11,6 +11,10 @@ attribute or weigh them, even when they surface while you inspect the
 repository:
 {{ignoredPaths}}
 
+The following commits are excluded from the analysis — do not attribute
+or weigh them, even when they surface while you inspect the repository:
+{{ignoredCommits}}
+
 Explore the repository with the read tools and read-only git commands
 as needed. The repository is shared and must stay untouched: never
 check out a different branch or change the working tree. Produce a

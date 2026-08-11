@@ -134,8 +134,11 @@ function languagesBlock(data: ChartData, labels: string[]): ChartBlockDescriptor
     id: 'team-languages',
     title: 'Top languages per period',
     description:
-      'Lines added per period, stacked by language. Pick the languages you want to compare with the tag selector.',
+      'Lines added per period, stacked by language. Pick the languages you want to compare with the tag selector. Generated files (lockfiles, snapshots, minified/built output) are excluded from the language stats.',
     tags: languages,
+    // Many languages make a tall tag list; the stacked comparison
+    // reads better full-width, like the per-period signal blocks.
+    wide: true,
     optionOf: (selected) =>
       stackedBarOption(
         labels,

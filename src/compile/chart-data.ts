@@ -26,6 +26,8 @@ import {
 } from './aggregate.js';
 import { repoSummaries } from './repos.js';
 import type { RepoSummary } from './repos.js';
+import { teamTotalsOf, usageRows } from './totals.js';
+import type { TeamTotals, UsageRow } from './totals.js';
 
 /** Contribution size weights used for the weighted-points series. */
 export const SIZE_WEIGHTS: Record<ContributionSize, number> = {
@@ -128,44 +130,6 @@ export interface CountRow {
   key: string;
   /** How often the category occurs. */
   value: number;
-}
-
-/** Token usage of one user across the report. */
-interface UsageRow {
-  /** The user's display name. */
-  name: string;
-  /** Non-cached input tokens across all analyses of the user. */
-  inputTokens: number;
-  /** Input tokens read from the prompt cache. */
-  cacheReadTokens: number;
-  /** Output tokens across all analyses of the user. */
-  outputTokens: number;
-}
-
-/** Team totals of the whole report. */
-interface TeamTotals {
-  /** Commits across all users and periods. */
-  commits: number;
-  /** LLM-assessed contributions across all users. */
-  contributions: number;
-  /** Size- and complexity-weighted contribution points across all users. */
-  weightedPoints: number;
-  /** Lines added across all users. */
-  linesAdded: number;
-  /** Lines removed across all users. */
-  linesRemoved: number;
-  /** Net lines (added minus removed). */
-  netLines: number;
-  /** Files touched across all users. */
-  filesTouched: number;
-  /** Users with at least one commit. */
-  activeUsers: number;
-  /** Non-cached input tokens across all LLM analyses. */
-  inputTokens: number;
-  /** Input tokens read from the prompt cache. */
-  cacheReadTokens: number;
-  /** Output tokens across all LLM analyses. */
-  outputTokens: number;
 }
 
 /** The fewest users covering half of the commits. */
@@ -386,61 +350,6 @@ function topLanguagesOf(team: TeamPoint[]): string[] {
     .sort(([aName, aLines], [bName, bLines]) => bLines - aLines || aName.localeCompare(bName))
     .slice(0, 5)
     .map(([language]) => language);
-}
-
-/**
- * Total tokens (input + prompt-cache reads + output) of a usage
- * row, used both to order the usage rows and to accumulate team
- * totals.
- *
- * @param row - The usage row.
- * @returns The row's total token count.
- */
-function totalTokens(row: UsageRow): number {
-  return row.inputTokens + row.cacheReadTokens + row.outputTokens;
-}
-
-/**
- * The per-user usage rows, ordered by total tokens descending (ties
- * broken by name).
- *
- * @param users - The master users.
- * @returns The usage rows.
- */
-function usageRows(users: User[]): UsageRow[] {
-  return users
-    .filter((user) => user.llm.tokenUsage !== undefined)
-    .map((user) => ({
-      name: user.name,
-      inputTokens: user.llm.tokenUsage?.input ?? 0,
-      cacheReadTokens: user.llm.tokenUsage?.cacheRead ?? 0,
-      outputTokens: user.llm.tokenUsage?.output ?? 0,
-    }))
-    .sort((a, b) => totalTokens(b) - totalTokens(a) || a.name.localeCompare(b.name));
-}
-
-/**
- * The team totals of the whole report.
- *
- * @param team - The team points.
- * @param users - The master users.
- * @param usage - The usage rows.
- * @returns The totals.
- */
-function teamTotalsOf(team: TeamPoint[], users: User[], usage: UsageRow[]): TeamTotals {
-  return {
-    commits: team.reduce((sum, point) => sum + point.commits, 0),
-    contributions: team.reduce((sum, point) => sum + point.contributions, 0),
-    weightedPoints: team.reduce((sum, point) => sum + point.weightedPoints, 0),
-    linesAdded: team.reduce((sum, point) => sum + point.linesAdded, 0),
-    linesRemoved: team.reduce((sum, point) => sum + point.linesRemoved, 0),
-    netLines: team.reduce((sum, point) => sum + point.linesAdded - point.linesRemoved, 0),
-    filesTouched: users.reduce((sum, user) => sum + user.deterministic.filesTouched, 0),
-    activeUsers: users.filter((user) => user.deterministic.commits > 0).length,
-    inputTokens: usage.reduce((sum, row) => sum + row.inputTokens, 0),
-    cacheReadTokens: usage.reduce((sum, row) => sum + row.cacheReadTokens, 0),
-    outputTokens: usage.reduce((sum, row) => sum + row.outputTokens, 0),
-  };
 }
 
 /**

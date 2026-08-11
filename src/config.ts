@@ -260,9 +260,11 @@ const CONFIG_KEY: Readonly<Record<string, string>> = {
  * Renders an issue path as the config key the user set, e.g.
  * `providerUrl` → `provider-url`; the `repos` path renders as `repos`,
  * the `maps` field renders as `users-map` (its config key), and an
- * empty path renders as `options`. Unknown fields fall back to their
- * kebab-case name, so a config key is still named even for future
- * options.
+ * empty path renders as `options`. Every segment is kebab-cased, so a
+ * nested repo field like `ignoreCommits.messages` renders as the config
+ * key `ignore-commits.messages` — never the camelCase field name.
+ * Unknown fields fall back to their kebab-case name, so a config key is
+ * still named even for future options.
  *
  * @param path - Issue path from a zod validation error.
  * @returns The config key for error messages.
@@ -272,12 +274,24 @@ function optionKey(path: PropertyKey[]): string {
     return 'options';
   }
   const first = String(path[0]);
-  const base = CONFIG_KEY[first] ?? first.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+  const base = CONFIG_KEY[first] ?? kebabCase(first);
   const rest = path
     .slice(1)
-    .map((segment) => `.${String(segment)}`)
+    .map((segment) => `.${kebabCase(String(segment))}`)
     .join('');
   return base + rest;
+}
+
+/**
+ * Renders a camelCase name as its kebab-case config key
+ * (`ignoreCommits` → `ignore-commits`); a name with no capitals is
+ * returned unchanged.
+ *
+ * @param name - The camelCase field name.
+ * @returns The kebab-case config key.
+ */
+function kebabCase(name: string): string {
+  return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
 }
 
 /**

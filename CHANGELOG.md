@@ -8,8 +8,35 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- A per-repository `ignore-commits` option on structured `repos`
+  entries that drops specific commits from that repository's analysis:
+  `hashes` excludes commits by full or abbreviated hash (matched as a
+  case-insensitive prefix of the commit's sha), `messages` excludes
+  commits whose subject matches a case-insensitive regular expression.
+  Excluded commits are dropped before both the deterministic metrics
+  and the LLM analysis (the LLM is told which commits are excluded),
+  and each report entry records the `ignoredCommits` when any were
+  configured.
+
 ### Changed
 
+- Auto-generated files — dependency lock files (`pnpm-lock.yaml`,
+  `yarn.lock`, `package-lock.json`, `composer.lock`, `Cargo.lock`,
+  `Gemfile.lock`, `poetry.lock`, `go.sum`, `Package.resolved`, …),
+  test snapshots (`*.snap`), minified/source-map and named build
+  artifacts, vendored dependency subtrees (`node_modules/`, Go
+  `vendor/`), and compiler/designer codegen output — are no longer
+  counted in the per-language stats. A `composer.lock` or
+  `pnpm-lock.yaml` no longer inflates `Unknown` or `YAML` (and the
+  other language buckets) with hundreds of thousands of generated
+  lines. Their lines and file touches are still counted in the
+  aggregate totals and reported separately as the per-user and
+  per-repository `generated` stat, and the `compile` command and the
+  viewer surface them (executive-summary "Generated files" row,
+  per-user "Generated lines", viewer author chip) so dependency-churn
+  activity stays visible. See the design doc §5.5.
 - Repositories are now cloned in full (`git clone`, no partial-clone
   filter), so every blob is local right after the clone and the whole
   analysis — reading commits (`git log --numstat`), resolving the
@@ -36,6 +63,15 @@ and this project adheres to
   chart width, and its filter shows the short repository name (the
   last path segment, as in the chart legend) instead of the full
   clone URL; hovering a chip still shows the full URL.
+- The viewer's `Top languages per period` and `Languages per
+  period` charts (team and individual dynamics) now span the full
+  chart width, like the `Commits per repository` and per-period
+  signal charts, so the stacked language comparison and its tag list
+  get more room.
+- The viewer's individual dynamics `Contribution sizes` and
+  `Complexity distribution` charts are now donut pies with a legend
+  and per-slice labels, like the team distributions and the work-type
+  share, instead of single bars per category.
 - The viewer's intro now links the `dev-perf` name to the project's
   GitHub repository.
 - The viewer's meta bar now collapses long repository lists behind a

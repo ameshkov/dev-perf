@@ -21,7 +21,6 @@ export { cycleColor, percentFormat } from './labels.js';
 export {
   barLineOption,
   barOption,
-  categoryBarOption,
   donutOption,
   groupedBarOption,
   linesOption,

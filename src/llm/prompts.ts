@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Commit, CommitFile } from '../deterministic/commits.js';
 import type { AnalyzedRange } from '../report/index.js';
+import type { IgnoreCommitsSpec } from '../repo/repo-spec.js';
 import type { SessionLimitHit } from './session-limits.js';
 
 /** How many file paths a commit line lists before they are truncated. */
@@ -42,6 +43,9 @@ export interface UserPromptInput {
   base?: string;
   /** Gitignore-style paths excluded for this repository, if any. */
   ignore?: string[];
+  /** The commits excluded for this repository — by hash and/or message
+   * pattern — if any. */
+  ignoreCommits?: IgnoreCommitsSpec;
   /** Display name of the analyzed user. */
   name: string;
   /** Lowercased primary author email of the analyzed user. */
@@ -100,6 +104,7 @@ export function buildUserSystemPrompt(): Promise<string> {
  * line.
  * @param branch - The effective checked-out branch being analyzed.
  * @param ignore - Gitignore-style paths excluded for the repository, if any.
+ * @param ignoreCommits - The commits excluded for the repository, if any.
  * @param limitHit - The session limit a previous attempt exceeded, when
  * this is a retry after such a failure.
  * @returns The orientation prompt text.
@@ -108,12 +113,14 @@ export async function buildOrientationPrompt(
   repo: string,
   branch: string,
   ignore?: string[],
+  ignoreCommits?: IgnoreCommitsSpec,
   limitHit?: SessionLimitHit,
 ): Promise<string> {
   return renderTemplate(await loadTemplate('orientation'), {
     repo,
     branch: branchNote(branch),
     ignoredPaths: ignoredPathsValue(ignore),
+    ignoredCommits: ignoredCommitsValue(ignoreCommits),
     retryAdvice: await buildLimitRetryNote(limitHit),
   });
 }
@@ -150,6 +157,7 @@ export async function buildUserPrompt(input: UserPromptInput): Promise<string> {
     repo: input.repo,
     branch: branchNote(input.branch),
     ignoredPaths: ignoredPathsValue(input.ignore),
+    ignoredCommits: ignoredCommitsValue(input.ignoreCommits),
     scopeNote: scopeNoteValue(input.base),
     since,
     until,
@@ -220,6 +228,30 @@ function ignoredPathsValue(ignore: string[] | undefined): string {
     return 'none.';
   }
   return patterns.map((path) => `- ${codeSpan(path)}`).join('\n');
+}
+
+/**
+ * The excluded-commits value for the prompts: one dash item per hash
+ * and per message pattern (backtick-quoted, tagged by kind), or a
+ * "none." sentence when nothing is excluded — so the template always
+ * renders a defined value. Values are normalized exactly like the
+ * deterministic matcher (`commit-ignore.ts` trims each hash and pattern
+ * and drops the empty ones), so the prompt only ever enumerates
+ * exclusions that the filters actually apply.
+ *
+ * @param spec - The repository's excluded commits, if any.
+ * @returns The renderable exclusion list.
+ */
+function ignoredCommitsValue(spec: IgnoreCommitsSpec | undefined): string {
+  const hashes = (spec?.hashes ?? []).map((hash) => hash.trim()).filter((hash) => hash !== '');
+  const messages = (spec?.messages ?? [])
+    .map((pattern) => pattern.trim())
+    .filter((pattern) => pattern !== '');
+  const lines = [
+    ...hashes.map((hash) => `- ${codeSpan(hash)} (commit hash)`),
+    ...messages.map((pattern) => `- ${codeSpan(pattern)} (message pattern)`),
+  ];
+  return lines.length === 0 ? 'none.' : lines.join('\n');
 }
 
 /**

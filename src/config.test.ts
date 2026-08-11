@@ -366,6 +366,26 @@ describe('resolveReportOptions', () => {
     ]);
   });
 
+  it('normalizes structured repos entries into specs with commit exclusions', () => {
+    const resolved = resolveReportOptions({
+      repos: [
+        {
+          repo: 'https://github.com/org/b.git',
+          ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP'] },
+        },
+        { repo: 'https://github.com/org/c.git', ignoreCommits: { hashes: [], messages: [] } },
+      ],
+    });
+
+    expect(resolved.repos).toEqual([
+      {
+        repo: 'https://github.com/org/b.git',
+        ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP'] },
+      },
+      { repo: 'https://github.com/org/c.git' },
+    ]);
+  });
+
   it('records the config file path when one was used', () => {
     expect(resolveReportOptions({}, 'config.yaml').configFile).toBe('config.yaml');
     expect(resolveReportOptions({}).configFile).toBeUndefined();
@@ -475,6 +495,38 @@ describe('parseReportOptions', () => {
     expect(() => parseReportOptions({ repos: [{ repo: 'r', ignore: [''] }], llm: false })).toThrow(
       /repos\.0\.ignore\.0: an ignore pattern must be non-empty/,
     );
+  });
+
+  it('carries the configured commit exclusions into the report options', () => {
+    const options = parseReportOptions(
+      resolveReportOptions({
+        repos: [
+          {
+            repo: 'https://github.com/org/repo.git',
+            ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP'] },
+          },
+        ],
+        llm: false,
+      }),
+    );
+
+    expect(options.repos).toEqual([
+      {
+        repo: 'https://github.com/org/repo.git',
+        ignoreCommits: { hashes: ['abc1234'], messages: ['^WIP'] },
+      },
+    ]);
+  });
+
+  it('rejects an invalid message pattern, naming the ignore-commits key and pattern', () => {
+    expect(() =>
+      parseReportOptions(
+        resolveReportOptions({
+          repos: [{ repo: 'https://github.com/org/repo.git', ignoreCommits: { messages: ['('] } }],
+          llm: false,
+        }),
+      ),
+    ).toThrow(/repos\.0\.ignore-commits\.messages\.0: invalid message pattern/);
   });
 
   it('reports a clean validation error for a null or undefined input', () => {

@@ -32,7 +32,7 @@ environment variables are no longer option sources.
 
 | Key | Commands | Type | Notes |
 | --- | --- | --- | --- |
-| `repos` | report, compile | list | Repositories: `string` or `{ repo, branch?, base-branch?, ignore? }`; a structured `branch` selects that branch as a delta vs the base (default: the default branch, `base-branch` overrides, `''` = full history); ignored paths are excluded; `compile` keep-filter |
+| `repos` | report, compile | list | Repositories: `string` or `{ repo, branch?, base-branch?, ignore?, ignore-commits? }`; a structured `branch` selects that branch as a delta vs the base (default: the default branch, `base-branch` overrides, `''` = full history); `ignore` excludes gitignore-style paths; `ignore-commits` excludes specific commits by hash and/or message pattern; `compile` keep-filter |
 | `since` / `until` | report | string | Date range; any git date format |
 | `unit` | report | string | day/week/month/quarter/year; requires `since` |
 | `output` | report | string | JSON report file |
@@ -79,6 +79,12 @@ repos:
     ignore:
       - docs/
       - vendor/
+    ignore-commits:
+      hashes:
+        - a1b2c3d4e5f6...
+      messages:
+        - '^chore:'
+        - '\[skip ci\]'
 ```
 
 Ignored paths are gitignore-style (no `!` negation): a trailing `/`
@@ -93,6 +99,33 @@ the `ignoredPaths` when any were configured, and the resolved
 `baseBranch` when the analysis was scoped to a branch-delta (the LLM
 then receives a scope note naming the base, and the base is part of its
 result cache key).
+
+### Ignored commits (`ignore-commits`)
+
+A structured repository entry can additionally exclude whole commits
+from the analysis — by commit hash and/or by a regular expression
+matched against the commit message:
+
+```yaml
+repos:
+  - repo: https://github.com/org/repo.git
+    ignore-commits:
+      hashes:
+        - a1b2c3d4e5f6...
+      messages:
+        - '^chore:'
+        - '\[skip ci\]'
+```
+
+A hash matches as a case-insensitive prefix of the commit's full sha,
+so a pasted short hash works and casing never matters. A message
+pattern is matched case-insensitively against the commit subject (the
+first line of the message) and must be a valid JavaScript regular
+expression — an invalid one is a config error naming the pattern.
+Excluded commits are dropped entirely, merges included, before the
+deterministic metrics and the LLM layer count anything, so neither
+reports them; the LLM is told which commits are excluded, and each
+report entry records the `ignoredCommits` when any were configured.
 
 ## Date range (`since` / `until`)
 
