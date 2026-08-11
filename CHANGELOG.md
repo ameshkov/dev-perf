@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-08-11
+
 ### Added
 
 - A per-repository `ignore-commits` option on `repos` entries drops
@@ -31,12 +33,6 @@ and this project adheres to
 - Contribution points now scale each contribution's size weight by its
   LLM-assessed complexity multiplier, so complex work counts more than
   large-but-simple work.
-
-### Removed
-
-- The `git-parallel-per-host` option is removed: repositories are now
-  cloned in full with a single transfer each, so the per-host cap on
-  parallel git operations is no longer needed.
 
 ## [v1.1.0] - 2026-08-10
 
@@ -129,6 +125,7 @@ and this project adheres to
   `linux/amd64` and `linux/arm64`, sandboxing the analysis away from
   the host.
 
-[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.1.0...HEAD
-[v1.1.0]: https://github.com/ameshkov/dev-perf/compare/v1.0.0...v1.1.0
+[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.2.0
+[v1.1.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.1.0
 [v1.0.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.0.0
