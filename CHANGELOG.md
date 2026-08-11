@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [v1.3.0] - 2026-08-11
+
 ### Added
 
 - The built-in extension→language map now recognizes Apple Xcode and
@@ -138,7 +140,8 @@ and this project adheres to
   `linux/amd64` and `linux/arm64`, sandboxing the analysis away from
   the host.
 
-[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.2.0...HEAD
+[unreleased]: https://github.com/ameshkov/dev-perf/compare/v1.3.0...HEAD
+[v1.3.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.3.0
 [v1.2.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.2.0
 [v1.1.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.1.0
 [v1.0.0]: https://github.com/ameshkov/dev-perf/releases/tag/v1.0.0
