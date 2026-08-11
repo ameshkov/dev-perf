@@ -237,6 +237,17 @@
   color: var(--accent-2);
 }
 
+/* A period without contributions: the group stays listed with this
+   placeholder instead of the cards. */
+
+.contribution-empty {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1.5px dashed var(--line-strong);
+  color: var(--text-3);
+  font-size: 13px;
+}
+
 /* The LLM overview opening each contribution unit. */
 
 .contribution-overview {

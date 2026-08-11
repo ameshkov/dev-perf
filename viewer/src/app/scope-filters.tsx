@@ -6,7 +6,7 @@
  */
 import type { ReactElement } from 'react';
 import type { CountRow } from '../data/index.js';
-import { formatInt, repoLabel } from '../data/index.js';
+import { formatInt, repoName } from '../data/index.js';
 import type { ScopeHandlers } from './report-scope.js';
 
 /** The props of one scope filter group. */
@@ -234,7 +234,7 @@ export function ScopeFilters({
           caption="Repositories"
           options={repoOptions}
           selected={selectedRepos}
-          labelOf={repoLabel}
+          labelOf={repoName}
           handlers={repoHandlers}
         />
       ) : null}

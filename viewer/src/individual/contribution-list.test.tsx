@@ -73,18 +73,24 @@ describe('ContributionList', () => {
     expect([...(list?.children ?? [])].indexOf(overview as Element)).toBe(0);
   });
 
-  it('groups the cards per period and renders every field of a card', () => {
+  it('groups the cards per period, newest first, and renders every field of a card', () => {
     const alice = data.users[0];
     const { container } = render(<ContributionList series={alice} periods={data.periods} />);
 
-    // Only January carries contributions; the empty February group is dropped.
+    // Periods are listed newest first; the empty February group stays
+    // listed with a placeholder instead of being dropped.
     const groups = container.querySelectorAll('.contribution-group');
-    expect(groups).toHaveLength(1);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].id).toBe('period-1');
+    expect(groups[1].id).toBe('period-0');
+    expect(screen.getByText('2026-02')).toBeDefined();
     expect(screen.getByText('2026-01')).toBeDefined();
-    expect(screen.getByText('2 contributions')).toBeDefined();
+    expect(screen.getByText('2 contributions · 6.5 points')).toBeDefined();
+    expect(screen.getByText('0 contributions · 0 points')).toBeDefined();
+    expect(screen.getByText('No contributions in this period.')).toBeDefined();
 
-    // The unit's LLM overview opens the group.
-    const overview = groups[0].querySelector('.contribution-overview');
+    // The unit's LLM overview opens the January group.
+    const overview = groups[1].querySelector('.contribution-overview');
     expect(overview?.textContent).toBe('Shipped the payments API.');
 
     expect(screen.getByText('Ship the payments API')).toBeDefined();
@@ -111,6 +117,60 @@ describe('ContributionList', () => {
     // Commit shas are shortened to seven characters.
     expect(screen.getByText('a1b2c3d')).toBeDefined();
     expect(screen.getByText('b2c3d4e')).toBeDefined();
+  });
+
+  it('lists the contribution groups newest to oldest', () => {
+    const twoUnits = buildChartData(
+      buildTrendReport({
+        unit: 'month',
+        periods: [
+          {
+            since: '2026-01-01T00:00:00.000Z',
+            until: '2026-01-31T23:59:59.999Z',
+            repositories: [
+              buildRepository({
+                users: [
+                  buildUser({
+                    name: 'Casey',
+                    llm: {
+                      status: 'completed',
+                      contributions: [buildContribution({ title: 'January work' })],
+                    },
+                  }),
+                ],
+              }),
+            ],
+          },
+          {
+            since: '2026-02-01T00:00:00.000Z',
+            until: '2026-02-28T23:59:59.999Z',
+            repositories: [
+              buildRepository({
+                users: [
+                  buildUser({
+                    name: 'Casey',
+                    llm: {
+                      status: 'completed',
+                      contributions: [buildContribution({ title: 'February work' })],
+                    },
+                  }),
+                ],
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    const { container } = render(
+      <ContributionList series={twoUnits.users[0]} periods={twoUnits.periods} />,
+    );
+    const groups = container.querySelectorAll('.contribution-group');
+    expect(groups[0].id).toBe('period-1');
+    expect(groups[1].id).toBe('period-0');
+    // The newest period's card opens the list.
+    const titles = container.querySelectorAll('.contribution-title');
+    expect(titles[0].textContent).toBe('February work');
+    expect(titles[1].textContent).toBe('January work');
   });
 
   it('shows the size and complexity reasoning in a collapsible detail', () => {
@@ -183,7 +243,18 @@ describe('ContributionList', () => {
     expect(container.querySelectorAll('.contribution-group')).toHaveLength(2);
     const overviews = container.querySelectorAll('.contribution-overview');
     expect(overviews).toHaveLength(2);
-    expect(overviews[0].textContent).toBe('January unit overview.');
-    expect(overviews[1].textContent).toBe('February unit overview.');
+    // Newest first: the February unit opens the list.
+    expect(overviews[0].textContent).toBe('February unit overview.');
+    expect(overviews[1].textContent).toBe('January unit overview.');
+  });
+
+  it('places the period placeholder for a period without contributions', () => {
+    const alice = data.users[0];
+    const { container } = render(<ContributionList series={alice} periods={data.periods} />);
+    const empty = container.querySelector('#period-1 .contribution-empty');
+    expect(empty?.textContent).toBe('No contributions in this period.');
+    // The empties carry no contribution cards.
+    const february = container.querySelector('#period-1');
+    expect(february?.querySelector('.contribution-card')).toBeNull();
   });
 });

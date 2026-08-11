@@ -8,6 +8,28 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- The viewer's navigation panel gains a "Contributor statistics" group:
+  a contributor picker for individual dynamics and, for multi-period
+  LLM reports, one chip per period — the viewed period's chip stays
+  selected and clicking one jumps to that period's contribution group.
+- The viewer's per-period contribution headers now also show the
+  size- and complexity-weighted points next to the contribution count.
+
+### Changed
+
+- The viewer sorts each contributor's period groups newest first and
+  shows a "No contributions in this period" placeholder instead of
+  dropping empty periods.
+- The viewer's navigation panel labels repositories with their short
+  name (last path segment) instead of the full URL, which stays
+  available as a tooltip.
+- Picking a contributor by hand no longer scrolls to the contribution
+  list; only the period chips in the navigation panel scroll.
+- The viewer's navigation panel spans the full width on narrow screens,
+  so mobile never requires horizontal scrolling.
+
 ## [v1.3.0] - 2026-08-11
 
 ### Added

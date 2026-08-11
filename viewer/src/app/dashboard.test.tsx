@@ -219,7 +219,8 @@ describe('Dashboard scope filters', () => {
   it('recomputes the overview when a repository is toggled off', () => {
     const { container } = renderDashboard();
     const repoGroup = screen.getByRole('group', { name: 'Repositories' });
-    fireEvent.click(within(repoGroup).getByRole('button', { name: /github\.com\/acme\/api/ }));
+    // The nav panel labels repositories with their short name.
+    fireEvent.click(within(repoGroup).getByRole('button', { name: /api/ }));
 
     expect(kpiValue(container, 'Commits')).toBe('6');
     expect(kpiValue(container, 'Lines added')).toBe('+65');
@@ -244,7 +245,7 @@ describe('Dashboard scope filters', () => {
   it('narrows the contributors to the scoped repositories', () => {
     renderDashboard();
     const repoGroup = screen.getByRole('group', { name: 'Repositories' });
-    fireEvent.click(within(repoGroup).getByRole('button', { name: /github\.com\/acme\/api/ }));
+    fireEvent.click(within(repoGroup).getByRole('button', { name: /api/ }));
 
     // Web-only scope: Alice 4 commits, Bob 2.
     const userGroup = screen.getByRole('group', { name: 'Contributors' });
@@ -261,5 +262,103 @@ describe('Dashboard scope filters', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
     expect(kpiValue(container, 'Commits')).toBe('23');
     expect(screen.queryByRole('button', { name: 'Reset filters' })).toBeNull();
+  });
+
+  it('labels the repository chips with the short repo name, not the full url', () => {
+    renderDashboard();
+    const repoGroup = screen.getByRole('group', { name: 'Repositories' });
+    expect(within(repoGroup).getByRole('button', { name: /^api/ })).toBeDefined();
+    expect(within(repoGroup).getByRole('button', { name: /^web/ })).toBeDefined();
+    // The full url stays available as the chip title.
+    const chip = within(repoGroup).getByRole('button', { name: /^api/ });
+    expect(chip.getAttribute('title')).toBe('git@github.com:acme/api.git');
+  });
+});
+
+describe('Dashboard contributor statistics and period navigation', () => {
+  beforeEach(() => {
+    vi.mocked(echarts.init).mockClear();
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+      callback(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders the contributor statistics group with the contributor select and one period chip per period', () => {
+    renderDashboard();
+    const group = screen.getByRole('group', { name: 'Contributor statistics' });
+    const options = within(group).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(['Alice Nguyen', 'Bob Fisher']);
+    const periods = within(group).getAllByRole('button');
+    expect(periods.map((period) => period.textContent)).toEqual(['2026-01', '2026-02']);
+    // The latest period is the currently viewed one by default.
+    expect(periods[1]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('omits the period chips for reports with a single period', () => {
+    renderDashboard({ report: buildTrendReport() });
+    const group = screen.getByRole('group', { name: 'Contributor statistics' });
+    expect(within(group).getByRole('combobox')).toBeDefined();
+    expect(within(group).queryByRole('button')).toBeNull();
+  });
+
+  it('omits the period chips for a deterministic-only report', () => {
+    renderDashboard({ report: buildDemoReport({ llmEnabled: false }) });
+    const group = screen.getByRole('group', { name: 'Contributor statistics' });
+    expect(within(group).getByRole('combobox')).toBeDefined();
+    expect(within(group).queryByRole('button')).toBeNull();
+  });
+
+  it('selects the period, closes the panel and scrolls to its contribution group', () => {
+    const { onNavClose } = renderDashboard();
+    // The default pick is Alice; selecting February keeps Alice (periods
+    // no longer switch the contributor) and jumps to her February group.
+    expect(screen.getByText('alice@example.com')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '2026-02' }));
+
+    expect(screen.getByText('alice@example.com')).toBeDefined();
+    expect(onNavClose).toHaveBeenCalledTimes(1);
+    const group = document.getElementById('period-1');
+    expect(group?.querySelector('.contribution-empty')).not.toBeNull();
+    expect(window.scrollTo).toHaveBeenCalled();
+  });
+
+  it('selects an earlier period while keeping the same contributor', () => {
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: '2026-01' }));
+    expect(screen.getByText('alice@example.com')).toBeDefined();
+    const group = document.getElementById('period-0');
+    expect(group?.querySelector('.contribution-card')).not.toBeNull();
+  });
+
+  it('switches the contributor from the select and navigates to their detail', () => {
+    const { container, onNavClose } = renderDashboard();
+    const group = screen.getByRole('group', { name: 'Contributor statistics' });
+    fireEvent.change(within(group).getByRole('combobox'), { target: { value: 'Bob Fisher' } });
+
+    expect(screen.getByText('bob@example.com')).toBeDefined();
+    expect(onNavClose).toHaveBeenCalledTimes(1);
+    // The chosen contributor's detail is on screen.
+    expect(container.querySelector('.user-detail')).not.toBeNull();
+    expect(window.scrollTo).toHaveBeenCalled();
+  });
+
+  it('keeps the selected contributor after a manual pick following a period jump', () => {
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: '2026-02' }));
+    expect(window.scrollTo).toHaveBeenCalled();
+    const scrollTo = vi.mocked(window.scrollTo);
+    scrollTo.mockClear();
+
+    fireEvent.click(screen.getAllByRole('tab')[1]);
+
+    expect(screen.getByText('bob@example.com')).toBeDefined();
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });

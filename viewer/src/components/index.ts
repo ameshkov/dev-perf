@@ -19,4 +19,5 @@ export {
 } from './badges.js';
 export { KpiGrid } from './kpi-grid.js';
 export type { KpiItem } from './kpi-grid.js';
+export { scrollToId } from './scroll.js';
 export { resolveSelection, useTagSelections } from './tag-selections.js';

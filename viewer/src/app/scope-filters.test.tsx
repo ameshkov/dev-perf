@@ -179,4 +179,23 @@ describe('ScopeFilters', () => {
     );
     expect(container.firstChild).toBeNull();
   });
+
+  it('labels repository chips with the short repo name, not the full url', () => {
+    render(
+      <ScopeFilters
+        repoOptions={[
+          { key: 'git@github.com:acme/super-service.git', value: 9 },
+          { key: 'https://github.com/acme/client-portal.git', value: 3 },
+        ]}
+        selectedRepos={undefined}
+        repoHandlers={handlers()}
+        userOptions={[{ key: 'Alice Nguyen', value: 12 }]}
+        selectedUsers={undefined}
+        userHandlers={handlers()}
+      />,
+    );
+    expect(screen.getByText('super-service')).toBeDefined();
+    expect(screen.getByText('client-portal')).toBeDefined();
+    expect(screen.queryByText('github.com/acme/super-service')).toBeNull();
+  });
 });

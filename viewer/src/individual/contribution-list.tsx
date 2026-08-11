@@ -1,16 +1,18 @@
 /**
- * The contributions of one user as per-unit sections: every unit
- * starts with the LLM overview of the user's work in that unit,
- * followed by the contribution cards — title, summary, size and
- * complexity, work types, areas, quality signals and risk flags, and
- * the grouped commits, with the reasoning behind the size and
- * complexity in a collapsible detail. One unlabeled unit for
- * single-period reports, one labeled unit per period otherwise.
+ * The contributions of one user as per-unit sections: every period
+ * (newest first) lists its LLM overview, then the contribution cards —
+ * title, summary, size and complexity, work types, areas, quality
+ * signals and risk flags, and the grouped commits, with the reasoning
+ * behind the size and complexity in a collapsible detail. The period
+ * header lists the contribution count and the size- and
+ * complexity-weighted points of the period. Periods without
+ * contributions stay listed with a placeholder. One unlabeled unit for
+ * single-period reports.
  */
 import type { ReactElement } from 'react';
 import type { Contribution } from '../report/index.js';
 import type { PeriodInfo, UserSeries } from '../data/index.js';
-import { formatInt } from '../data/index.js';
+import { formatInt, weightedPointsOf } from '../data/index.js';
 import {
   Badge,
   toneForComplexity,
@@ -147,8 +149,8 @@ function contributionCard(contribution: Contribution, index: number): ReactEleme
  * Renders the contributions of one user as per-unit sections, each
  * starting with the unit's LLM overview: one unlabeled unit for
  * single-period reports, one labeled unit per period when the report
- * has more than one period (units without contributions are
- * dropped).
+ * has more than one period. Periods are listed newest first; a period
+ * without contributions shows a placeholder instead of the cards.
  *
  * @param props - The user's series and the periods.
  * @returns The list element, or `null` when the user has no
@@ -170,24 +172,30 @@ export function ContributionList({ series, periods }: ContributionListProps): Re
   const indexes = periodIndexOf(series);
   const groups = periods
     .map((period, index) => ({
+      index,
       label: period.label,
       overview: series.periodLlm[index]?.overview,
       items: contributions.filter((contribution) => indexes.get(contribution) === index),
     }))
-    .filter((group) => group.items.length > 0);
+    .reverse();
   return (
     <div className="contribution-list">
       {groups.map((group) => (
-        <div key={group.label} className="contribution-group">
+        <div key={group.label} id={`period-${group.index}`} className="contribution-group">
           <h4 className="contribution-group-label">
             {group.label}
             <span className="contribution-group-count">
               {formatInt(group.items.length)}{' '}
-              {group.items.length === 1 ? 'contribution' : 'contributions'}
+              {group.items.length === 1 ? 'contribution' : 'contributions'} ·{' '}
+              {formatInt(weightedPointsOf(group.items))} points
             </span>
           </h4>
           {unitOverview(group.overview)}
-          {group.items.map(contributionCard)}
+          {group.items.length > 0 ? (
+            group.items.map(contributionCard)
+          ) : (
+            <div className="contribution-empty">No contributions in this period.</div>
+          )}
         </div>
       ))}
     </div>

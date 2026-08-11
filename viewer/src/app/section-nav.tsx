@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactElement } from 'react';
+import { scrollToId } from '../components/index.js';
 
 /** One navigable dashboard section. */
 export interface SectionNavItem {
@@ -13,9 +14,6 @@ export interface SectionNavItem {
   /** The link label. */
   label: string;
 }
-
-/** The gap kept between the top bar and a scrolled-to section. */
-const SCROLL_GAP = 14;
 
 /** The state of the {@link useActiveSection} hook. */
 interface ActiveSectionState {
@@ -65,34 +63,6 @@ export function useActiveSection(ids: readonly string[]): ActiveSectionState {
   return { active, markActive: setActive };
 }
 
-/**
- * The height of the sticky top bar, from the design token; zero where
- * stylesheets do not apply (tests).
- *
- * @returns The top bar height in viewport pixels.
- */
-function topbarHeight(): number {
-  const height = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue('--topbar-height'),
-  );
-  return Number.isFinite(height) ? height : 0;
-}
-
-/**
- * Smooth-scrolls to one section, stopping just below the sticky top
- * bar.
- *
- * @param id - The id of the section element.
- */
-function scrollToSection(id: string): void {
-  const target = document.getElementById(id);
-  if (target === null) {
-    return;
-  }
-  const top = target.getBoundingClientRect().top + window.scrollY - topbarHeight() - SCROLL_GAP;
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-}
-
 /** The props of the {@link SectionNav} component. */
 export interface SectionNavProps {
   /** The sections, in document order. */
@@ -113,7 +83,7 @@ export function SectionNav({ sections, onNavigate }: SectionNavProps): ReactElem
   const handleClick = (event: MouseEvent<HTMLAnchorElement>, id: string): void => {
     event.preventDefault();
     markActive(id);
-    scrollToSection(id);
+    scrollToId(id);
     onNavigate?.();
   };
   return (

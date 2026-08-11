@@ -8,11 +8,19 @@ by what they read — activity, the nature of the work, and the LLM's
 risk and quality signals — per-user detail views with the
 LLM-assessed contribution cards, and repository comparisons. A `Navigation` button in the top bar opens a panel that
 navigates between the sections and scopes the whole dashboard to a
-subset of repositories and/or contributors — the overview KPIs, team
-dynamics, distributions, and individual reports all recompute for the
-selection. The panel is hidden by default and closes on an outside
-click, on Escape, or when a section link navigates; the overview meta
-bar shows one chip per analyzed repository spec — a repository
+subset of repositories (scoped by their short name) and/or
+contributors — the overview KPIs, team dynamics, distributions, and
+individual reports all recompute for the selection. The panel's
+"Contributor statistics" group picks which contributor's individual
+dynamics are shown and, for a multi-period report, one chip per
+period — the chip of the currently viewed period stays selected, and
+clicking another period jumps to that period's contribution group in
+the individual section, where every period stays listed; a period
+without contributions shows a placeholder. The panel is hidden by
+default and closes on an outside click, on Escape, or when a section
+link navigates; it also stays narrower than the viewport at every
+width, so it never needs horizontal scrolling on mobile. The overview
+meta bar shows one chip per analyzed repository spec — a repository
 analyzed on several branches, or with a different base scoping or
 ignore filters, shows one distinguishable chip per spec — and long
 lists collapse behind a single "N repositories" chip that expands on

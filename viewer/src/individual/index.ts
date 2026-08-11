@@ -5,3 +5,4 @@
  * the contribution cards are internal to the module.
  */
 export { IndividualSection } from './user-section.js';
+export type { PeriodJump } from './period-jump.js';
