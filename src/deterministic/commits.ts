@@ -184,7 +184,11 @@ function commitFromHeader(line: string): Commit {
 
 /**
  * Parses one numstat row `added\tdeleted\tpath`; a `-` count marks a
- * binary file, recorded without line counts.
+ * binary file, recorded without line counts. The path is unquoted:
+ * git C-quotes paths that contain non-ASCII, `"`, `\`, or control
+ * characters (`"a\nb.txt"`), and the unquoted real path — not the
+ * escaped form — must reach every downstream consumer (language
+ * detection, path ignores, the LLM layer).
  *
  * @param line - The numstat row.
  * @returns The changed file with its line counts.
@@ -192,10 +196,130 @@ function commitFromHeader(line: string): Commit {
 function parseNumstatRow(line: string): CommitFile {
   const [added, deleted, ...pathParts] = line.split('\t');
   return {
-    path: pathParts.join('\t'),
+    path: unquoteGitPath(pathParts.join('\t')),
     added: added === '-' ? undefined : Number(added),
     deleted: deleted === '-' ? undefined : Number(deleted),
   };
+}
+
+/** Conventional C escapes git emits for control bytes in quoted paths:
+ * the escaped letter → the byte it decodes to. */
+const GIT_NAMED_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  t: 0x09,
+  n: 0x0a,
+  v: 0x0b,
+  f: 0x0c,
+  r: 0x0d,
+  '"': 0x22,
+  '\\': 0x5c,
+};
+
+/**
+ * Unquotes a git C-quoted path: git wraps a path that contains
+ * non-ASCII bytes (with `core.quotepath=true`, the default), `"`, `\`,
+ * or a control character in double quotes and escapes the offending
+ * bytes. The escapes are the conventional C escape set (`\a`, `\b`,
+ * `\t`, `\n`, `\v`, `\f`, `\r`, `\"`, `\\`) plus an octal `\NNN` form
+ * for any other byte. A path git emitted without quotes passes through
+ * unchanged.
+ *
+ * The decoded bytes are reassembled as a UTF-8 file name — git escapes
+ * non-ASCII *bytes*, not code points, so `\303\251` is the two raw
+ * bytes of `é`, decoded back to the same character. `-c
+ * core.quotepath=true` pins the git invocation to quote non-ASCII the
+ * same way on every machine, so the parser never sees a path whose
+ * raw bytes leaked through.
+ *
+ * @param path - The numstat path, possibly C-quoted.
+ * @returns The unquoted path, as the repository would report it.
+ *
+ * @internal Exported for tests only (`commits.test.ts` asserts the
+ * escape set); used by `parseNumstatRow` within the module. Not part
+ * of the public module API.
+ */
+export function unquoteGitPath(path: string): string {
+  const inner = quotedInner(path);
+  if (inner === undefined) {
+    return path;
+  }
+  return Buffer.from(decodeEscapedBytes(inner)).toString('utf8');
+}
+
+/**
+ * Returns the content between a quoted path's outer quotes, or
+ * `undefined` when the path is not git-quoted (does not start and end
+ * with `"`). A quoted path is at least `""`, so a two-character string
+ * has an empty inner content.
+ *
+ * @param path - The path as reported by git numstat.
+ * @returns The unescaped content, or `undefined` when unquoted.
+ */
+function quotedInner(path: string): string | undefined {
+  if (path.length < 2 || path[0] !== '"' || path[path.length - 1] !== '"') {
+    return undefined;
+  }
+  return path.slice(1, -1);
+}
+
+/**
+ * Decodes the escapes of a quoted path's inner content into the raw
+ * bytes of the real file name: a backslash starts an escape — a named
+ * control escape (`\n`, `\t`, …), an octal byte escape (`\303`), or an
+ * unrecognized sequence kept literally — and any other character is its
+ * own byte. The byte buffer is re-decoded as UTF-8 by the caller.
+ *
+ * @param inner - The content between the outer quotes.
+ * @returns The raw bytes of the unquoted path.
+ */
+function decodeEscapedBytes(inner: string): number[] {
+  const bytes: number[] = [];
+  for (let index = 0; index < inner.length; index++) {
+    if (inner.charCodeAt(index) !== 0x5c /* \ */) {
+      bytes.push(inner.charCodeAt(index));
+      continue;
+    }
+    const escaped = inner[index + 1];
+    const named = GIT_NAMED_ESCAPES[escaped];
+    if (named !== undefined) {
+      bytes.push(named);
+      index += 1;
+      continue;
+    }
+    const octal = readOctalEscape(inner, index + 1);
+    if (octal !== undefined) {
+      bytes.push(octal.value);
+      index += octal.length;
+      continue;
+    }
+    // An unrecognized escape (e.g. a trailing backslash) is kept
+    // literally, so an exotic path never silently loses a byte.
+    bytes.push(0x5c);
+  }
+  return bytes;
+}
+
+/**
+ * Parses the octal byte escape (`\NNN`, exactly three octal digits)
+ * git emits for a byte with no named escape, starting after the
+ * backslash.
+ *
+ * @param inner - The content between the outer quotes.
+ * @param start - Index of the first escape digit.
+ * @returns The byte value and the number of consumed characters
+ * (digits only, the leading backslash is consumed by the caller), or
+ * `undefined` when no three octal digits follow.
+ */
+function readOctalEscape(
+  inner: string,
+  start: number,
+): { value: number; length: number } | undefined {
+  const octal = inner.slice(start, start + 3);
+  if (!/^[0-7]{3}$/.test(octal)) {
+    return undefined;
+  }
+  return { value: Number.parseInt(octal, 8), length: 3 };
 }
 
 /**
@@ -243,7 +367,10 @@ export async function readCommits(
  * branch-delta — scoped to the commits not reachable from the excluded
  * base via `HEAD --not <sha>`. The positive side is named explicitly
  * (`HEAD`) because `git log --not <sha>` without a prior rev defaults
- * to nothing, not to the branch head. An empty
+ * to nothing, not to the branch head. `-c core.quotepath=true` pins
+ * path quoting, so a path with non-ASCII or special bytes is always
+ * emitted C-quoted and octal-escaped regardless of the machine's git
+ * config — `parseNumstatRow` unquotes it (`unquoteGitPath`). An empty
  * repository fails git log with "does not have any commits yet"; that
  * is caught here and reported as an empty log.
  *
@@ -260,7 +387,7 @@ async function gitLogBounded(
   range: CommitRange,
   options: RunGitOptions,
 ): Promise<string> {
-  const args = ['log'];
+  const args = ['-c', 'core.quotepath=true', 'log'];
   if (range.exclude !== undefined) {
     args.push('HEAD', '--not', range.exclude);
   }

@@ -190,6 +190,15 @@ and uses a logical `pi/home/` agent home that is never created on disk
     --numstat --no-renames
   ```
 
+  `core.quotepath` is pinned to `true` (`git -c core.quotepath=true log …`)
+  so every path is emitted identically regardless of the machine's git
+  config: a path containing non-ASCII, `"` `\`, or control bytes comes
+  out C-quoted with octal escapes. The parser unquotes it
+  (`src/deterministic/commits.ts`, `unquoteGitPath`) so language
+  detection, path ignores, and the LLM layer all see the real file
+  name — an iOS asset named `Icon-114×114@3x.png` is `Image`, not
+  `Unknown`.
+
   For a branch-delta scope the same log adds the base exclusion:
   `git log HEAD --not <base> --since=... --until=...` (the positive side is named
   explicitly — `git log --not <base>` without a prior rev defaults to nothing).

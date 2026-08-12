@@ -14,6 +14,12 @@ import { isGeneratedPath } from './generated.js';
 /** Fallback language for file paths no mapping recognizes. */
 const UNKNOWN_LANGUAGE = 'Unknown';
 
+/** Generic bucket for dotfiles and other plain config files: `.gitignore`,
+ * `.editorconfig`, `CODEOWNERS`, husky hooks, and similar. They are
+ * authored tools configuration, not source code, and deserve a visible
+ * bucket rather than landing in `Unknown`. */
+const CONFIG_LANGUAGE = 'Config';
+
 /**
  * Extension→language map for well-known extensions (lowercased keys
  * without the leading dot).
@@ -79,6 +85,17 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   txt: 'Text',
   config: 'Text',
   bin: 'Binary',
+  // Ruby/CocoaPods land: podspecs are Ruby DSL, so they join the Ruby
+  // bucket with the extension-less `Podfile`/fastlane basenames.
+  podspec: 'Ruby',
+  // Android tooling config: ProGuard/R8 rules (`proguard-rules.pro`)
+  // and Java-style `*.properties` (gradle.properties, sentry.properties).
+  pro: 'Android ProGuard Config',
+  properties: 'Properties',
+  // Editorconfig files are named `*editorconfig` (`kmp.editorconfig`).
+  editorconfig: 'Config',
+  // Kotlin/Native cinterop definition files (`*.def`).
+  def: 'Kotlin/Native',
   // Apple platform files: Xcode project/build configuration and Apple
   // resource formats — neither code nor plain text. Unity's per-asset
   // `.meta` sidecars are excluded as generated in
@@ -87,6 +104,9 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   xcworkspacedata: 'Xcode Workspace',
   xcscheme: 'Xcode Scheme',
   xcconfig: 'Xcode Config',
+  xcsettings: 'Xcode Config',
+  intentdefinition: 'Xcode Config',
+  modulemap: 'Xcode Config',
   strings: 'Apple Localization',
   stringsdict: 'Apple Localization',
   plist: 'Apple Property List',
@@ -150,6 +170,8 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   proto: 'Protocol Buffers',
   graphql: 'GraphQL',
   gql: 'GraphQL',
+  // `Dockerfile`-suffixed files (`android.Dockerfile`, `dev.Dockerfile`).
+  dockerfile: 'Dockerfile',
 };
 
 /**
@@ -163,6 +185,17 @@ const FILENAME_LANGUAGES: Record<string, string> = {
   'go.mod': 'Go',
   'go.sum': 'Go',
   'go.work': 'Go',
+  // CocoaPods manifest (Ruby DSL) and fastlane's Ruby scripts.
+  podfile: 'Ruby',
+  fastfile: 'Ruby',
+  matchfile: 'Ruby',
+  pluginfile: 'Ruby',
+  gemfile: 'Ruby',
+  // Well-known config tooling that carries no useful extension.
+  codeowners: 'Config',
+  'commit-msg': 'Config',
+  'post-checkout': 'Config',
+  'pre-push': 'Config',
 };
 
 /**
@@ -170,6 +203,9 @@ const FILENAME_LANGUAGES: Record<string, string> = {
  * the basename is matched against the filename map
  * first, then the extension after its last dot. Matching is
  * case-insensitive; paths nothing matches fall back to `Unknown`.
+ * Dotfiles (a basename starting with `.`, such as `.gitignore` or
+ * `.editorconfig`) that no filename or extension mapping recognizes
+ * land in the generic `Config` bucket instead of `Unknown`.
  *
  * @param filePath - Path as reported by git numstat.
  * @returns The language name.
@@ -188,7 +224,17 @@ export function languageForPath(filePath: string): string {
   if (dot === -1) {
     return UNKNOWN_LANGUAGE;
   }
-  return EXTENSION_LANGUAGES[baseName.slice(dot + 1)] ?? UNKNOWN_LANGUAGE;
+  const byExtension = EXTENSION_LANGUAGES[baseName.slice(dot + 1)];
+  if (byExtension !== undefined) {
+    return byExtension;
+  }
+  // A dotfile with no recognized extension (`.gitignore`, `.babelrc`)
+  // is a plain config file; one with a recognized extension (`.eslintrc.
+  // json`) already returned it above.
+  if (baseName.startsWith('.')) {
+    return CONFIG_LANGUAGE;
+  }
+  return UNKNOWN_LANGUAGE;
 }
 
 /**

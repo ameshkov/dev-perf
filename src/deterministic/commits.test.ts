@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildFixtureRepo, removeFixtureRepo } from '../../test/fixtures/repo-builder.js';
 import { gitLog, gitRevParse, runGit } from '../repo/git.js';
-import { parseCommitLog, readCommits, resolveBoundDate } from './commits.js';
+import { parseCommitLog, readCommits, resolveBoundDate, unquoteGitPath } from './commits.js';
 
 /** Known shas used in the golden parse tests (any 40-hex values). */
 const SHA1 = '1111111111111111111111111111111111111111';
@@ -84,6 +84,42 @@ describe('parseCommitLog', () => {
   it('returns an empty list for empty output', () => {
     expect(parseCommitLog('')).toEqual([]);
     expect(parseCommitLog('\n\n')).toEqual([]);
+  });
+});
+
+describe('unquoteGitPath', () => {
+  it('passes through an unquoted path unchanged', () => {
+    expect(unquoteGitPath('src/App.ts')).toBe('src/App.ts');
+    expect(unquoteGitPath('a/b/c.txt')).toBe('a/b/c.txt');
+    expect(unquoteGitPath('')).toBe('');
+  });
+
+  it('decodes named escapes to their control characters', () => {
+    // git's C-quoted output is literal text: `\t` is backslash-plus-t.
+    expect(unquoteGitPath(String.raw`"a\tb"`)).toBe('a\tb');
+    expect(unquoteGitPath(String.raw`"a\nb"`)).toBe('a\nb');
+    expect(unquoteGitPath(String.raw`"a\vb"`)).toBe('a\vb');
+    expect(unquoteGitPath(String.raw`"a\fb"`)).toBe('a\fb');
+    expect(unquoteGitPath(String.raw`"a\rb"`)).toBe('a\rb');
+    expect(unquoteGitPath(String.raw`"a\ab"`)).toBe('a\u0007b');
+    expect(unquoteGitPath(String.raw`"a\bb"`)).toBe('a\bb');
+  });
+
+  it('decodes a doubled quote and a doubled backslash to their literals', () => {
+    // A literal `"` or `\` inside a path is C-escaped by git.
+    expect(unquoteGitPath(String.raw`"a\"b"`)).toBe('a"b');
+    expect(unquoteGitPath(String.raw`"a\\b"`)).toBe('a\\b');
+  });
+
+  it('reassembles octal byte escapes as a UTF-8 path', () => {
+    // `é` is the two bytes 0xC3 0xA9; git octal-escapes each byte.
+    expect(unquoteGitPath(String.raw`"caf\303\251.txt"`)).toBe('café.txt');
+    // A Cyrillic letter: `с` is 0xD1 0x81.
+    expect(unquoteGitPath(String.raw`"file\321\201.txt"`)).toBe('fileс.txt');
+  });
+
+  it('keeps an unrecognized escape literally', () => {
+    expect(unquoteGitPath(String.raw`"a\qb"`)).toBe('a\\qb');
   });
 });
 
@@ -388,6 +424,34 @@ describe('readCommits', () => {
       expect(commits).toHaveLength(1);
       expect(commits[0].files).toStrictEqual([
         { path: 'data.bin', added: undefined, deleted: undefined },
+      ]);
+    } finally {
+      await removeFixtureRepo(repo);
+    }
+  });
+
+  it('unquotes git C-quoted paths with non-ASCII and special characters', async () => {
+    const repo = await buildFixtureRepo([
+      {
+        author: { name: 'Alice', email: 'alice@example.com' },
+        date: '2026-01-01T10:00:00Z',
+        message: 'non-ascii names',
+        files: [
+          // A Cyrillic name (git octal-escapes the non-ASCII bytes).
+          { path: 'dir/ста.txt', content: 'a\n' },
+          // A name with a space and an em-dash, both of which git can quote.
+          { path: 'dir/NY—LOGO.png', content: 'b\n' },
+          { path: 'dir/plain.txt', content: 'c\n' },
+        ],
+      },
+    ]);
+    try {
+      const commits = await readCommits(repo.dir);
+      expect(commits).toHaveLength(1);
+      expect(commits[0].files.map((file) => file.path).sort()).toEqual([
+        'dir/NY—LOGO.png',
+        'dir/plain.txt',
+        'dir/ста.txt',
       ]);
     } finally {
       await removeFixtureRepo(repo);

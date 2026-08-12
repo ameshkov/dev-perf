@@ -119,11 +119,47 @@ describe('languageForPath', () => {
     expect(languageForPath('go.work')).toBe('Go');
   });
 
+  it('maps CocoaPods and fastlane basenames to Ruby', () => {
+    expect(languageForPath('Podfile')).toBe('Ruby');
+    expect(languageForPath('ios/Podfile')).toBe('Ruby');
+    expect(languageForPath('fastlane/Fastfile')).toBe('Ruby');
+    expect(languageForPath('fastlane/Matchfile')).toBe('Ruby');
+    expect(languageForPath('fastlane/Pluginfile')).toBe('Ruby');
+    expect(languageForPath('Gemfile')).toBe('Ruby');
+    expect(languageForPath('App.podspec')).toBe('Ruby');
+  });
+
+  it('maps Android, Kotlin/Native, and Properties tooling extensions', () => {
+    expect(languageForPath('proguard-rules.pro')).toBe('Android ProGuard Config');
+    expect(languageForPath('app/proguard-rules.pro')).toBe('Android ProGuard Config');
+    expect(languageForPath('gradle.properties')).toBe('Properties');
+    expect(languageForPath('gradle/wrapper/gradle-wrapper.properties')).toBe('Properties');
+    expect(languageForPath('sentry.properties')).toBe('Properties');
+    expect(languageForPath('common_native/CommonNative.def')).toBe('Kotlin/Native');
+    expect(languageForPath('android.Dockerfile')).toBe('Dockerfile');
+  });
+
+  it('maps Xcode config analogues and dotfiles to Config buckets', () => {
+    expect(languageForPath('App.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings')).toBe(
+      'Xcode Config',
+    );
+    expect(languageForPath('Base.lproj/Intents.intentdefinition')).toBe('Xcode Config');
+    expect(languageForPath('native_code/exception/module.modulemap')).toBe('Xcode Config');
+    expect(languageForPath('.gitignore')).toBe('Config');
+    expect(languageForPath('.editorconfig')).toBe('Config');
+    expect(languageForPath('.github/CODEOWNERS')).toBe('Config');
+    expect(languageForPath('.husky/commit-msg')).toBe('Config');
+    expect(languageForPath('fastlane/.env')).toBe('Config');
+    // A dotfile with a recognized extension still gets its language.
+    expect(languageForPath('.eslintrc.json')).toBe('JSON');
+    expect(languageForPath('.template.ts')).toBe('TypeScript');
+  });
+
   it('falls back to Unknown for unrecognized paths', () => {
     expect(languageForPath('noextension')).toBe('Unknown');
-    expect(languageForPath('.gitignore')).toBe('Unknown');
     expect(languageForPath('assets/font.raw')).toBe('Unknown');
     expect(languageForPath('texture.nomap')).toBe('Unknown');
+    expect(languageForPath('custom.local.template')).toBe('Unknown');
   });
 });
 

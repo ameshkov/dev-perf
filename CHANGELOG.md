@@ -29,6 +29,23 @@ and this project adheres to
   list; only the period chips in the navigation panel scroll.
 - The viewer's navigation panel spans the full width on narrow screens,
   so mobile never requires horizontal scrolling.
+- The built-in extension→language map recognizes more of the files
+  that were flooding `Unknown`: CocoaPods and fastlane files
+  (`podspec`/`Podfile`/`Fastfile`/`Matchfile`/`Pluginfile`/`Gemfile`)
+  now report as `Ruby`; Android tooling (`proguard-rules.pro`,
+  `*.properties`, `*.def`) reports as `Android ProGuard Config`,
+  `Properties`, and `Kotlin/Native`; Xcode config analogues
+  (`xcsettings`/`intentdefinition`/`modulemap`) join `Xcode Config`;
+  and dotfiles (`.gitignore`, `.editorconfig`, `CODEOWNERS`, husky
+  hooks, …) report under a new `Config` bucket instead of `Unknown`.
+
+### Fixed
+
+- File paths that git C-quotes — names containing non-ASCII characters,
+  `"`, `\`, or control characters — are unquoted before language
+  detection. Such files (e.g. an iOS asset with `×` in its name, or a
+  `.swift` file with a Cyrillic character) previously mis-attributed to
+  `Unknown`; they now land in their real language.
 
 ## [v1.3.0] - 2026-08-11
 
